@@ -36,6 +36,19 @@ is outside this pass because the user locked the current map look. Do not change
 camera, map bounds, terrain topology, building positions, or unit scale to game
 the comparison.
 
+## 2.1 Rejected pass 16 lesson
+
+Pass 16 commit `4f7b483` made the face table and cast direction world-fixed, but
+it failed the visual and objective gates. It changed 2.0255% of the frame;
+71.648% of changed pixels became darker. Non-void mean fell to 80.981, the
+midtone share fell to 30.148%, and a fresh DeepSeek critic selected pass 15 as
+the better image.
+
+Keep its world-space direction as the technical base. Do not deepen shadows
+again. The next correction must lift normal structural stone out of ink values,
+raise selected top/key-facing Dawnward planes, restore the Hearth values that
+pass 16 lowered, and leave terrain unchanged.
+
 ## 3. Required visual changes
 
 ### 3.1 World-fixed directional light

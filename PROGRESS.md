@@ -3,8 +3,8 @@
 Browser graphics demo: isometric pixel-art space colony, deterministic Rust/WASM
 simulation, and raw WebGPU renderer.
 
-**Two playable civilizations are now defined. Lighting/contrast pass 16 is specified
-and ready for isolated implementation.**
+**Two playable civilizations are defined. Pass 16 was rejected. Pass 17 is the
+active lighting correction. The phone URL remains on verified pass 15.**
 
 ## Verified state — mobile M1 + pass 15
 
@@ -91,17 +91,27 @@ playable civilization.
   units, complete economy/combat chains, deterministic starts, and distinct
   normal-zoom silhouettes.
 
-## Active next piece — pass 16 lighting and contrast
+## Active next piece — pass 17 selective key-light lift
 
-Binding spec: `docs/LIGHTING_CONTRAST_SPEC.md`. Worker brief:
-`tasks/brief-pass16.md`. It is renderer-only. Map, structures, props, camera,
-framing, unit scale, simulation, mobile controls, and palette stay unchanged.
+Binding spec: `docs/LIGHTING_CONTRAST_SPEC.md`. Corrective worker brief:
+`tasks/brief-pass17.md`.
 
-The new `--lighting-gate` in `scripts/measure-detail.py` fails the current frame
-as intended: coverage 42.720%, mean 81.577, sd 42.087, >=90 at 30.796%, >=170
-at 4.066%, outside-palette pixels 0. Texture and cliff gates still pass. Pass 16
-must reach mean 86–94, sd >=44, >=90 at >=38%, and >=170 at 5.0–8.5%, then win
-a fresh target-vs-build visual gate.
+Pass 16 (`4f7b483`) passed 8/8 runtime gates at 60.3 fps and preserved exact
+simulation state, palette, texture, cliffs, and instance capacity. It failed the
+lighting gate and blind critic. It changed 2.0255% of pixels; 71.648% of those
+became darker. Mean fell to 80.981 and midtone share fell to 30.148%. DeepSeek
+selected pass 15 as the better image. Evidence is in `evidence-p16/`.
+
+Pass 17 keeps pass 16's world-fixed face and cast direction. It can only lift
+normal structural stone, top/key-facing material planes, and existing actor
+highlights. It restores pass-15 Hearth values. It cannot alter terrain, geometry,
+map coverage, camera, simulation, controls, or palette.
+
+The live Tailnet route no longer reads mutable repo `dist/`. It proxies port 5200,
+which serves the frozen pass-15 artifact at
+`/home/bobbyranka/.starhold-live/pass15`. The exact live JavaScript and WASM
+hashes match that directory, WASM is `application/wasm`, and a fresh phone run
+through the route passed 18/18 gates.
 
 ## Remaining gap (name it exactly)
 
@@ -117,16 +127,17 @@ stronger unit-scale contrast — not another detail pass.
 
 1. Confirm clean tree and Plus quota: `git status --short`; `python3 tasks/quota-check.py`.
 2. Launch one fresh worker:
-   `bash tasks/astra-run.sh coder tasks/brief-pass16.md tasks/logs/pass16.log`.
+   `bash tasks/astra-run.sh coder tasks/brief-pass17.md tasks/logs/pass17.log`.
 3. Worker uses GPT-6 Astra Medium, standard mode, `fast_mode=false`, and edits only
    `src/renderer.ts`.
-4. Orchestrator runs `npm run build`, then desktop and the three mobile capture
-   profiles into `evidence-p16/`.
+4. Orchestrator runs `npm run build`, then desktop capture into `evidence-p17/`.
 5. Orchestrator runs:
-   `python3 scripts/measure-detail.py evidence-p16/shot-main.png --top 230 265 --rim 350 465 --x0 180 --x1 430 --lighting-gate`.
-6. Run four-yaw visual checks and a fresh target-vs-build blind critic.
-7. On a loss, park or revert the source and name one root gap. Never use the Pro
-   account. Do not start civilization implementation until lighting L1 is judged.
+   `python3 scripts/measure-detail.py evidence-p17/shot-main.png --top 230 265 --rim 350 465 --x0 180 --x1 430 --lighting-gate`.
+6. Only after desktop metrics pass, run all mobile profiles, four-yaw visual checks,
+   and a fresh target-vs-build blind critic.
+7. On a loss, keep the frozen pass-15 phone release and name one root gap. Never
+   use the Pro account. Do not start civilization implementation until lighting
+   L1 is judged.
 
 ## Agent settings
 
