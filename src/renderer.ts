@@ -55,11 +55,15 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  if screen == 0. && pigment>=4. && pigment<28. {
   // Authored ink/recesses (0–3) never inherit the structural stone floor.
   if pigment<=9. {shaded=max(4.,shaded);}
-  // Only top and west key faces gain one discrete family step. Preserve
-  // existing authored endpoints, but never promote broad faces into them.
+  // Key and bounce lifts preserve authored endpoints without promoting
+  // broad faces into them; both use the same material-family ceiling.
+  let cap=select(select(select(select(8.,13.,pigment>=10.),17.,pigment>=15.),21.,pigment>=19.),26.,pigment>=23.);
+  let ceiling=select(cap,pigment,hot && small);
   if shade==0. || shade==3. {
-   let cap=select(select(select(select(8.,13.,pigment>=10.),17.,pigment>=15.),21.,pigment>=19.),26.,pigment>=23.);
-   let ceiling=select(cap,pigment,hot && small);
+   shaded=max(shaded,min(ceiling,shaded+1.));
+  }
+  // World-south reflected civic light restores one cross-light step.
+  if shade==2. {
    shaded=max(shaded,min(ceiling,shaded+1.));
   }
  }
