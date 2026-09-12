@@ -3,8 +3,9 @@
 Browser graphics demo: isometric pixel-art space colony, deterministic Rust/WASM
 simulation, and raw WebGPU renderer.
 
-**Two playable civilizations are defined. Pass 16 was rejected. Pass 17 is the
-active lighting correction. The phone URL remains on verified pass 15.**
+**Two playable civilizations are defined. Passes 16 and 17 were rejected. Pass 18
+is the active settled-core lighting correction. The phone URL remains on verified
+pass 15.**
 
 ## Verified state — mobile M1 + pass 15
 
@@ -91,21 +92,23 @@ playable civilization.
   units, complete economy/combat chains, deterministic starts, and distinct
   normal-zoom silhouettes.
 
-## Active next piece — pass 17 selective key-light lift
+## Active next piece — pass 18 settled-core light pool
 
 Binding spec: `docs/LIGHTING_CONTRAST_SPEC.md`. Corrective worker brief:
-`tasks/brief-pass17.md`.
+`tasks/brief-pass18.md`.
 
-Pass 16 (`4f7b483`) passed 8/8 runtime gates at 60.3 fps and preserved exact
-simulation state, palette, texture, cliffs, and instance capacity. It failed the
-lighting gate and blind critic. It changed 2.0255% of pixels; 71.648% of those
-became darker. Mean fell to 80.981 and midtone share fell to 30.148%. DeepSeek
-selected pass 15 as the better image. Evidence is in `evidence-p16/`.
+Pass 17 (`a947440`) passes 8/8 runtime gates at 60.3 fps and preserves exact
+simulation state, palette, texture, cliffs, and instance capacity. It raises
+contrast SD to 44.397 and is visually better than pass 15. It still fails mean
+(82.417), midtone share (30.815%), and bright share (4.295%). Evidence is in
+`evidence-p17/`.
 
-Pass 17 keeps pass 16's world-fixed face and cast direction. It can only lift
-normal structural stone, top/key-facing material planes, and existing actor
-highlights. It restores pass-15 Hearth values. It cannot alter terrain, geometry,
-map coverage, camera, simulation, controls, or palette.
+Pass 18 keeps all pass-17 structure and actor lighting. It adds one exact-palette,
+world-fixed ellipse in `basalt()` over the settled core. Inside center `(16,17)`
+with radii `(11,9)`, violet 28 moves to 29 and 29 moves to 30. It cannot change
+stone joints, motif positions, roads, cliffs, outer terrain, geometry, camera,
+simulation, controls, or palette. This is one independently judged macro-value
+piece; no highlight correction is combined with it.
 
 The live Tailnet route no longer reads mutable repo `dist/`. It proxies port 5200,
 which serves the frozen pass-15 artifact at
@@ -127,12 +130,13 @@ stronger unit-scale contrast — not another detail pass.
 
 1. Confirm clean tree and Plus quota: `git status --short`; `python3 tasks/quota-check.py`.
 2. Launch one fresh worker:
-   `bash tasks/astra-run.sh coder tasks/brief-pass17.md tasks/logs/pass17.log`.
+   `bash tasks/astra-run.sh coder tasks/brief-pass18.md tasks/logs/pass18.log`.
 3. Worker uses GPT-6 Astra Medium, standard mode, `fast_mode=false`, and edits only
    `src/renderer.ts`.
-4. Orchestrator runs `npm run build`, then desktop capture into `evidence-p17/`.
-5. Orchestrator runs:
-   `python3 scripts/measure-detail.py evidence-p17/shot-main.png --top 230 265 --rim 350 465 --x0 180 --x1 430 --lighting-gate`.
+4. Orchestrator runs `npm run build`, then desktop capture into `evidence-p18/`.
+5. Orchestrator first records the full lighting metrics, then judges the civic
+   plane against pass 17 and the target. Highlight share can remain below 5% for
+   this isolated piece; all other preservation gates stay binding.
 6. Only after desktop metrics pass, run all mobile profiles, four-yaw visual checks,
    and a fresh target-vs-build blind critic.
 7. On a loss, keep the frozen pass-15 phone release and name one root gap. Never

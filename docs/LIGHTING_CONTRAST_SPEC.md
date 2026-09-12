@@ -49,6 +49,20 @@ again. The next correction must lift normal structural stone out of ink values,
 raise selected top/key-facing Dawnward planes, restore the Hearth values that
 pass 16 lowered, and leave terrain unchanged.
 
+## 2.2 Rejected pass 17 lesson
+
+Pass 17 commit `a947440` kept pass 16's direction and lifted normal structural
+stone. It passed 8/8 runtime gates, raised contrast deviation to 44.397, and a
+fresh critic selected it over pass 15. It still failed the lighting gate:
+non-void mean 82.417, midtone share 30.815%, and bright share 4.295%. Only
+1.6574% of frame pixels changed from pass 16. Local box-face changes cannot
+create the broad value grouping seen in the target.
+
+Keep pass 17 as the candidate base. The next isolated piece is one world-fixed
+open-sky light pool over the settled core. Implement it inside the existing
+`basalt()` palette function. It remaps existing violet plate pixels and cannot
+change geometry, authored motif positions, roads, cliffs, or the outer map.
+
 ## 3. Required visual changes
 
 ### 3.1 World-fixed directional light
@@ -74,9 +88,18 @@ Keep the amethyst basalt and all authored plates, cracks, terraces, props, and
 roads. Rebalance existing violet and stone entries so terrain supports the
 settlement instead of competing with it:
 
-- broad walkable ground stays in dark and middle violet values;
-- `#8C69A0` and `#BD96C1` are small chips, crystal tips, or lit rim accents, not
-  broad ground fill;
+- broad walkable ground stays in dark and middle violet values outside the settled
+  core;
+- one world-fixed open-sky pool is permitted over the settled core: ellipse center
+  `(16,17)`, radii `(11,9)` in world tiles, evaluated in `basalt()` immediately
+  before its final return;
+- inside that ellipse only, remap an existing result of index 28 to 29 and index 29
+  to 30; keep index 30 unchanged and never promote ground to index 31;
+- stone joints, road pixels, authored chips, seams, and motif positions stay in
+  place; only their final violet value can move by one step;
+- outside the ellipse, every terrain pixel stays bit-identical to pass 17;
+- `#BD96C1` stays limited to crystal tips and small rim accents, not broad ground
+  fill;
 - north-west terrace lips can be one step lighter than their caps;
 - south-east ledges and contact lines are darker by one clear step;
 - pale roads remain visible, but road centers must not become as bright as Keep
