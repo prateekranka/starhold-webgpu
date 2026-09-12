@@ -39,6 +39,21 @@ Final-build verification (same build as the live URL):
 - Evidence: `evidence-mobile/` (mobile pass) and `evidence-p15/` (pass 15 +
   phone/tablet/portrait on the final build).
 
+### Independent coordinator recheck — 2026-09-13 00:53 IST
+
+- Rebuilt from clean `master` at `0027680`: **PASS**; emitted
+  `index-lRyy1alA.js` and `index-Dw_AwUKr.css`.
+- Fresh local runs: desktop **8/8**, phone **18/18**, tablet **18/18**, portrait
+  **19/19**. All 63 gates passed. FPS was 60.3 in every run; p95 was 18.9 ms
+  desktop and 16.9 ms for each touch layout. Console errors: none.
+- Fresh live-phone run through `https://bobby.taile5de76.ts.net:8446/`: **18/18**;
+  HTTP 200. Live JavaScript SHA-256 `d8795aacd1ab0092b711e696bd47873730ddb14b5a3f382b66e6a015b9fc39e4`
+  and CSS SHA-256 `91bdcf2047c44cc05a80632749e0efdeaf5c46c097c0920c4528eed123aac3fd`
+  exactly match `dist/`.
+- Independent target-vs-build visual gate: **FAIL**. The main gap is macro scale
+  and value separation: the settlement is smaller in frame, flatter, darker, and
+  less readable than the target. Mobile delivery is accepted; visual parity is not.
+
 ### Two integration bugs the worker introduced (fixed here)
 
 1. Pass 15 pushed the instance list past `MAX=8000`, so every late draw (outer
