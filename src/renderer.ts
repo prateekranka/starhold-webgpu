@@ -6,13 +6,14 @@ const paletteWGSL=`const palette = array<vec3f,32>(${colors.map(c=>`vec3f(${c.jo
 const geometryWGSL=paletteWGSL+`
 struct Camera { rotation:vec2f, magnification:f32, padding:f32 }
 @group(0) @binding(0) var<uniform> camera:Camera;
-struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f }
+struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @location(1) unit:f32 }
 @vertex fn vs(@location(0) vertex:vec3f,@location(1) shade:f32,@location(2) origin:vec3f,@location(3) size:vec3f,@location(4) color:f32,@location(5) screen:f32)->Out {
  var o:Out;
+ let pigment=color%32.;o.unit=select(0.,1.,color>=32.);
  var v=vertex;
  if screen < -0.5 {v=vec3f(vertex.xy*select(1.,select(.55,.08,screen < -1.5),vertex.z>.5),vertex.z);}
  let p=origin+v*size;
- if screen>0.5 {o.position=vec4f(p.x/240.-1.,1.-p.y/135.,0.0001,1.);o.color=palette[u32(color)];}
+ if screen>0.5 {o.position=vec4f(p.x/240.-1.,1.-p.y/135.,0.0001,1.);o.color=palette[u32(pigment)];}
  else {
  let d=p.xy-vec2f(16.);
  let r=vec2f(d.x*camera.rotation.x-d.y*camera.rotation.y,d.x*camera.rotation.y+d.y*camera.rotation.x);
@@ -20,19 +21,28 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f }
  o.position=vec4f(pixel.x/240.-1.,1.-pixel.y/135.,0.5-((r.x+r.y)*0.5773503+p.z*0.5773503)/128.,1.);
  // Never shade across palette families (teal feet formerly became ivory,
  // violet soil became orange, and gold cargo became cyan).
- let family=select(select(select(select(select(0.,10.,color>=10.),15.,color>=15.),19.,color>=19.),23.,color>=23.),28.,color>=28.);
- o.color=palette[u32(max(family,color-shade))];
+ let family=select(select(select(select(select(0.,10.,pigment>=10.),15.,pigment>=15.),19.,pigment>=19.),23.,pigment>=23.),28.,pigment>=28.);
+ o.color=palette[u32(max(family,pigment-shade))];
  } return o;
 }
-@fragment fn fs(i:Out)->@location(0) vec4f {return vec4f(i.color,1.);}
+struct Fragment { @location(0) color:vec4f, @location(1) mask:vec4f }
+@fragment fn fs(i:Out)->Fragment {var f:Fragment;f.color=vec4f(i.color,1.);f.mask=vec4f(i.unit,i.position.z,0.,1.);return f;}
 `;
 const postWGSL=paletteWGSL+`
 @group(0) @binding(0) var scene:texture_2d<f32>;
+@group(0) @binding(1) var silhouette:texture_2d<f32>;
 @vertex fn vs(@builtin(vertex_index) i:u32)->@builtin(position) vec4f {
  let p=array<vec2f,3>(vec2f(-1.,-1.),vec2f(3.,-1.),vec2f(-1.,3.));return vec4f(p[i],0.,1.);
 }
 @fragment fn fs(@builtin(position) p:vec4f)->@location(0) vec4f {
- let c=textureLoad(scene,vec2i(p.xy),0).rgb;var best=palette[0];var distance=100.;
+ let pixel=vec2i(p.xy);let center=textureLoad(silhouette,pixel,0);
+ // One internal-pixel ink contour, depth aware so roofs still occlude units.
+ if center.r<0.5 {for(var axis=0;axis<4;axis++) {
+  let offsets=array<vec2i,4>(vec2i(-1,0),vec2i(1,0),vec2i(0,-1),vec2i(0,1));
+  let neighbor=textureLoad(silhouette,clamp(pixel+offsets[axis],vec2i(0),vec2i(479,269)),0);
+  if neighbor.r>0.5 && neighbor.g<=center.g+0.002 {return vec4f(palette[0],1.);}
+ }}
+ let c=textureLoad(scene,pixel,0).rgb;var best=palette[0];var distance=100.;
  for(var i=0u;i<32u;i++){let delta=c-palette[i];let d=dot(delta,delta);if d<distance {distance=d;best=palette[i];}}
  return vec4f(best,1.);
 }`;
@@ -65,13 +75,14 @@ export class Renderer {
   this.buffer=d.createBuffer({size:this.data.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});
   this.uniform=d.createBuffer({size:16,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
   const module=d.createShaderModule({code:geometryWGSL});
-  this.pipeline=d.createRenderPipeline({layout:'auto',vertex:{module,entryPoint:'vs',buffers:[{arrayStride:16,attributes:[{shaderLocation:0,offset:0,format:'float32x3'},{shaderLocation:1,offset:12,format:'float32'}]},{arrayStride:32,stepMode:'instance',attributes:[{shaderLocation:2,offset:0,format:'float32x3'},{shaderLocation:3,offset:12,format:'float32x3'},{shaderLocation:4,offset:24,format:'float32'},{shaderLocation:5,offset:28,format:'float32'}]}]},fragment:{module,entryPoint:'fs',targets:[{format:'rgba8unorm'}]},primitive:{topology:'triangle-list'},depthStencil:{format:'depth24plus',depthWriteEnabled:true,depthCompare:'less-equal'}});
+  this.pipeline=d.createRenderPipeline({layout:'auto',vertex:{module,entryPoint:'vs',buffers:[{arrayStride:16,attributes:[{shaderLocation:0,offset:0,format:'float32x3'},{shaderLocation:1,offset:12,format:'float32'}]},{arrayStride:32,stepMode:'instance',attributes:[{shaderLocation:2,offset:0,format:'float32x3'},{shaderLocation:3,offset:12,format:'float32x3'},{shaderLocation:4,offset:24,format:'float32'},{shaderLocation:5,offset:28,format:'float32'}]}]},fragment:{module,entryPoint:'fs',targets:[{format:'rgba8unorm'},{format:'rgba16float'}]},primitive:{topology:'triangle-list'},depthStencil:{format:'depth24plus',depthWriteEnabled:true,depthCompare:'less-equal'}});
   this.group=d.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:this.uniform}}]});
   const scene=d.createTexture({size:[480,270],format:'rgba8unorm',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.TEXTURE_BINDING});
+  const silhouette=d.createTexture({size:[480,270],format:'rgba16float',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.TEXTURE_BINDING});
   const depth=d.createTexture({size:[480,270],format:'depth24plus',usage:GPUTextureUsage.RENDER_ATTACHMENT});
   const postModule=d.createShaderModule({code:postWGSL});this.post=d.createRenderPipeline({layout:'auto',vertex:{module:postModule,entryPoint:'vs'},fragment:{module:postModule,entryPoint:'fs',targets:[{format}]},primitive:{topology:'triangle-list'}});
-  const sceneView=scene.createView();this.postGroup=d.createBindGroup({layout:this.post.getBindGroupLayout(0),entries:[{binding:0,resource:sceneView}]});
-  this.scenePass={colorAttachments:[{view:sceneView,clearValue:{r:16/255,g:18/255,b:28/255,a:1},loadOp:'clear',storeOp:'store'}],depthStencilAttachment:{view:depth.createView(),depthClearValue:1,depthLoadOp:'clear',depthStoreOp:'discard'}};
+  const sceneView=scene.createView(),silhouetteView=silhouette.createView();this.postGroup=d.createBindGroup({layout:this.post.getBindGroupLayout(0),entries:[{binding:0,resource:sceneView},{binding:1,resource:silhouetteView}]});
+  this.scenePass={colorAttachments:[{view:sceneView,clearValue:{r:16/255,g:18/255,b:28/255,a:1},loadOp:'clear',storeOp:'store'},{view:silhouetteView,clearValue:{r:0,g:1,b:0,a:1},loadOp:'clear',storeOp:'store'}],depthStencilAttachment:{view:depth.createView(),depthClearValue:1,depthLoadOp:'clear',depthStoreOp:'discard'}};
   this.presentPass={colorAttachments:[{view:null,loadOp:'clear',storeOp:'store',clearValue:{r:16/255,g:18/255,b:28/255,a:1}}]};
   this.terrain.set(terrain);this.makeTerrain();
  }
@@ -93,23 +104,36 @@ export class Renderer {
    if(edge&&(hash%5<3)||x<5&&y<9||x<7&&y<3||x>28&&y>27)continue;
    const bottom=-3.5-(hash%5)*.35;
    const rim=edge||x<4||y>28||x>28||this.ground(x+1,y)<h||this.ground(x,y+1)<h;
-   this.box(x+.5,y+.5,bottom,rim?.84:.98,rim?.88:.98,h-bottom,h<0?3:4);
+   this.box(x+.5,y+.5,bottom,rim?.84:1,rim?.88:1,h-bottom-.16,2);
+   this.box(x+.5,y+.5,h-.16,rim?.94:1,rim?.96:1,.16,h<0?3:hash%11<3?28:4);
    if(rim){
     this.box(x+.5,y+.5,h-.22,1.04,1.02,.22,hash%4===0?5:4);
     this.box(x+.78,y+.84,bottom+.2,.18,.12,h-bottom-.5,3);
     if(hash%2===0)this.box(x+.5,y+.5,h-1.2,.94,.96,.18,4);
    }
-   if(hash%7===0){this.box(x+.3,y+.42,h+.014,.47,.3,.025,hash%3===0?29:5);this.box(x+.52,y+.51,h+.017,.2,.18,.027,hash%3===0?29:5);}
+   if(hash%7===0){this.box(x+.3,y+.42,h+.014,.65,.42,.025,hash%3===0?29:5);this.box(x+.52,y+.51,h+.017,.32,.24,.027,hash%3===0?29:5);}
    if(hash%29===0)this.box(x+.36,y+.4,h+.045,.54,.06,.025,3);
-   if(hash%13===0)this.box(x+.64,y+.65,h+.03,.28,.22,.1,3);
+   if(hash%31===0)this.box(x+.64,y+.65,h+.03,.4,.32,.14,3);
    // Exposed vertical seams and projecting shelves use the cliff family only.
    if(y===31||x===31||this.ground(x+1,y)<h||this.ground(x,y+1)<h||edge){
     this.box(x+.87,y+.83,bottom+.4,.17,.18,h-bottom-.6,hash%2?2:3);
     if(hash%3===0)this.box(x+.55,y+.64,bottom+1.1,.9,.92,.2,4);
    }
+   // The exposed face projects beyond the cap: ribs cannot disappear inside
+   // the solid terrain column. Alternate short ledges break the vertical bands.
+   for(let side=0;side<2;side++){
+    if(!(edge||side===0&&this.ground(x+1,y)<h||side===1&&this.ground(x,y+1)<h))continue;
+    const faceBottom=edge?bottom:Math.max(bottom,this.ground(x+(side===0?1:0),y+(side===1?1:0))-1.1);
+    for(let rib=0;rib<3;rib++){
+     const along=.18+rib*.31,xx=x+(side===0?1.015:along),yy=y+(side===1?1.015:along);
+     const top=h-.28-(hash+rib)%3*.13;
+     this.box(xx,yy,faceBottom,side===0?.12:.16,side===1?.12:.16,top-faceBottom,(hash+rib)%2?5:4);
+     if((hash+rib)%3===0)this.box(xx,yy,top-.8,side===0?.25:.26,side===1?.25:.26,.14,5);
+    }
+   }
   }
-  const roads=[[7,25,5,25],[8.5,23,11,20],[11,20,13,18],[13,18,16,18.6],[8,21.5,8,17],[8,17,6.7,17],[18.5,16,18.5,14],[18.5,14,24,14],[16,13,18.5,14],[18,20,22,22],[24,14,27,12],[19,22,19,25]];
-  for(const r of roads){const length=Math.hypot(r[2]-r[0],r[3]-r[1]);for(let t=0;t<length;t+=.6){const x=r[0]+(r[2]-r[0])*t/length,y=r[1]+(r[3]-r[1])*t/length;for(let lane=-1;lane<=1;lane++){const xx=x+lane*.43*(r[3]-r[1])/length,yy=y-lane*.43*(r[2]-r[0])/length;this.box(xx,yy,this.ground(xx,yy)+.04,.42,.46,.04,(Math.floor(t*10)+lane)%4===0?5:6);}}}
+  const roads=[[7,25,5,25],[8.5,23,11,20],[11,20,13,18],[13,18,16,18.6],[8,21.5,8,17],[8,17,6.7,17],[18.5,16,18.5,14],[18.5,14,24,14],[16,13,18.5,14],[18,20,22,22],[24,14,27,12],[19,22,19,25],[30.4,3,29.5,8],[29.5,8,28.5,12]];
+  for(const r of roads){const length=Math.hypot(r[2]-r[0],r[3]-r[1]);for(let t=0;t<length;t+=.5){const x=r[0]+(r[2]-r[0])*t/length,y=r[1]+(r[3]-r[1])*t/length;for(let lane=-1;lane<=1;lane++){const xx=x+lane*.46*(r[3]-r[1])/length,yy=y-lane*.46*(r[2]-r[0])/length;this.box(xx,yy,this.ground(xx,yy)+.045,.51,.5,.035,(Math.floor(t*10)+lane)%5===0?5:6);}}}
   for(let i=0;i<34;i++){const x=7+(i*17%59)/10,y=3+(i*7%40)/10;this.shard(x,y,this.ground(x,y),.6+i%5*.37);}
   for(let i=0;i<20;i++){const x=2.4+(i*19%54)/10,y=20+(i*23%83)/10;if(x>5.1&&y<25)continue;this.shard(x,y,this.ground(x,y),.9+(i%4)*.55,31);}
   // Low ruined arch feet and scattered masonry frame the foreground route.
@@ -201,7 +225,7 @@ export class Renderer {
    if(p>=.5){this.box(x,y,z+1.7,2.8,2.7,.22,7,id);this.box(x-.7,y-.6,z+1.9,.55,.6,1.1,4,id);this.box(x-.7,y-.6,z+2.95,.68,.7,.15,7,id);this.box(x+.65,y-.5,z+1.9,.4,.4,.85,7,id);this.box(x+.65,y-.5,z+2.75,.4,.4,.15,22,id);
     this.box(x,y+1.34,z+.3,1.25,.18,1.3,1,id);this.box(x,y+1.45,z+.35,.9,.12,.95,25,id);this.box(x,y+1.53,z+.4,.45,.1,.65,27,id);this.box(x,y+1.8,z+.21,.5,.6,.06,26,id);
     for(let j=0;j<8;j++){const a=(j/8+phase)*Math.PI*2;this.box(x+1.48,y+Math.cos(a)*.55,z+1.+Math.sin(a)*.55,.2,.24,.24,21,id);}
-    for(let j=0;j<5;j++){const q=(phase+j/5)%1;this.box(x-.7+q*.5,y-.6,z+3.1+q*1.5,.25+Math.floor(q*3)*.17,.25+Math.floor(q*3)*.17,.25, q<.5?5:3);}}
+    for(let j=0;j<5;j++){const q=(this.time/2+j/5)%1,size=.32+Math.floor(q*3)*.24;this.box(x-.7+q*.95,y-.6+q*.25,z+3.1+q*2.1,size,size,.28+q*.2,q<.65?6:4);}}
   }
   if(p>=.85&&k!==12&&k!==16){for(let j=0;j<2;j++)this.crate(x+w*.5+.3,y+.6*j,z,.38,id);}
  }
@@ -209,7 +233,8 @@ export class Renderer {
   this.box(x,y,z,size,size,size,21,id);this.box(x,y,z+size,size*.18,size+.025,.03,22,id);this.box(x+size*.5,y,z+.03,.025,size*.15,size*.9,19,id);
  }
  private banner(x:number,y:number,z:number,phase:number,id:number) {
-  this.box(x,y,z-.6,.07,.07,1.2,21,id);this.box(x+.35,y+(Math.floor(phase*3)%2)*.08,z-.35,.68,.07,.65,12,id);this.box(x+.3,y+.05,z-.2,.09,.04,.2,22,id);
+  const pose=Math.floor((this.time/1.8+phase)*3)%3;
+  this.box(x,y,z-.6,.11,.11,1.35,21,id);this.box(x+.42,y+pose*.1,z-.35,.84,.13,.72,12,id);this.box(x+.82,y+pose*.15,z-.3-pose*.08,.28,.14,.52,13,id);this.box(x+.3,y+.11,z-.2,.13,.08,.24,22,id);
  }
  private crane(x:number,y:number,z:number,w:number,h:number,phase:number,id:number,assembly=-1) {
   this.box(x,y,z,.17,.17,h,20,id);this.box(x-w*.5,y,z+h,w+.15,.18,.18,22,id);const lift=assembly<0?.8+Math.floor(phase*6)/6*(h-1.2):assembly+Math.floor(phase*3)*.12;this.box(x-w*.8,y,z+lift,.05,.05,h-lift,19,id);this.box(x-w*.8,y,z+lift-.15,.2,.2,.16,22,id);this.box(x-w*.8,y,z+lift-.55,.42,.42,.4,12,id);this.box(x-w*.8+.12,y,z+lift-.13,.12,.12,.24,22,id);
@@ -225,6 +250,7 @@ export class Renderer {
    const q=i*8,dx=(this.data[q]-e[o])*scale,dy=(this.data[q+1]-e[o+1])*scale;
    this.data[q]=e[o]+dx*c-dy*sn;this.data[q+1]=e[o+1]+dx*sn+dy*c;
    this.data[q+3]*=scale;this.data[q+4]*=scale;
+   if(this.owners[i]===id)this.data[q+6]+=32;
   }
  }
  private unitParts(e:Float32Array,o:number,id:number) {
@@ -237,7 +263,7 @@ export class Renderer {
   const h=k===23?1.45:k===22?1.3:k===30?1.05:.94;
   this.box(x-.15,y+gait,z,.18,.26,.33,enemy?23:10,id);this.box(x+.15,y-gait,z,.18,.26,.33,enemy?23:10,id);
   if(k===23)this.box(x-.15,y-.17-gait*.25,z+.18,.72,.23,.99,12,id,-1);
-  this.box(x,y,z+.33,.52,.46,h-.56,enemy?25:13,id);
+  this.box(x,y,z+.33,.57,.5,h-.56,enemy?25:12,id);
   // Hands flank the torso; the forward arm lifts to the weapon or work tool.
   const action=state===2||state===3||state===8;
   this.box(x+.28,y+.23,z+(action?.58:.38)+gait*.3,.26,.19,.24,enemy?24:12,id);
@@ -262,7 +288,7 @@ export class Renderer {
   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],sub=e[o+10],age=e[o+11],dx=Math.cos(e[o+3]),dy=Math.sin(e[o+3]);
   if(k===50){const color=sub===30||sub===31?26:sub===22?22:17;
    const steps=sub===23?12:sub===31?7:4;
-   for(let j=steps-1;j>=0;j--){const q=j*(sub===23?.3:.16);this.box(x-dx*q,y-dy*q,z-(sub===31?j*.035:0),j===0?.25:.16,j===0?.25:.16,.16,j===0?(sub===31?27:sub===22?9:18):color);}
+   for(let j=steps-1;j>=0;j--){const q=j*(sub===23?.3:.22);this.box(x-dx*q,y-dy*q,z-(sub===31?j*.035:0),j===0?.25:.16,j===0?.25:.16,.16,32+(j===0?(sub===30||sub===31?27:sub===22?9:18):color));}
    if(sub===31)this.box(x,y,this.ground(x,y)+.05,.22,.22,.02,2);
   }else if(k===51){
    const blast=sub===31,r=.18+Math.floor(age*18)*(blast?.23:.12);
@@ -273,10 +299,10 @@ export class Renderer {
   else if(k===52){this.box(x,y,z,.48,.45,.2,sub>=30?23:4);this.box(x+.28,y+.12,z,.2,.2,.14,sub>=30?24:7);}
  }
  private ambient(t:number) {
-  for(let j=0;j<16;j++){const x=18.8+j*17%81/10,y=25+j*11%37/10,z=this.ground(x,y),sway=Math.floor(t/1.4+j)%2*.12;this.box(x+sway,y,z,.07,.1,.25,21);this.box(x+.17+sway,y+.08,z,.07,.1,.35,20);this.box(x-.13,y,z,.08,.1,.18,21);}
-  for(let j=0;j<3;j++){const q=(t/5+j/3)%1;for(let a=0;a<6;a++)this.box(19+j*2+q*2+a*.2,26+j*.6,this.ground(19+j*2,26+j*.6)+.12,.13,.09,.035,a%3===0?21:20);}
+  for(let j=0;j<16;j++){const x=18.8+j*17%81/10,y=25+j*11%37/10,z=this.ground(x,y),sway=Math.floor(t/1.4+j)%2*.18;this.box(x+sway,y,z,.13,.12,.38,21);this.box(x+.2+sway,y+.08,z,.12,.13,.48,20);this.box(x-.18,y,z,.13,.12,.27,21);}
+  for(let j=0;j<3;j++){const q=(t/5+j/3)%1;for(let a=0;a<9;a++)this.box(19+j*2+q*2+a*.24,26+j*.6+(a%3)*.09,this.ground(19+j*2,26+j*.6)+.15,.18,.16,.05,a%3===0?21:20);}
   for(let j=0;j<12;j++){const q=(t/(7+j%3*2)+j*.27)%1,x=7+j*17%58/10+q*.4,y=3+j*7%40/10;this.box(x,y,1.5+q*.6,.07,.07,.08,30);}
-  for(let j=0;j<8;j++){if((Math.floor(t*5)+j*3)%18>1)continue;const x=7+j*17%59/10,y=3+j*7%40/10;this.box(x,y,this.ground(x,y)+.6+j%5*.37,.11,.11,.08,31);}
+  for(let j=0;j<8;j++){if((Math.floor(t*5)+j*3)%18>5)continue;const x=7+j*17%59/10,y=3+j*7%40/10;this.box(x,y,this.ground(x,y)+.6+j%5*.37,.18,.18,.15,18);}
   const warning=t>=33&&(t-33)%30<3&&Math.floor(t*2)%2===0;
   for(let j=0;j<3;j++){const x=29+j*.65,y=4+j*.6;this.box(x,y,this.ground(x,y)+.15,.18,.18,.4,warning?22:19);}
   // Freighter and haze remain behind the north rim at every discrete camera yaw.
@@ -296,7 +322,7 @@ export class Renderer {
   const kind=o<0?-1:e[o+4],hp=o<0?-1:Math.round(e[o+7]*100),job=o<0?-1:e[o+5],progress=o<0?-1:Math.floor(e[o+10]*100);
   if(alloy!==this.hudAlloy||charge!==this.hudCharge||o!==this.hudSelection||kind!==this.hudKind||hp!==this.hudHealth||job!==this.hudJob||progress!==this.hudProgress){const start=this.count;this.rect(8,6,464,14,0);this.rect(8,19,464,1,5);this.text('STARHOLD',11,9);this.rect(287,12,4,5,20);this.rect(292,12,4,5,21);this.rect(290,8,4,4,22);this.text('ALLOY '+alloy,300,9,22);this.rect(379,9,5,8,16);this.rect(381,7,2,11,18);this.text('CHARGE '+charge,389,9,18);
    for(let j=0;j<4;j++){this.rect(370+j*25,244,22,20,5);this.rect(371+j*25,245,20,18,1);this.buttonGlyph(j,376+j*25,249);}
-   if(o>=0){this.rect(8,240,160,25,5);this.rect(9,241,158,23,0);this.text(names[e[o+4]]||'COLONY',12,243);this.rect(12,252,151,3,3);this.rect(12,252,Math.floor(151*e[o+7]),3,13);const max=e[o+4]===10?1500:e[o+4]===16?900:e[o+4]<20?600:e[o+4]===20?70:e[o+4]===23?110:e[o+4]===30?80:180;this.text('HP '+Math.round(e[o+7]*max)+' '+(jobs[e[o+5]]||'IDLE')+(e[o+5]===5?' '+Math.floor(e[o+10]*100)+'%':''),12,257,7);}
+   if(o>=0){this.rect(8,242,134,23,5);this.rect(9,243,132,21,0);this.text(names[e[o+4]]||'COLONY',12,244);this.rect(12,252,125,3,3);this.rect(12,252,Math.floor(125*e[o+7]),3,13);const max=e[o+4]===10?1500:e[o+4]===16?900:e[o+4]<20?600:e[o+4]===20?70:e[o+4]===23?110:e[o+4]===24?150:e[o+4]===30?80:e[o+4]===31?240:180;this.text('HP '+Math.round(e[o+7]*max)+' '+(jobs[e[o+5]]||'IDLE')+(e[o+5]===5?' '+Math.floor(e[o+10]*100)+'%':''),12,257,7);}
    this.hudCount=this.count-start;for(let i=0;i<this.hudCount*8;i++)this.hudData[i]=this.data[start*8+i];this.hudAlloy=alloy;this.hudCharge=charge;this.hudSelection=o;this.hudKind=kind;this.hudHealth=hp;this.hudJob=job;this.hudProgress=progress;
   }else{for(let i=0;i<this.hudCount*8;i++)this.data[this.count*8+i]=this.hudData[i];this.count+=this.hudCount;}
  }
@@ -306,7 +332,7 @@ export class Renderer {
    if(k>=10&&k<20)this.building(e,o,id);
    else if(k>=20&&k<=31)this.unit(e,o,id);
    else if(k===40){const h=e[o+10]>0?1.3+id%3*.35:e[o+11]*1.4;this.shard(e[o],e[o+1],e[o+2],Math.max(.08,h*1.4),31);}
-   else if(k===41){this.box(e[o],e[o+1],e[o+2],.3,.3,.18,8);this.box(e[o],e[o+1],e[o+2]-.12,.12,.12,.12,17);}
+   else if(k===41){this.box(e[o],e[o+1],e[o+2],.38,.36,.23,40);this.box(e[o],e[o+1],e[o+2]-.16,.18,.18,.14,18);}
    else if(k>=50)this.effects(e,o);
   }
   if(this.selected!==null){const o=this.selected*12,r=e[o+4]<20?(e[o+4]===10?2.5:e[o+4]===16?1.5:1.8):.65;for(let j=0;j<24;j++){if(j%3===Math.floor(this.time/.6)%2)continue;const a=j*Math.PI/12;this.box(e[o]+Math.cos(a)*r,e[o+1]+Math.sin(a)*r,this.ground(e[o],e[o+1])+.08,.2,.2,.035,22);}}

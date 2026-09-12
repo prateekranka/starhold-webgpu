@@ -27,6 +27,13 @@ impl Sim {
  e.data[0]=e.x as f32/1024.;e.data[1]=e.y as f32/1024.;e.data[2]=height(e.data[0],e.data[1]);e.data[3]=(dy as f32).atan2(dx as f32);e.data[5]=1.;dist<=step as f64 }
  fn tick(&mut self) {
   self.tick+=1;let t=self.tick; if t%30==0 {self.charge=(self.charge+1).min(200);}
+  // Repair transactions spend actual stock, with a bounded visible repair beat.
+  // Opening construction kits were prepaid; do not charge for those twice.
+  if t%60==0 {for id in 0..27 {let k=self.entities[id].data[4] as u32;if self.entities[id].active&&self.entities[id].data[7]<1.&&self.alloy>24 {
+   let hp=if k==10 {1500.}else if k==16 {900.}else if k<20 {600.}else if k==20 {70.}else if k==23 {110.}else{180.};
+   self.alloy-=1;self.entities[id].data[7]=(self.entities[id].data[7]+25./hp).min(1.);
+   let fx=(108..132).find(|&i|!self.entities[i].active);if let Some(fx)=fx {let e=self.entities[id];self.add(fx,51,e.data[0],e.data[1],0.);self.entities[fx].data[2]=e.data[2]+0.5;self.entities[fx].data[10]=20.;}
+  }}}
   let starts=[0,1440,3240,4680];let durations=[1440,1800,1440,2520];
   for j in 0..4 {let site_id=4+j;let pair=if j%2==0 {14}else{16};let mut builders=0;for id in pair..pair+2 {let x=self.entities[site_id].data[0]+if id%2==0 {1.6}else{-1.6};let y=self.entities[site_id].data[1]+1.8;if (self.entities[id].data[0]-x).abs()<0.1&&(self.entities[id].data[1]-y).abs()<0.1 {builders+=1;}}let e=&mut self.entities[site_id];if t>starts[j]&&builders==2&&e.timer<durations[j] {e.timer+=1;}e.data[10]=(e.timer as f32/durations[j] as f32).min(1.);e.data[5]=if e.data[10]<1. {5.}else{0.};e.data[6]=(t%180) as f32/180.;}
   let site=if t<1440 {4}else if t<3240 {5}else if t<4680 {6}else{7};
@@ -38,15 +45,17 @@ impl Sim {
     else {let route=self.entities[id].route;let node=27+(id-8)*2;let x=if route==0 {self.entities[node].data[0]+0.6}else{7.+(id%3) as f32*0.45};let y=if route==0 {self.entities[node].data[1]+0.6}else{25.};if self.walk(id,x,y,1.4) {self.entities[id].data[5]=3.;self.entities[id].timer+=1;if self.entities[id].timer>=if route==0 {120}else{48} {self.entities[id].timer=0;if route==0 {self.entities[id].data[10]+=1.;if self.entities[id].data[10]>=4. {self.entities[id].route=1;}}else{self.alloy=(self.alloy+self.entities[id].data[10] as u32).min(300);self.entities[id].data[10]=0.;self.entities[id].route=0;}}}}
    } else if kind==21 {let route=self.entities[id].route;let (x,y)=if route==0 {(9.,24.)}else if route==1 {(11.,20.)}else if route==2 {(self.entities[site].data[0]+2.,self.entities[site].data[1]+2.)}else{(13.,18.)};if self.walk(id,x,y,1.) {self.entities[id].timer+=1;self.entities[id].data[5]=7.;if self.entities[id].timer>=48 {self.entities[id].timer=0;self.entities[id].route=(route+1)%4;self.entities[id].data[10]=if route==0 {16.}else{0.};}}}
    else if kind==24 {let points=[(21.5,22.),(16.,23.),(13.,17.),(19.,14.)];let r=self.entities[id].route;if self.walk(id,points[r].0,points[r].1,2.) {self.entities[id].route=(r+1)%4;}self.entities[id].data[2]=3.5+0.08*((t+id as u32*13) as f32/23.).sin();}
-   else {let r=self.entities[id].route;let x=22.5+(id%3) as f32*0.8+if r==0 {0.}else{1.5};let y=11.+(id%2) as f32*2.+if r==0 {0.}else{1.5};if self.walk(id,x,y,1.6) {self.entities[id].route=1-r;}}
+   else {if self.entities[id].data[5]==2. {self.entities[id].data[5]=0.;}else{let r=self.entities[id].route;let x=22.5+(id%3) as f32*0.8+if r==0 {0.}else{1.5};let y=11.+(id%2) as f32*2.+if r==0 {0.}else{1.5};if self.walk(id,x,y,1.6) {self.entities[id].route=1-r;}}}
   }
   if t>=2160 {let wave=(t-2160)/1800;let age=(t-2160)%1800;let n=if wave%4==0 {4}else if wave%4==3 {8}else{6};for j in 0..n {if age==j*72 {self.add(40+j as usize,30,30.5,2.+j as f32*0.35,1.);}}if wave%4>=2 && age==480 {self.add(50,31,29.,5.,1.);}if wave%4==3 && age==570 {self.add(51,31,30.,3.,1.);}
-   for id in 40..52 {if !self.entities[id].active {continue;}let gait_period=if id>=50 {48}else{24};self.entities[id].data[6]=((t+id as u32*17)%gait_period) as f32/gait_period as f32;if age>=1740 {self.entities[id].active=false;continue;}let r=self.entities[id].route;let (x,y)=if age>=1440 {(31.,2.)}else if r==0 {(29.,5.)}else if r==1 {(27.,8.)}else{(26.5+(id%3) as f32*0.55,10.+(id%4) as f32)};if self.walk(id,x,y,if id>=50 {0.9}else{1.8}) {self.entities[id].route=(r+1).min(2);}if age>=1440 {self.entities[id].data[5]=6.;}}
+   // Separate approach lanes keep successive arrivals exposed on the causeway,
+   // outside the whole garrison's overlapping ranges until the final advance.
+   for id in 40..52 {if !self.entities[id].active {continue;}let gait_period=if id>=50 {48}else{24};self.entities[id].data[6]=((t+id as u32*17)%gait_period) as f32/gait_period as f32;if age>=1740 {self.entities[id].active=false;continue;}let r=self.entities[id].route;let lane=(id%3) as f32;let (x,y)=if age>=1440 {(31.,2.)}else if r==0 {(29.+lane*0.7,5.+lane*0.7)}else if r==1 {(30.2+lane*0.65,9.5+(id%4) as f32*0.85)}else{(28.7+lane*0.65,11.+(id%4) as f32*0.85)};if self.walk(id,x,y,if id>=50 {0.9}else{1.8}) {self.entities[id].route=(r+1).min(2);}if age>=1440 {self.entities[id].data[5]=6.;}}
   }
   for id in 0..52 {if !self.entities[id].active {continue;}let k=self.entities[id].data[4] as u32;if !(k==16||k==22||k==23||k==30||k==31)||self.entities[id].data[10]<1.||self.entities[id].data[5]==6. {continue;}
    let enemy=self.entities[id].data[9]==1.;let range=if k==16 {8.}else if k==23||k==31 {7.}else{5.};let mut nearest=CAP;let mut best=range*range;
    for j in 0..52 {let e=self.entities[j];let jk=e.data[4] as u32;if !e.active||e.data[9]==self.entities[id].data[9]||!(jk==16||jk==22||jk==23||jk==30||jk==31) {continue;}let d=(e.data[0]-self.entities[id].data[0]).powi(2)+(e.data[1]-self.entities[id].data[1]).powi(2);if d<best {best=d;nearest=j;}}
-   if nearest<CAP {self.entities[id].data[5]=2.;let period=if k==16 {108}else if k==31 {144}else if k==23 {96}else if enemy {48}else{60};self.entities[id].data[6]=((t+id as u32*7)%period) as f32/period as f32;self.entities[id].data[3]=(self.entities[nearest].data[1]-self.entities[id].data[1]).atan2(self.entities[nearest].data[0]-self.entities[id].data[0]);if (t+id as u32*7)%period==0 {if let Some(p)=(60..108).find(|&p|!self.entities[p].active) {let e=self.entities[id];self.add(p,50,e.data[0],e.data[1],e.data[9]);let muzzle=if k==16 {3.2}else if k==31 {1.9}else if k==23 {0.97}else if k==22 {0.82}else{0.57};
+   if nearest<CAP {self.entities[id].data[5]=2.;let period=if k==16 {108}else if k==31 {144}else if k==23 {96}else if enemy {48}else{60};let offset=if k==16||id%4==0 {0}else{id as u32*7};self.entities[id].data[6]=((t+offset)%period) as f32/period as f32;self.entities[id].data[3]=(self.entities[nearest].data[1]-self.entities[id].data[1]).atan2(self.entities[nearest].data[0]-self.entities[id].data[0]);if (t+offset)%period==0 && (k!=16||self.charge>0) {if let Some(p)=(60..108).find(|&p|!self.entities[p].active) {if k==16 {self.charge-=1;}let e=self.entities[id];self.add(p,50,e.data[0],e.data[1],e.data[9]);let muzzle=if k==16 {3.2}else if k==31 {1.9}else if k==23 {0.97}else if k==22 {0.82}else{0.57};
     let reach=if k==23 {1.2}else{0.85};
     let px=e.data[0]+e.data[3].cos()*reach;let py=e.data[1]+e.data[3].sin()*reach;
     let victim=self.entities[nearest];let shot=&mut self.entities[p];
@@ -75,7 +84,9 @@ impl Sim {
     if self.entities[target].active {
      let victim=self.entities[target];let miss=(victim.data[0]-hit.data[0]).powi(2)+(victim.data[1]-hit.data[1]).powi(2);
      if k!=31||miss<1.44 {
-      self.entities[target].data[7]-=if shot.data[9]==1. {0.015}else{0.15};
+      let hp=match victim.data[4] as u32 {16=>900.,22=>180.,23=>110.,30=>80.,31=>240.,_=>600.};
+      let damage=match k {16=>30.,22=>12.,23=>25.,30=>4.,31=>14.,_=>2.};
+      self.entities[target].data[7]-=damage/hp;
       if self.entities[target].data[7]<=0. {
        if target>=40 {
         self.entities[target].active=false;if self.selected==target {self.selected=CAP;}
@@ -92,7 +103,7 @@ impl Sim {
   self.pack();
  }
 }
-#[no_mangle] pub extern "C" fn sim_init(seed:u32) {SIM.with(|s| {let mut s=s.borrow_mut();s.entities.fill(Entity::EMPTY);s.tick=0;s.accumulator=0.;s.rng=seed.max(1);s.selected=CAP;s.alloy=160;s.charge=120;
+#[no_mangle] pub extern "C" fn sim_init(seed:u32) {SIM.with(|s| {let mut s=s.borrow_mut();s.entities.fill(Entity::EMPTY);s.tick=0;s.accumulator=0.;s.rng=seed.max(1);s.selected=7;s.alloy=160;s.charge=120;
 for y in 0..32 {for x in 0..32 {s.terrain[y*32+x]=height(x as f32+0.5,y as f32+0.5);}}
 for (id,(kind,x,y)) in [(10,16.,16.),(11,7.,23.),(12,10.,12.),(16,24.,8.),(13,16.,11.),(14,5.,18.),(15,17.,21.),(16,26.,12.)].iter().enumerate() {s.add(id,*kind,*x,*y,0.);if id>=4 {s.entities[id].data[10]=0.;s.entities[id].data[5]=5.;}}
 for id in 8..27 {let kind=if id<18 {20}else if id<20 {21}else if id<24 {22}else if id<26 {23}else{24};s.add(id,kind,9.+(id%5) as f32,24.+(id%2) as f32,0.);if kind==20 {s.entities[id].data[10]=0.;}else if kind==22||kind==23 {s.add(id,kind,22.5+(id%3) as f32*0.8,11.+(id%2) as f32*2.,0.);}else if kind==24 {s.add(id,kind,21.5,22.,0.);s.entities[id].data[2]=3.5;}}

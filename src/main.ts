@@ -10,7 +10,7 @@ interface SimExports extends WebAssembly.Exports {
 interface App {
  ready:boolean;error:string|null;
  getState():{yawSteps:number;zoom:number;selected:number|null;entityCount:number;fps:number|null;frameStats:{drawCalls:number;triangles:number}|null};
- rotate(dir:1|-1):void;zoomBy(delta:1|-1):void;selectAt(x:number,y:number):void;
+ rotate(dir:1|-1):void;zoomBy(delta:1|-1):void;selectAt(x:number,y:number):void;fastForward(seconds:number):void;
 }
 declare global {interface Window {__APP:App}}
 let yawSteps=0,zoomIndex=1,sim:SimExports|undefined,entities=new Float32Array(0),entityCount=0,selected:number|null=null,fps:number|null=null;
@@ -25,7 +25,13 @@ function selectAt(x:number,y:number) {
  selected=renderer.pick((x-rect.left)*480/rect.width,(y-rect.top)*270/rect.height,yawSteps,zooms[zoomIndex]);
  sim.sim_select(selected??-1);refreshEntities();updateSelection();
 }
-window.__APP={ready:false,error:null,getState:()=>({yawSteps,zoom:zooms[zoomIndex],selected,entityCount,fps,frameStats:window.__APP.ready?renderer.stats:null}),rotate,zoomBy,selectAt};
+function fastForward(seconds:number) {
+ if(!sim||!Number.isFinite(seconds)||seconds<=0)return;
+ const steps=Math.round(seconds*60);
+ for(let i=0;i<steps;i++){sim.sim_step(1000/60);tick++;}
+ accumulator=0;previous=0;refreshEntities();updateSelection();
+}
+window.__APP={ready:false,error:null,getState:()=>({yawSteps,zoom:zooms[zoomIndex],selected,entityCount,fps,frameStats:window.__APP.ready?renderer.stats:null}),rotate,zoomBy,selectAt,fastForward};
 const canvas=document.querySelector<HTMLCanvasElement>('#world')!;
 const viewport=document.querySelector<HTMLElement>('#viewport')!;
 const selection=document.querySelector<HTMLOutputElement>('#selection')!;
