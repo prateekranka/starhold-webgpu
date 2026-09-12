@@ -4,6 +4,22 @@ You are a coding agent on Starhold. Use GPT-6 Astra Medium in standard mode.
 Implement one final high-impact art pass. Do not run the game, capture screenshots,
 or judge the result. The orchestrator owns validation. Stop after your commit.
 
+## Inherited state (read this)
+
+A mobile pass landed after pass 14 (commit `5007a1d`, spec `docs/MOBILE_SPEC.md`).
+It changed layout and input only: `index.html`, `src/style.css`, `src/main.ts`, and
+two small additions in `src/renderer.ts` — a public field `hudButtons` and the
+exported `buttonGlyphPixels()`. The rendered world art is still exactly the pass-14
+frame in `evidence-p14/shot-main.png`.
+
+Rules that follow from that:
+
+- Keep `hudButtons` guarding the in-canvas button cluster in `hud()`. Touch layout
+  hides that cluster; desktop shows it. Do not remove or rename the field.
+- Keep `buttonGlyphPixels()` and the `buttonGlyph()` rewrite that uses it.
+- Do not change layout, CSS, input, camera or HUD coordinates.
+- Your art edits add to the same file; keep the diff inside the world-art methods.
+
 ## Read first
 
 1. `docs/DIRECTIVE.md`

@@ -53,7 +53,7 @@ def main() -> int:
     body = json.dumps({
         "model": MODEL,
         "messages": [{"role": "user", "content": content}],
-        "max_tokens": 4000,
+        "max_tokens": int(os.environ.get("VISION_MAX_TOKENS", "8000")),
     }).encode()
 
     req = urllib.request.Request(API, data=body, method="POST")
