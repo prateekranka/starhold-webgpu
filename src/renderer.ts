@@ -9,7 +9,7 @@ struct Camera { rotation:vec2f, magnification:f32, padding:f32 }
 struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @location(1) unit:f32 }
 @vertex fn vs(@location(0) vertex:vec3f,@location(1) shade:f32,@location(2) origin:vec3f,@location(3) size:vec3f,@location(4) color:f32,@location(5) screen:f32)->Out {
  var o:Out;
- let pigment=color%32.;o.unit=select(0.,1.,color>=32.);
+ let pigment=color%32.;o.unit=floor(color/32.);
  var v=vertex;
  if screen < -0.5 {v=vec3f(vertex.xy*select(1.,select(.55,.08,screen < -1.5),vertex.z>.5),vertex.z);}
  let p=origin+v*size;
@@ -36,11 +36,14 @@ const postWGSL=paletteWGSL+`
 }
 @fragment fn fs(@builtin(position) p:vec4f)->@location(0) vec4f {
  let pixel=vec2i(p.xy);let center=textureLoad(silhouette,pixel,0);
- // One internal-pixel ink contour, depth aware so roofs still occlude units.
- if center.r<0.5 {for(var axis=0;axis<4;axis++) {
+ // Per-entity contours also separate overlapping combatants. Mask 1 belongs
+ // to projectiles/rings: preserve their color even beside an enlarged hull.
+ // Palette ink #10121C is the locked-palette substitute for brief #151925.
+ if center.r!=1. {for(var axis=0;axis<4;axis++) {
   let offsets=array<vec2i,4>(vec2i(-1,0),vec2i(1,0),vec2i(0,-1),vec2i(0,1));
   let neighbor=textureLoad(silhouette,clamp(pixel+offsets[axis],vec2i(0),vec2i(479,269)),0);
-  if neighbor.r>0.5 && neighbor.g<=center.g+0.002 {return vec4f(palette[0],1.);}
+  let tolerance=select(0.,0.002,center.r==0.);
+  if neighbor.r>0.5 && neighbor.r!=center.r && neighbor.g<center.g+tolerance {return vec4f(palette[0],1.);}
  }}
  let c=textureLoad(scene,pixel,0).rgb;var best=palette[0];var distance=100.;
  for(var i=0u;i<32u;i++){let delta=c-palette[i];let d=dot(delta,delta);if d<distance {distance=d;best=palette[i];}}
@@ -244,58 +247,107 @@ export class Renderer {
   this.unitParts(e,o,id);
   // Broader readable silhouettes, rotated as a whole with the simulated facing.
   // Component centers stay in world space so selection uses submitted geometry.
-  const k=e[o+4],scale=k===24?1.12:k===31?1.12:k===21?1.15:1.22;
+  const k=e[o+4],scale=k===24?1.12:k===20?1:1.22;
   const c=Math.cos(e[o+3]),sn=Math.sin(e[o+3]);
   for(let i=start;i<this.count;i++){
    const q=i*8,dx=(this.data[q]-e[o])*scale,dy=(this.data[q+1]-e[o+1])*scale;
    this.data[q]=e[o]+dx*c-dy*sn;this.data[q+1]=e[o+1]+dx*sn+dy*c;
    this.data[q+3]*=scale;this.data[q+4]*=scale;
-   if(this.owners[i]===id)this.data[q+6]+=32;
+   if(this.owners[i]===id)this.data[q+6]+=32*(id+2);
   }
  }
  private unitParts(e:Float32Array,o:number,id:number) {
   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],phase=e[o+6],state=e[o+5],moving=state===1||state===6;
-  const gait=moving?(phase<.5?-.16:.16):0,enemy=e[o+9]===1,dx=1,dy=0;
-  this.box(x,y,this.ground(x,y)+.045,k===24?1.6:k===31?1.4:.65,k===24?.8:.5,.025,2);
+  const gait=moving?(phase<.5?-.16:.16):0;
+  this.box(x,y,this.ground(x,y)+.045,k===24?1.6:k===31?1.8:k===20?.65:1.1,k===24?.8:k===31?1.3:k===22?1.5:.5,.025,2);
   if(k===24){this.box(x,y,z,1.8,.8,.25,11,id);this.box(x,y,z+.25,1.25,.6,.25,12,id);for(let a=-1;a<=1;a+=2){this.box(x+a*.85,y,z,.25,1.25,.3,8,id);this.box(x+a*.75,y-.55,z+.1,.22,.4,.2,7,id);this.box(x+a*.6,y-.5,z-.05,.16,.25,.1,phase<.5?17:18,id);}this.box(x,y+.4,z+.15,1.4,.18,.15,8,id);this.box(x-.4,y,z+.5,.35,.4,.15,3,id);if(e[o+10]>0)this.crate(x+.2,y,z+.5,.45,id);if(state===7){this.box(x,y,z-1.,.04,.04,1.,21,id);this.crate(x,y,z-1.3,.35,id);}return;}
-  if(k===21){for(let a=-1;a<=1;a+=2)for(let b=-1;b<=1;b++){this.box(x+a*.58,y+b*.4+gait*a,z,.15,.2,.4,4,id);this.box(x+a*.43,y+b*.4,z+.35,.4,.17,.16,21,id);}this.box(x,y,z+.45,1.15,1.2,.35,12,id);this.box(x,y+.55,z+.5,.65,.18,.25,8,id);for(let j=0;j<2;j++)if(e[o+10]>j*8)this.crate(x+(j-.5)*.5,y,z+.8,.45,id);this.box(x-.3,y+.4,z+.8,.07,.07,.35,22,id);return;}
-  if(k===31){for(let a=-1;a<=1;a+=2){this.box(x+a*.65,y+.15+gait*a,z,.28,.5,.2,24,id);this.box(x+a*.65,y+.15+gait*a,z+.2,.18,.2,.9,25,id);this.box(x+a*.65,y-.2,z+1.,.2,.65,.18,24,id);this.box(x+a*.52,y-.4,z+1.1,.2,.2,.75,25,id);}this.box(x,y,z+1.5,1.5,1.3,.75,24,id,-1);this.box(x-.45,y,z+1.7,.22,1.4,.65,25,id);this.box(x,y+.66,z+1.6,.65,.09,.35,26,id);for(let j=0;j<4;j++)this.box(x+dx*j*.22,y+dy*j*.22,z+1.9,.32,.3,.25,j===3?26:23,id);if(state===2&&phase<.12)this.box(x+dx*.85,y+dy*.85,z+1.9,.35,.35,.25,27);return;}
-  const h=k===23?1.45:k===22?1.35:k===30?1.2:1.13;
-  const lean=enemy?.18:0,stance=state===2?.24:.15;
-  this.box(x-stance,y+gait-.12,z,.2,.26,.33,enemy?23:10,id);this.box(x+stance,y-gait+.12,z,.2,.26,.33,enemy?23:10,id);
-  if(k===23)this.box(x-.15,y-.17-gait*.25,z+.18,.72,.23,.99,12,id,-1);
-  this.box(x+lean*.5,y,z+.33,.57,.5,h-.56,enemy?25:13,id);
-  // A sand shoulder and swept wine tail give the raider a forward profile;
-  // friendly breastplates retain a compact ivory edge over teal armor.
-  this.box(x+lean,y+.24,z+h-.5,.32,.13,.2,enemy?27:8,id);
-  if(enemy)this.box(x-.32,y,z+.32,.5,.28,.36,24,id,-2);
-  // Hands flank the torso; the forward arm lifts to the weapon or work tool.
-  const action=state===2||state===3||state===8;
-  this.box(x+.28,y+.23,z+(action?.58:.38)+gait*.3,.26,.19,.24,enemy?24:12,id);
-  this.box(x-.12,y-.28,z+.4-gait*.3,.23,.19,.25,enemy?24:12,id);
-  this.box(x+lean,y,z+h-.27,.49,.46,.09,enemy?23:10,id);
-  this.box(x+lean,y,z+h-.2,.49,.46,.25,enemy?25:8,id,enemy?-2:0);
-  this.box(x+lean+dx*.23,y+dy*.23,z+h-.15,.19,.15,.12,enemy?27:18,id);
-  if(k===22||k===23){this.box(x-.3,y,z+h-.52,.24,.46,.18,8,id);this.box(x+.3,y,z+h-.52,.24,.46,.18,8,id);}
-  if(k===22){this.box(x-.12,y+.38,z+.3,.58,.16,.74,19,id);this.box(x-.12,y+.4,z+.39,.48,.18,.58,22,id);this.box(x-.37,y+.17,z+.51,.2,.2,.3,22,id);}
-  if(k===20){this.box(x,y-.27,z+.38,.36,.22,.4,11,id);if(e[o+10]>0)this.crate(x-.35,y,z+.4,.28+Math.min(4,e[o+10])*.03,id);
-   const strike=(state===3||state===8)&&phase<.22,lift=state===3||state===8?(phase<.45?.28:-.1):0;
-   this.box(x+dx*.32,y+dy*.32,z+.55,.2,.2,.17,7,id);this.box(x+dx*.5,y+dy*.5,z+.55+lift,.11,.12,.42,21,id);this.box(x+dx*.5,y+dy*.5,z+.9+lift,.35,.14,.1,7,id);
-   if(strike){this.box(x+dx*.6,y+dy*.6,z+.5,.15,.15,.15,18);this.box(x+dx*.7+.1,y+dy*.7,z+.68,.1,.1,.1,22);}
-  }else{
-   const reach=k===23?1.05:.65,recoil=state===2&&phase<.12?.14:0;
-   for(let j=0;j<3;j++){const q=.25+j*reach/3-recoil;this.box(x+dx*q,y+dy*q,z+h-.48,.18,.18,.15,k===23?8:enemy?23:10,id);}
-   if(k===30){this.box(x,y-.28,z+.5,.3,.4,.35,24,id,-2);this.box(x+dx*.65,y+dy*.65,z+h-.48,.13,.13,.35,23,id);}
-   // A stepped, persistent muzzle flare reads as a burst at internal resolution.
-   // Cooldown is set only by an actual simulated launch, including pool limits.
-   if(state===2&&e[o+11]>(enemy?.72:.8)){
-    const q=reach+.15,hot=e[o+11]>.91;
-    this.box(x+dx*q,y+dy*q,z+h-.46,.32,.28,.24,enemy?27:k===23?18:22);
-    this.box(x+dx*(q+.22),y+dy*(q+.22),z+h-.42,.28,.17,.13,hot?9:enemy?26:18);
-    if(hot)this.box(x+dx*q,y+dy*q,z+h-.56,.13,.18,.46,enemy?27:9);
+  // Brief numeric roles: 21 tall lancer, 22 wing/disc, 23 rifle knight.
+  // Keep the simulation's existing kind names, cargo and action fields intact.
+  const attacking=state===2,recoil=attacking&&phase<.18?.23:0;
+  if(k===21||k===23){
+   const brace=attacking?.34:.23;
+   for(let side=-1;side<=1;side+=2){
+    this.box(x+gait*side,y+side*brace,z,.28,.24,.42,10,id);
+    this.box(x-.16,y+side*brace,z,.48,.25,.16,11,id);
    }
+   // Wide planted cloak hem narrows to a high ivory crest.
+   this.box(x-.12-recoil,y,z+.28,.72,.84,1.03,12,id,-2);
+   this.box(x-recoil,y,z+.67,.48,.48,.76,13,id);
+   this.box(x-recoil,y,z+1.37,.36,.38,.38,8,id,-2);
+   this.box(x+.19-recoil,y,z+1.42,.16,.3,.14,18,id);
+   this.box(x-recoil,y+.3,z+1.02,.46,.27,.26,8,id);
+   // Side-mounted barrel has a continuous large fill and a long tip.
+   this.box(x+.38-recoil,y+.32,z+.96,.92,.2,.2,8,id);
+   this.box(x+.95-recoil,y+.32,z+.99,.45,.16,.14,22,id);
+   if(k===21&&e[o+10]>0)this.crate(x-.36,y-.24,z+.55,.38,id);
+   if(attacking&&e[o+11]>.8)this.box(x+1.23-recoil,y+.32,z+.98,.35,.26,.26,k===23?18:22);
+   return;
   }
+  if(k===22){
+   // Low teal hub, ivory swept wings, split landing feet: wider than tall.
+   const spread=attacking?.16:0;
+   for(let side=-1;side<=1;side+=2){
+    this.box(x-.12+gait*side,y+side*.4,z,.35,.25,.24,10,id);
+    this.box(x-.15-recoil,y+side*(.49+spread),z+.42,.63,.68,.22,8,id,-1);
+    this.box(x-.35-recoil,y+side*(.85+spread),z+.44,.4,.3,.16,7,id,-2);
+   }
+   this.box(x-recoil,y,z+.28,.75,.76,.4,12,id,-1);
+   this.box(x-recoil,y,z+.67,.43,.46,.2,13,id,-1);
+   this.box(x+.33-recoil,y,z+.57,.2,.32,.18,18,id);
+   this.box(x+.65-recoil,y,z+.78,.65,.22,.2,8,id);
+   if(attacking&&e[o+11]>.8)this.box(x+.98-recoil,y,z+.82,.34,.3,.25,22);
+   return;
+  }
+  if(k===30){
+   // Four feet, two separated rear hocks, wine wedge and long sand muzzle.
+   // The body stays low; the raised red shoulder makes a forward-leaning arch.
+   const lunge=attacking?(phase<.18?-.18:.12):0;
+   for(let side=-1;side<=1;side+=2){
+    this.box(x-.52+gait*side,y+side*.38,z,.29,.23,.23,23,id);
+    this.box(x-.56+gait*side,y+side*.38,z+.19,.19,.22,.43,24,id);
+    this.box(x-.38,y+side*.36,z+.51,.42,.23,.23,25,id);
+    this.box(x+.35+lunge-gait*side,y+side*.33,z,.23,.22,.51,23,id);
+   }
+   this.box(x-.12+lunge,y,z+.48,.98,.67,.48,24,id,-1);
+   this.box(x+.19+lunge,y,z+.72,.65,.65,.55,25,id,-2);
+   this.box(x+.48+lunge,y,z+.66,.55,.4,.29,24,id);
+   this.box(x+.75+lunge,y,z+.72,.44,.29,.22,27,id);
+   this.box(x+.94+lunge,y,z+.69,.35,.18,.16,23,id);
+   this.box(x-.64,y,z+.66,.45,.23,.2,25,id,-2);
+   if(attacking&&e[o+11]>.72)this.box(x+1.1+lunge,y,z+.72,.32,.28,.24,27);
+   return;
+  }
+  if(k===31){
+   // Heavy low chassis: broad armored rails and a stepped siege gun.
+   const brace=attacking?.12:0;
+   for(let side=-1;side<=1;side+=2){
+    this.box(x,y+side*(.62+brace),z,1.54,.36,.32,23,id);
+    this.box(x-.1,y+side*(.6+brace),z+.3,1.5,.34,.38,25,id,-1);
+   }
+   this.box(x-.14-recoil,y,z+.46,1.65,1.25,.59,24,id,-1);
+   this.box(x-.43-recoil,y,z+.94,.75,.97,.2,25,id,-1);
+   this.box(x+.41-recoil,y,z+.67,.7,.55,.34,27,id);
+   this.box(x+.84-recoil,y,z+.79,.78,.28,.25,23,id);
+   this.box(x+.22-recoil,y,z+.98,.47,.5,attacking?.8:.55,25,id,-2);
+   if(attacking&&e[o+11]>.88)this.box(x+1.27-recoil,y,z+.8,.4,.35,.3,27);
+   return;
+  }
+  // Riveter: compact round hood and backpack, with a warm face/tool cluster.
+  this.box(x-.15,y+gait-.12,z,.2,.24,.25,10,id);
+  this.box(x+.15,y-gait+.12,z,.2,.24,.25,10,id);
+  this.box(x,y,z+.24,.5,.46,.43,13,id,-1);
+  this.box(x,y-.27,z+.3,.36,.22,.4,11,id);
+  this.box(x,y,z+.65,.49,.46,.28,8,id,-1);
+  this.box(x+.23,y,z+.69,.19,.2,.14,27,id);
+  if(e[o+10]>0)this.crate(x-.35,y,z+.3,.28+Math.min(4,e[o+10])*.03,id);
+  const working=state===3||state===8,strike=working&&phase<.22;
+  const lift=working?(phase<.45?.28:-.1):0;
+  this.box(x+.32,y,z+.45,.2,.2,.17,7,id);
+  this.box(x+.5,y,z+.45+lift,.14,.14,.36,21,id);
+  this.box(x+.5,y,z+.75+lift,.35,.16,.12,22,id);
+  if(strike){this.box(x+.6,y,z+.4,.15,.15,.15,18);this.box(x+.8,y,z+.58,.1,.1,.1,22);}
  }
+
  private effects(e:Float32Array,o:number) {
   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],sub=e[o+10],age=e[o+11],dx=Math.cos(e[o+3]),dy=Math.sin(e[o+3]);
   if(k===50){const color=sub===30||sub===31?26:sub===22?22:17;
@@ -347,7 +399,7 @@ export class Renderer {
    else if(k===41){this.box(e[o],e[o+1],e[o+2],.38,.36,.23,40);this.box(e[o],e[o+1],e[o+2]-.16,.18,.18,.14,18);}
    else if(k>=50)this.effects(e,o);
   }
-  if(this.selected!==null){const o=this.selected*12,r=e[o+4]<20?(e[o+4]===10?2.5:e[o+4]===16?1.5:1.8):.65;for(let j=0;j<24;j++){if(j%3===Math.floor(this.time/.6)%2)continue;const a=j*Math.PI/12;this.box(e[o]+Math.cos(a)*r,e[o+1]+Math.sin(a)*r,this.ground(e[o],e[o+1])+.08,.2,.2,.035,22);}}
+  if(this.selected!==null){const o=this.selected*12,r=e[o+4]<20?(e[o+4]===10?2.5:e[o+4]===16?1.5:1.8):e[o+4]===20?.65:e[o+4]===31?1.65:1.35;for(let j=0;j<24;j++){if(j%3===Math.floor(this.time/.6)%2)continue;const a=j*Math.PI/12;this.box(e[o]+Math.cos(a)*r,e[o+1]+Math.sin(a)*r,this.ground(e[o],e[o+1])+.08,.2,.2,.035,54);}}
   this.ambient(this.time);
   this.worldCount=this.count;this.hud(e,alloy,charge);
   this.camera[0]=Math.round(Math.cos(yaw*Math.PI/2));this.camera[1]=Math.round(Math.sin(yaw*Math.PI/2));this.camera[2]=1/zoom;
