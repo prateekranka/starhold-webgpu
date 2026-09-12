@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Astra runner for Starhold. Codex ChatGPT-subscription, Pro account.
+# Astra runner for Starhold. Codex ChatGPT-subscription, Plus account.
 # Usage: tasks/astra-run.sh <plan|coder> <brief-file> <logfile> [extra codex args...]
-#   plan  -> gpt-6-astra, reasoning high, fast mode   (world planning)
-#   coder -> gpt-6-astra, reasoning medium, fast mode (implementation)
+#   plan  -> gpt-6-astra, reasoning high, standard mode   (world planning)
+#   coder -> gpt-6-astra, reasoning medium, standard mode (implementation)
 # Fresh context every run by construction (codex exec starts a new session).
 set -euo pipefail
 
@@ -17,8 +17,8 @@ CODEX_HOME_DIR="${STARHOLD_CODEX_HOME:-$HOME/.codex-linux}"
 CODEX_BIN="${CODEX_BIN:-$HOME/.local/codex-154/node_modules/.bin/codex}"
 
 case "$ROLE" in
-  plan)  MODEL="gpt-6-astra"; EFFORT="high";   FAST="true" ;;
-  coder) MODEL="gpt-6-astra"; EFFORT="medium"; FAST="true" ;;
+  plan)  MODEL="gpt-6-astra"; EFFORT="high";   FAST="false" ;;
+  coder) MODEL="gpt-6-astra"; EFFORT="medium"; FAST="false" ;;
   *) echo "role must be plan|coder" >&2; exit 2 ;;
 esac
 
