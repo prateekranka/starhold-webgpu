@@ -1,0 +1,7 @@
+node_modules/
+dist/
+sim/target/
+.dream-loop/
+evidence/
+*.log
+.tmp/
