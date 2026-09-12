@@ -107,9 +107,10 @@ bright raster pixel on each side. No halo, alpha, new emitter, geometry, terrain
 shadow, camera, simulation, control, or palette change is permitted.
 
 The Plus primary window is 99% used and resets in about 143 minutes as of
-2026-09-13 03:02 IST. Do not launch another coding worker in this window. One
-fresh continuation is scheduled after reset. It must use Plus only and stop on
-any quota error.
+2026-09-13 03:02 IST. Do not launch another coding worker in this window. Job
+`9682bd950b42` is scheduled once at 2026-09-13 05:37:14 IST, nine minutes after
+the reported reset, using `deepseek-v4-flash` at max reasoning. It must use Plus
+only and stop on any quota error.
 
 The live Tailnet route no longer reads mutable repo `dist/`. It proxies port 5200,
 which serves the frozen pass-15 artifact at
