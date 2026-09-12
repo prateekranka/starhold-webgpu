@@ -67,7 +67,10 @@ window.__APP = {
   },
   rotate(dir: 1 | -1): void,      // what the on-screen rotate buttons call
   zoomBy(delta: 1 | -1): void,    // what the +/- buttons call
-  selectAt(x: number, y: number): void  // screen-space click, same as canvas click
+  selectAt(x: number, y: number): void,  // screen-space click, same as canvas click
+  fastForward(seconds: number): void     // advance the sim N seconds immediately
+                                         // (loop sim_step, no rendering); used by the
+                                         // capture harness to reach t=108s cheaply
 }
 ```
 

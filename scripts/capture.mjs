@@ -67,6 +67,8 @@ const HEIGHT = parseInt(arg('height', '540'), 10);
 const FPS_SECONDS = parseFloat(arg('fps-seconds', '4'));
 const MIN_FPS = parseFloat(arg('min-fps', '60'));
 const SEED = arg('seed', '1');
+// Sim seconds to advance before capturing (the target frame is t=108s).
+const SETTLE = parseFloat(arg('settle', '108'));
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -139,6 +141,25 @@ async function state(page) {
   return page.evaluate(() => window.__APP.getState());
 }
 
+/** Advance the world to a target simulation time before judging it.
+ *  Prefers __APP.fastForward(seconds); falls back to real-time waiting. */
+async function settle(page, seconds) {
+  if (seconds <= 0) return;
+  const viaApi = await page.evaluate((secs) => {
+    if (typeof window.__APP?.fastForward === 'function') {
+      window.__APP.fastForward(secs);
+      return true;
+    }
+    return false;
+  }, seconds).catch(() => false);
+  if (viaApi) {
+    await page.waitForTimeout(400);
+    return;
+  }
+  // fallback: wall-clock wait (rAF drives the sim at 60 Hz)
+  await page.waitForTimeout(seconds * 1000);
+}
+
 async function sampleFps(page, seconds) {
   return page.evaluate(async (secs) => {
     const frames = [];
@@ -203,6 +224,8 @@ function gate(name, pass, detail) {
     // --- pass 1: boot, fps, controls, selection -------------------------------
     const { page, errors } = await newPage(browser, baseUrl);
     await waitReady(page);
+    // Advance to the canonical moment (t=108s) so the shot shows a built-up world.
+    await settle(page, SETTLE);
     const s0 = await state(page);
     gate('boots-ready', true, `entities=${s0.entityCount}`);
 

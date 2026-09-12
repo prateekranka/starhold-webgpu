@@ -12,7 +12,8 @@ LOG="${3:?log file}"
 shift 3 || true
 
 ROOT="$HOME/Cowork/starhold"
-CODEX_HOME_DIR="$HOME/.codex-astra"
+# Account selection: default = Plus account home (this exercise runs on Plus quota only).
+CODEX_HOME_DIR="${STARHOLD_CODEX_HOME:-$HOME/.codex-linux}"
 CODEX_BIN="${CODEX_BIN:-$HOME/.local/codex-154/node_modules/.bin/codex}"
 
 case "$ROLE" in
