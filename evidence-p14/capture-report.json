@@ -1,0 +1,54 @@
+{
+  "gates": [
+    {
+      "name": "boots-ready",
+      "pass": true,
+      "detail": "entities=54"
+    },
+    {
+      "name": "fps>=59-vsync-locked",
+      "pass": true,
+      "detail": "fps=60.3 p95=17.1ms max=17.9ms"
+    },
+    {
+      "name": "rotate-button",
+      "pass": true,
+      "detail": "0 -> 1"
+    },
+    {
+      "name": "zoom-buttons",
+      "pass": true,
+      "detail": "zoom 1 -> 0.8 -> 1"
+    },
+    {
+      "name": "click-select",
+      "pass": true,
+      "detail": "selected=0"
+    },
+    {
+      "name": "no-console-errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "determinism",
+      "pass": true,
+      "detail": "{\"n\":55,\"alloy\":247,\"charge\":199,\"hash\":\"20b89f84\"} vs {\"n\":55,\"alloy\":247,\"charge\":199,\"hash\":\"20b89f84\"}"
+    }
+  ],
+  "shots": [
+    "shot-main.png",
+    "shot-rotated.png",
+    "shot-selected.png",
+    "shot-later.png"
+  ],
+  "errors": [],
+  "fps": {
+    "fps": 60.25,
+    "frames": 241,
+    "mean_ms": 16.644398341040393,
+    "p50_ms": 16.699999809265137,
+    "p95_ms": 17.09999990463257,
+    "max_ms": 17.90000009536743
+  }
+}

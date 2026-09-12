@@ -3,84 +3,74 @@
 Browser graphics demo: isometric pixel-art space colony, deterministic Rust/WASM
 simulation, and raw WebGPU renderer.
 
-**IN DREAM LOOP — pass 14 (authored terrain texture and restored cliff depth) dispatched.**
+**IN DREAM LOOP — pass 15 (macro depth and lived-in settlement density) ready.**
 
-## Latest verified state — pass 13
+## Latest verified state — pass 14
 
-Implementation commit `522eed7` (`art: pass 13 — layered amethyst terrain regions and
-perimeter detail`).
+Implementation commit `549b55e` (`art: pass 14 — authored basalt texture and restored
+cliff ramp`).
 
-- `npm run build`: **PASS**.
-- Browser/runtime harness: **7/7 gates PASS**.
-- Hardware WebGPU: **60.3 fps**, p95 **17.2 ms**, max **20.8 ms**.
-- Rotate, zoom, click selection: PASS. Console errors: none.
-- Exact deterministic raw-WASM replay still matches:
+- Build: **PASS**.
+- Browser/runtime: **7/7 gates PASS**.
+- Hardware WebGPU: **60.3 fps**, p95 **17.1 ms**, max **17.9 ms**.
+- Rotate, zoom, selection: PASS. Console errors: none.
+- Exact deterministic raw-WASM replay matches:
   `{"n":55,"alloy":247,"charge":199,"hash":"20b89f84"}`.
-- Pixel grid: true 1 px grid (`identical_h_pairs=0.9287`).
-- Palette: 31 permitted colours visible; no expansion.
-- Evidence: `evidence-p13/`.
+- True 1 px grid: PASS (`identical_h_pairs=0.9025`).
+- Palette: 31 permitted colours; no expansion.
+- Texture gate: **PASS** — density `0.2315`; largest `#624779` region `2,210 px`;
+  largest `#3C3057` region `1,131 px`.
+- Cliff ramp: **FAIL, close** — lower/upper `0.882`, slope `-0.125/row`.
+- Evidence: `evidence-p14/`.
 
 ## Current visual gate — FAIL
 
-Pass 13 corrected the material direction: the plateau is now recognizably amethyst,
-roads stay traceable, and perimeter crystals/ruins/haze are present. It did not create
-small-scale terrain richness. Two independent critics agree that the ground remains
-large empty slabs without enough wear, clutter, or contact texture.
+Both independent critics and direct inspection agree: the amethyst material now has
+small-scale breakup, but it repeats evenly over one broad level. The world still lacks
+macro elevation structure, meaningful settlement prop clusters, and facade-scale life.
+It reads as a clean vertical slice, not a lived-in AoE2:DE settlement.
 
-Objective art metrics confirm the critique:
+Pass 15 (`tasks/brief-pass15.md`) is the final high-impact pass for this Plus window:
 
-- horizontal transition density: **0.1681** (pass target: 0.20–0.28);
-- largest connected `#624779` slab: **21,015 px** (target <8,000);
-- largest connected `#3C3057` slab: **8,898 px** (target <6,000);
-- cliff lower/upper: **0.914**, slope `-0.100/row` (**FAIL**; pass 12 had 0.828).
+- render existing terrain height differences as internal retaining faces and ramps;
+- add functional prop clusters around forge, depot, barracks, Bastion and crystal garden;
+- add facade doors/windows/ladders/pipes/banners/trim to existing buildings;
+- darken the outer cliff base enough to restore lower/upper ≤0.85;
+- preserve gameplay, terrain texture metrics, units, roads, camera and performance.
 
-Pass 14 (`tasks/brief-pass14.md`) must break the slabs into deterministic authored
-material clusters and restore the pass-12 cliff ramp. It must not change units,
-buildings, gameplay, camera, HUD, lighting direction or resolution.
+## Structural work verified
 
-## Structural improvements already verified
-
-1. Deterministic fixed-60-Hz Rust/WASM sim; raw WebGPU renderer; HUD and controls.
-2. Building/construction detail, resource routes, raids and projectile combat.
-3. Distinct factions, unit roles, silhouettes, combat formations and effects.
-4. True 960×540 internal render grid (was 480×270 scaled 2×).
+1. Fixed-60-Hz deterministic Rust/WASM sim, raw WebGPU renderer, HUD and controls.
+2. Buildings, staged construction, resource routes, raids, projectiles and selection.
+3. Distinct factions, unit silhouettes, combat formations and effects.
+4. 960×540 true-1-px internal render grid.
 5. Fixed top-left directional light, hard contact/drop shadows.
-6. Four-step downward cliff value ramp (passed in pass 12; regressed in pass 13).
-7. Exact raw-WASM state hash gate.
-8. Uncapped hardware headroom probe: **515.4 fps**, p95 **3.2 ms** at the old grid;
-   the 960×540 build remains vsync-stable at 60.3 fps.
-9. Two independent visual gates: raw DeepSeek target-vs-build and Cursor Auto build-only.
-10. Automated pixel-grid, palette, cliff-ramp, texture-density and connected-slab metrics.
+6. Four-step outer cliff ramp with numeric slope gate.
+7. Authored amethyst material with numeric density and connected-slab gates.
+8. Exact raw-WASM state hash gate.
+9. Uncapped headroom probe: 515.4 fps at old grid; current grid stable at 60.3 fps.
+10. Two independent critics: raw DeepSeek target-vs-build and Cursor Auto build-only.
 
 ## Loop procedure
 
-1. `python3 tasks/quota-check.py` — stop at `allowed=False` / 100%; never switch to Pro.
-2. Launch one fresh coding context:
-   `bash tasks/astra-run.sh coder tasks/brief-passN.md tasks/logs/passN.log`.
-3. Worker: GPT-6 Astra Medium, standard mode, `fast_mode=false`.
-4. Orchestrator: `npm run build`.
-5. Orchestrator: `node scripts/capture.mjs --root dist --out evidence-pN --min-fps 60 --settle 108`.
-6. Metrics:
-   `python3 scripts/measure-detail.py evidence-pN/shot-main.png --top 230 265 --rim 350 465 --x0 180 --x1 430`.
-7. Fresh raw DeepSeek target-vs-build critic and Cursor Auto build-only critic.
-8. Name one biggest gap, iterate, update this file, and commit verified work.
+1. `python3 tasks/quota-check.py`; stop at `allowed=False` / 100%; never use Pro.
+2. Fresh worker: `bash tasks/astra-run.sh coder tasks/brief-passN.md tasks/logs/passN.log`.
+3. Worker = GPT-6 Astra Medium, standard mode, `fast_mode=false`.
+4. Orchestrator builds and runs `scripts/capture.mjs` at t=108 s.
+5. Run `scripts/measure-detail.py` with the canonical bands.
+6. Run fresh raw DeepSeek and Cursor Auto critics.
+7. Iterate on the single biggest gap; update this file and commit evidence.
 
 ## Binding files
 
-- `docs/DIRECTIVE.md` — product contract.
-- `docs/INTERFACE.md` — ABI, `window.__APP`, controls, performance contract.
-- `docs/WORLD_PLAN.md` — exact world plan and 32-color palette.
+- `docs/DIRECTIVE.md`, `docs/INTERFACE.md`, `docs/WORLD_PLAN.md`.
 - `.dream-loop/target.png` — target at tick 6480.
-- `scripts/capture.mjs` — browser/runtime verification.
-- `scripts/measure-detail.py` — pixel grid, palette, ramp, texture and slab metrics.
-- `scripts/headroom-probe.mjs` — uncapped performance probe.
-- `tasks/vision-critic.py` — raw DeepSeek comparative visual critic.
-- `tasks/astra-run.sh` — Plus-only fresh-context runner; fast mode disabled.
+- `scripts/capture.mjs`, `scripts/measure-detail.py`, `scripts/headroom-probe.mjs`.
+- `tasks/vision-critic.py`, `tasks/astra-run.sh`.
 
 ## Quota / environment
 
-- Plus after pass 13: **67% primary used**, allowed; ~237 minutes to reset.
+- Plus after pass 14 validation: **92% primary used**, allowed; ~227 minutes to reset.
 - Astra Codex CLI: `~/.local/codex-154/node_modules/.bin/codex`.
 - Plus home: `~/.codex-linux`.
-- WebGPU capture: Playwright Chromium headless shell, Intel gen-9 Vulkan/ANGLE.
-- Named Cursor Grok is plan-gated; Cursor Auto is available.
+- WebGPU capture: Playwright headless shell, Intel gen-9 Vulkan/ANGLE.
