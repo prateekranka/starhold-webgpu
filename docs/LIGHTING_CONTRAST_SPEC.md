@@ -63,6 +63,20 @@ open-sky light pool over the settled core. Implement it inside the existing
 `basalt()` palette function. It remaps existing violet plate pixels and cannot
 change geometry, authored motif positions, roads, cliffs, or the outer map.
 
+## 2.3 Pass 18 component decision
+
+Pass 18 commit `248a8ae` adds the exact-palette settled-core light pool. Keep it.
+It moved non-void mean from 82.417 to 85.679 and midtone share from 30.815% to
+37.268%. Contrast deviation is 44.820. Runtime, palette, texture, cliff, and
+simulation gates pass. Both the orchestrator and a fresh DeepSeek critic judged
+the light pool coherent and material, not an artificial ellipse.
+
+Lighting L1 remains open by a narrow margin: mean needs 0.321, midtones need
+0.732 percentage points, and endpoint highlights need 0.685 percentage points.
+Do not expand the terrain ellipse. The next isolated piece is one palette step of
+world-fixed bounce on the south-facing cross-light face of normal faction
+geometry. The east face remains the deepest visible shadow.
+
 ## 3. Required visual changes
 
 ### 3.1 World-fixed directional light
@@ -74,7 +88,12 @@ For every solid material family:
 
 - upward faces use the authored base value;
 - faces toward north-west lose at most one family step;
-- cross-light faces lose one or two family steps;
+- cross-light faces lose one or two family steps before local bounce;
+- normal faction geometry (`screen == 0`, authored pigment 4–27) receives one
+  discrete bounce step on world south face ID 2; the same family caps as the key
+  lift apply, and explicit pigments 0–3 stay dark;
+- static map mode `-6`, terrain `-5`, shadows/marks `-3`, shards `-2`, emissives
+  `-4`, HUD, and the world-east face do not receive this bounce;
 - faces toward south-east lose at least two family steps;
 - undersides and deep recesses use the darkest valid family entry or ink;
 - solid geometry never shades into palette index 0, which is the void colour.
