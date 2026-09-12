@@ -104,6 +104,20 @@ The final pass changes only the endpoint-glint size eligibility from the shared
 change the existing `small` variable because broad-face endpoint protection uses
 it.
 
+## 2.6 Pass 21 decision
+
+Pass 21 commit `b2388b9` widens actor-glint eligibility to 0.40 tile. It passes
+all 63 desktop/mobile runtime gates, all objective lighting gates in three
+identical canonical runs, exact palette, four-yaw fixed-light review, terrain,
+cliff, performance, capacity, and simulation checks. The final independent
+target critic still fails it and names weak value separation as the largest gap.
+World identity remains intact.
+
+A fresh focused critic selected one correction: promote only non-actor top faces
+one palette step to existing endpoints. Do not darken walls or expand the terrain
+pool. Apply this only to normal mode 0, `combat < 17`, authored pigments 4–27,
+top face ID 0, and boxes larger than 0.40 tile. Tiny props and actors stay out.
+
 ## 3. Required visual changes
 
 ### 3.1 World-fixed directional light
@@ -157,8 +171,14 @@ settlement instead of competing with it:
 The Charter Keep is the first value landmark. The Heliowell and active Prism
 Bastion are second. Housing and utility buildings are quieter.
 
-- Keep: broad ivory midtone, small highest-ivory edge glints, strong teal roof
-  shadow, clear dark doorway.
+- Keep: broad ivory midtone, highest-ivory top plane, small edge glints, strong
+  teal roof shadow, clear dark doorway.
+- Final building-top rule: only normal mode 0, `combat < 17`, authored pigment
+  4–27, top face ID 0, and maximum dimension greater than 0.40 tile receives one
+  additional step toward endpoint 9, 14, 18, 22, or 27. Side faces keep their
+  existing penultimate caps.
+- Terrain/static-map modes, actors, HUD, effects, and boxes at or below 0.40 tile
+  cannot enter this rule.
 - Heliowell/Bastion: cyan energy is bright but occupies small areas; structure
   mass remains readable when energy is ignored.
 - Hall/Forge/Court/Wharf: one clear lit face and one clear shadow face; function

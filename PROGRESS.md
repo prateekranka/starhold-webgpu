@@ -4,8 +4,8 @@ Browser graphics demo: isometric pixel-art space colony, deterministic Rust/WASM
 simulation, and raw WebGPU renderer.
 
 **Two playable civilizations are defined. Passes 16 and 17 were rejected. Passes
-18–20 are kept. Pass 21 is the final one-line actor-highlight correction. The
-phone URL remains on verified pass 15.**
+18–21 are kept as the candidate base. Pass 22 is the active roof-value correction.
+The phone URL remains on verified pass 15.**
 
 ## Verified state — mobile M1 + pass 15
 
@@ -92,21 +92,21 @@ playable civilization.
   units, complete economy/combat chains, deterministic starts, and distinct
   normal-zoom silhouettes.
 
-## Active next piece — pass 21 widen actor glint eligibility
+## Active next piece — pass 22 building-top endpoint separation
 
 Binding spec: `docs/LIGHTING_CONTRAST_SPEC.md`. Final worker brief:
-`tasks/brief-pass21.md`.
+`tasks/brief-pass22.md`.
 
-Pass 20 (`d2cd6c1`) is a kept visual component. It passes runtime, simulation,
-performance, palette, coverage, mean (87.282), contrast (46.896), midtones
-(38.500%), texture, cliff, and capacity gates. It changes 157 pixels, all
-brighter. The independent crop critic says KEEP, CLEAN, and EXPAND. It misses
-only highlight share: 4.953% versus the 5.0% floor, approximately 90 pixels.
-Evidence is in `evidence-p20/`.
+Pass 21 (`b2388b9`) passes all 63 desktop/mobile runtime gates, every objective
+lighting gate in three exact repeats, four-yaw world-fixed lighting, exact
+simulation, palette, terrain, cliff, performance, and capacity checks. Its final
+independent target critic still fails it and names weak value separation as the
+single largest gap. Evidence is in `evidence-p21/`.
 
-Pass 21 changes only the actor endpoint-glint size condition from the shared
-0.30-tile `small` value to a dedicated 0.40-tile maximum. It cannot modify the
-shared `small` rule or any other shader, art, map, simulation, or control value.
+A fresh focused critic selected building-top endpoint separation over darker
+walls or more terrain light. Pass 22 promotes one step only on non-actor normal
+top faces larger than 0.40 tile. Actors, small props, side faces, terrain, map
+light, geometry, camera, simulation, controls, and palette stay unchanged.
 
 The live Tailnet route no longer reads mutable repo `dist/`. It proxies port 5200,
 which serves the frozen pass-15 artifact at
@@ -128,10 +128,10 @@ stronger unit-scale contrast — not another detail pass.
 
 1. Confirm clean tree and Plus quota: `git status --short`; `python3 tasks/quota-check.py`.
 2. Launch one fresh worker:
-   `bash tasks/astra-run.sh coder tasks/brief-pass21.md tasks/logs/pass21.log`.
+   `bash tasks/astra-run.sh coder tasks/brief-pass22.md tasks/logs/pass22.log`.
 3. Worker uses GPT-6 Astra Medium, standard mode, `fast_mode=false`, and edits only
    `src/renderer.ts`.
-4. Orchestrator runs `npm run build`, then desktop capture into `evidence-p21/`.
+4. Orchestrator runs `npm run build`, then desktop capture into `evidence-p22/`.
 5. Orchestrator requires the complete lighting gate: mean 86–94, SD >=44,
    midtones >=38%, highlights 5.0–8.5%, plus all preservation metrics.
 6. Only after desktop metrics pass, run all mobile profiles, four-yaw visual checks,
