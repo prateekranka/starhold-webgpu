@@ -1,0 +1,19 @@
+Pass 22 objective result: PASS; independent final visual gate: FAIL
+
+Desktop runtime: 8/8 PASS
+FPS: 60.3
+p95: 17.3 ms
+max: 18.9 ms
+Instance saturation: false
+Determinism: {"n":55,"alloy":247,"charge":199,"hash":"20b89f84"} matched
+Console errors: none
+
+Grid: median_run=2 px; identical_h_pairs=0.9092; 1 px physical detail retained
+Colours: 32; outside palette: 0
+Lighting: coverage=42.762%; mean=88.643 PASS; sd=49.654 PASS; >=90=38.544% PASS; >=170=7.192% PASS
+Texture: transition_density=0.2250; #624779_max=1689; #3C3057_max=1070; PASS
+Cliff: top=88.5; upper=75.3; lower=62.6; lower/upper=0.831; slope=-0.176/row; PASS
+
+Delta from pass 21: 8,977 pixels changed (1.73167% of frame). Mean luminance delta on all pixels=+0.47426. Mean delta on changed pixels=+27.387. Every changed pixel became brighter.
+
+Independent visual gap: emissive/glow and shadow contrast. Focused correction: existing cast-shadow pigment 2→1 only.
