@@ -3,9 +3,9 @@
 Browser graphics demo: isometric pixel-art space colony, deterministic Rust/WASM
 simulation, and raw WebGPU renderer.
 
-**Two playable civilizations are defined. Passes 16 and 17 were rejected. Passes
-18–21 are kept as the candidate base. Pass 22 is the active roof-value correction.
-The phone URL remains on verified pass 15.**
+**Two playable civilizations are defined. Passes 18–22 remain the candidate base.
+Pass 23 is the final one-token shadow correction. The phone URL remains on
+verified pass 15.**
 
 ## Verified state — mobile M1 + pass 15
 
@@ -92,21 +92,21 @@ playable civilization.
   units, complete economy/combat chains, deterministic starts, and distinct
   normal-zoom silhouettes.
 
-## Active next piece — pass 22 building-top endpoint separation
+## Active next piece — pass 23 connected cast-shadow depth
 
 Binding spec: `docs/LIGHTING_CONTRAST_SPEC.md`. Final worker brief:
-`tasks/brief-pass22.md`.
+`tasks/brief-pass23.md`.
 
-Pass 21 (`b2388b9`) passes all 63 desktop/mobile runtime gates, every objective
-lighting gate in three exact repeats, four-yaw world-fixed lighting, exact
-simulation, palette, terrain, cliff, performance, and capacity checks. Its final
-independent target critic still fails it and names weak value separation as the
-single largest gap. Evidence is in `evidence-p21/`.
+Pass 22 (`ae945ff`) passes all objective lighting and desktop runtime gates. Its
+DeepSeek and Cursor Auto target critics still fail it and agree that the remaining
+gap is emissive-to-shadow separation and lifted ground occlusion. A focused critic
+selected cast-shadow pigment 2→1 over darker building faces or less bounce.
+Evidence is in `evidence-p22/`.
 
-A fresh focused critic selected building-top endpoint separation over darker
-walls or more terrain light. Pass 22 promotes one step only on non-actor normal
-top faces larger than 0.40 tile. Actors, small props, side faces, terrain, map
-light, geometry, camera, simulation, controls, and palette stay unchanged.
+Pass 23 changes one source token in `shadow()`. The broad connected cast fill
+moves from palette index 2 to 1. The index-0 contact lip, footprint, direction,
+height, bright planes, terrain light, geometry, camera, simulation, controls,
+and palette stay exact.
 
 The live Tailnet route no longer reads mutable repo `dist/`. It proxies port 5200,
 which serves the frozen pass-15 artifact at
@@ -127,11 +127,11 @@ stronger unit-scale contrast — not another detail pass.
 ## Resume checklist
 
 1. Confirm clean tree and Plus quota: `git status --short`; `python3 tasks/quota-check.py`.
-2. Launch one fresh worker:
-   `bash tasks/astra-run.sh coder tasks/brief-pass22.md tasks/logs/pass22.log`.
+2. Launch one fresh worker only if Plus remains allowed:
+   `bash tasks/astra-run.sh coder tasks/brief-pass23.md tasks/logs/pass23.log`.
 3. Worker uses GPT-6 Astra Medium, standard mode, `fast_mode=false`, and edits only
    `src/renderer.ts`.
-4. Orchestrator runs `npm run build`, then desktop capture into `evidence-p22/`.
+4. Orchestrator runs `npm run build`, then desktop capture into `evidence-p23/`.
 5. Orchestrator requires the complete lighting gate: mean 86–94, SD >=44,
    midtones >=38%, highlights 5.0–8.5%, plus all preservation metrics.
 6. Only after desktop metrics pass, run all mobile profiles, four-yaw visual checks,

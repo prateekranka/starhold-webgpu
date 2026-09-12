@@ -118,6 +118,20 @@ one palette step to existing endpoints. Do not darken walls or expand the terrai
 pool. Apply this only to normal mode 0, `combat < 17`, authored pigments 4–27,
 top face ID 0, and boxes larger than 0.40 tile. Tiny props and actors stay out.
 
+## 2.7 Pass 22 decision
+
+Pass 22 commit `ae945ff` promotes non-actor top faces toward their endpoints. It
+passes every objective gate: mean 88.643, deviation 49.654, midtones 38.544%,
+and highlights 7.192%. The final DeepSeek and Cursor Auto critics still fail the
+lighting scope. Both now name shadow/emissive separation rather than brightness.
+The focused critic chose existing cast-shadow pigment 2→1 over darker east
+faces or removal of south bounce.
+
+Keep pass 22 as the candidate base. The next and final change is one source token
+inside `shadow()`: the broad connected cast fill uses palette index 1 instead of
+2. The separate contact lip remains index 0. Do not change shadow geometry,
+height, direction, or any lit surface.
+
 ## 3. Required visual changes
 
 ### 3.1 World-fixed directional light
@@ -214,6 +228,8 @@ Do not resize or move units in this pass.
 Keep shadows hard and palette-bound.
 
 - Cast direction is south-east in world space at every yaw.
+- Existing connected cast fill uses palette index 1; the narrow contact lip stays
+  index 0. Do not alter either footprint.
 - Major buildings receive a short, connected stepped shadow.
 - Units receive a one- or two-pixel contact shadow plus the existing short cast
   direction. Air-unit shadows remain on terrain.
