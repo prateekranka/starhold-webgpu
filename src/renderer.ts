@@ -11,9 +11,9 @@ const resolution=vec2f(${RENDER_WIDTH}.,${RENDER_HEIGHT}.);
 const grid=${GRID}.;
 struct Camera { rotation:vec2f, magnification:f32, padding:f32 }
 @group(0) @binding(0) var<uniform> camera:Camera;
-struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @location(1) unit:f32, @location(2) rim:vec2f }
+struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @location(1) unit:f32, @location(2) rim:vec2f, @location(3) cliff:vec2f }
 @vertex fn vs(@location(0) vertex:vec3f,@location(1) shade:f32,@location(2) origin:vec3f,@location(3) size:vec3f,@location(4) color:f32,@location(5) screen:f32,@location(6) actor:vec4f)->Out {
- var o:Out;
+ var o:Out;o.cliff=vec2f(-1.,0.);
  let pigment=color%32.;o.unit=floor((color%32768.)/32.);
  // 18/19 mark combat composites; 17 identifies the worker/skiff contour.
  let combat=floor(color/32768.);o.rim=vec2f(select(0.,1.,combat>=18.),0.);
@@ -21,9 +21,10 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  if screen < -0.5 && screen > -2.5 {v=vec3f(vertex.xy*select(1.,select(.55,.08,screen < -1.5),vertex.z>.5),vertex.z);}
  var p=origin+v*size;
  // Project an extruded footprint onto its terrain plane, away from the
- // screen-space upper-left key. Rotate the offset back into world space.
+ // screen-space key direction (-sqrt(3)/2,-1/2), with screen Y down.
+ // Rotate the capped 0.4-tile cast offset back into world space.
  if screen == -3. {
-  let offset=vec2f(.5,-.1)*vertex.z*size.z;
+  let offset=vec2f(.4,0.)*vertex.z*min(size.z,1.);
   p=origin+vec3f(vertex.xy*size.xy+vec2f(
    offset.x*camera.rotation.x+offset.y*camera.rotation.y,
    -offset.x*camera.rotation.y+offset.y*camera.rotation.x),0.);
@@ -34,20 +35,13 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  let d=p.xy-vec2f(16.);
  let r=vec2f(d.x*camera.rotation.x-d.y*camera.rotation.y,d.x*camera.rotation.y+d.y*camera.rotation.x);
  var projected=vec2f(6.*(r.x-r.y),3.4641016*(r.x+r.y)-6.9282032*p.z);
- if combat>=18. {
-  let a=actor.xy-vec2f(16.);
-  let ar=vec2f(a.x*camera.rotation.x-a.y*camera.rotation.y,a.x*camera.rotation.y+a.y*camera.rotation.x);
-  let anchor=vec2f(6.*(ar.x-ar.y),3.4641016*(ar.x+ar.y)-6.9282032*actor.z);
-  projected=anchor+(projected-anchor)*vec2f(1.4,actor.w);
- }
  var pixel=round(vec2f(240.,136.)*grid+projected*camera.magnification*grid);
  // Emissive details are opaque 1–2 raster pixels, independent of zoom.
  if screen == -4. {pixel+=vertex.xy*size.xy;}
  let ndc=pixel/(resolution*.5);
  o.position=vec4f(ndc.x-1.,1.-ndc.y,0.5-((r.x+r.y)*0.5773503+p.z*0.5773503)/128.,1.);
- // Never shade across palette families (teal feet formerly became ivory,
- // violet soil became orange, and gold cargo became cyan).
- let family=select(select(select(select(select(select(0.,4.,pigment>=4.),10.,pigment>=10.),15.,pigment>=15.),19.,pigment>=19.),23.,pigment>=23.),28.,pigment>=28.);
+ // Stone shades through ink; coloured materials stay in their own family.
+ let family=select(select(select(select(select(0.,10.,pigment>=10.),15.,pigment>=15.),19.,pigment>=19.),23.,pigment>=23.),28.,pigment>=28.);
  // Face IDs carry world normals. Lighting follows camera yaw so the visible
  // left wall is always mid-value and the right wall dark; tops retain base.
  var normal=vec2f(0.);
@@ -64,12 +58,23 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  let hot=pigment==9. || pigment==18. || pigment==22. || pigment==27. || pigment==31.;
  let base=pigment-select(0.,1.,hot);
  o.color=palette[u32(max(family,base-steps))];
+ // Terrain caps, ledges and ribs share the parent column's height bands.
+ if screen == -5. {
+  let level=clamp((p.z-actor.x)/(actor.y-actor.x),0.,1.);
+  o.cliff=vec2f(level,select(4.,3.,steps>=2.));
+  if shade==0. && origin.z+size.z>=actor.y-.17 {
+   o.cliff.x=-1.;o.color=palette[select(5u,6u,pigment==5. || pigment==6.)];
+  }
+ }
  if screen == -3. || screen == -4. {o.color=palette[u32(pigment)];}
  if screen == -4. {o.unit=1.;o.rim=vec2f(0.);}
  } return o;
 }
 struct Fragment { @location(0) color:vec4f, @location(1) mask:vec4f }
-@fragment fn fs(i:Out)->Fragment {var f:Fragment;f.color=vec4f(i.color,1.);f.mask=vec4f(i.unit,i.position.z,i.rim);return f;}
+@fragment fn fs(i:Out)->Fragment {var f:Fragment;f.color=vec4f(i.color,1.);
+ // Four hard bands, top to bottom: 4/3/2/1 on the lit wall,
+ // 3/2/1/0 on the opposing wall. No interpolated RGB or dithering.
+ if i.cliff.x>=0. {let band=min(3.,floor((1.-i.cliff.x)*4.));f.color=vec4f(palette[u32(max(0.,i.cliff.y-band))],1.);}f.mask=vec4f(i.unit,i.position.z,i.rim);return f;}
 `;
 const postWGSL=paletteWGSL+`
 @group(0) @binding(0) var scene:texture_2d<f32>;
@@ -92,22 +97,12 @@ const postWGSL=paletteWGSL+`
   let tolerance=select(0.,0.002,center.r==0.);
   if neighbor.r>0.5 && neighbor.r!=center.r && neighbor.g<center.g+tolerance {return vec4f(palette[0],1.);}
  }}
- // Dilate the UNION of the actor's visible parts, never individual boxes.
- // Eight neighbors close diagonal seams into one continuous #10121C backing.
- // At actor/actor contacts use two pixels on the rear actor and one on the
- // front actor: a three-pixel ink gutter, with depth and effect masks intact.
+ // One raster pixel around the visible union, including diagonal contacts.
  if (occupied&2u)!=0u && center.r!=1. {
-  for(var dy=-2;dy<=2;dy++) {for(var dx=-2;dx<=2;dx++) {
+  for(var dy=-1;dy<=1;dy++) {for(var dx=-1;dx<=1;dx++) {
    if dx==0 && dy==0 {continue;}
-   let distance=max(abs(dx),abs(dy));
    let neighbor=textureLoad(silhouette,clamp(pixel+vec2i(dx,dy),vec2i(0),vec2i(${RENDER_WIDTH-1},${RENDER_HEIGHT-1})),0);
-   if neighbor.b==0. || neighbor.r==center.r {continue;}
-   if distance==1 && neighbor.g<center.g+select(0.,0.002,center.r==0.) {
-    return vec4f(palette[0],1.);
-   }
-   if center.b>0. && (distance==1 || neighbor.g<center.g) {
-    return vec4f(palette[0],1.);
-   }
+   if neighbor.b>0. && neighbor.r!=center.r && neighbor.g<center.g+select(0.,0.002,center.r==0.) {return vec4f(palette[0],1.);}
   }}
  }
  let c=textureLoad(scene,pixel,0).rgb;var best=palette[0];var distance=100.;
@@ -179,12 +174,21 @@ export class Renderer {
   this.emissiveCount++;this.box(x,y,z,w,h,0,color,owner,-4);
  }
  private shadow(x:number,y:number,w:number,d:number,h:number) {
-  this.box(x,y,this.ground(x,y)+.09,w,d,h,2,-1,-3);
+  const z=this.ground(x,y);
+  this.box(x,y,z+.085,w,d,Math.min(1,h),2,-1,-3);
+  // A narrow opaque ink lip, raised over road slabs and under the feet/plinth.
+  this.box(x,y,z+.095,w+.12,d+.12,0,0,-1,-3);
  }
  private shard(x:number,y:number,z:number,h:number,c=30,owner=-1) {
   this.box(x,y,z,.62,.65,h,c,owner,-2);
   this.box(x+.25,y+.12,z,.24,.25,h*.56,c-1,owner,-2);
   this.emissive(x,y,z+h,c<19?18:31,owner);
+ }
+ private cliffBottom=0;private cliffTop=0;
+ private terrainBox(x:number,y:number,z:number,w:number,d:number,h:number,color:number) {
+  const index=this.count;
+  this.box(x,y,z,w,d,h,color,-1,-5);
+  if(this.count>index){this.actorData[index*4]=this.cliffBottom;this.actorData[index*4+1]=this.cliffTop;}
  }
  private makeTerrain() {
   // Broken outer contour and staggered basalt columns avoid the old square plate.
@@ -193,21 +197,22 @@ export class Renderer {
    const edge=x<2||x>29||y<2||y>29;
    if(edge&&(hash%5<3)||x<5&&y<9||x<7&&y<3||x>28&&y>27)continue;
    const bottom=-3.5-(hash%5)*.35;
+   this.cliffBottom=bottom;this.cliffTop=h;
    const rim=edge||x<4||y>28||x>28||this.ground(x+1,y)<h||this.ground(x,y+1)<h;
-   this.box(x+.5,y+.5,bottom,rim?.84:1,rim?.88:1,h-bottom-.16,2);
-   this.box(x+.5,y+.5,h-.16,rim?.94:1,rim?.96:1,.16,h<0?3:hash%11<3?28:4);
+   this.terrainBox(x+.5,y+.5,bottom,rim?.84:1,rim?.88:1,h-bottom-.16,2);
+   this.terrainBox(x+.5,y+.5,h-.16,rim?.94:1,rim?.96:1,.16,h<0?3:hash%11<3?28:4);
    if(rim){
-    this.box(x+.5,y+.5,h-.22,1.04,1.02,.22,hash%4===0?5:4);
-    this.box(x+.78,y+.84,bottom+.2,.18,.12,h-bottom-.5,3);
-    if(hash%2===0)this.box(x+.5,y+.5,h-1.2,.94,.96,.18,4);
+    this.terrainBox(x+.5,y+.5,h-.22,1.04,1.02,.22,hash%4===0?5:4);
+    this.terrainBox(x+.78,y+.84,bottom+.2,.18,.12,h-bottom-.5,3);
+    if(hash%2===0)this.terrainBox(x+.5,y+.5,h-1.2,.94,.96,.18,4);
    }
-   if(hash%7===0){this.box(x+.3,y+.42,h+.014,.65,.42,.025,hash%3===0?29:5);this.box(x+.52,y+.51,h+.017,.32,.24,.027,hash%3===0?29:5);}
+   if(hash%7===0){this.box(x+.3,y+.42,h+.014,.65,.42,.025,hash%3===0?29:6);this.box(x+.52,y+.51,h+.017,.32,.24,.027,hash%3===0?29:6);}
    if(hash%29===0)this.box(x+.36,y+.4,h+.045,.54,.06,.025,3);
-   if(hash%31===0)this.box(x+.64,y+.65,h+.03,.4,.32,.14,3);
+   if(hash%31===0)this.terrainBox(x+.64,y+.65,h+.03,.4,.32,.14,3);
    // Exposed vertical seams and projecting shelves use the cliff family only.
    if(y===31||x===31||this.ground(x+1,y)<h||this.ground(x,y+1)<h||edge){
-    this.box(x+.87,y+.83,bottom+.4,.17,.18,h-bottom-.6,hash%2?2:3);
-    if(hash%3===0)this.box(x+.55,y+.64,bottom+1.1,.9,.92,.2,4);
+    this.terrainBox(x+.87,y+.83,bottom+.4,.17,.18,h-bottom-.6,hash%2?2:3);
+    if(hash%3===0)this.terrainBox(x+.55,y+.64,bottom+1.1,.9,.92,.2,4);
    }
    // The exposed face projects beyond the cap: ribs cannot disappear inside
    // the solid terrain column. Alternate short ledges break the vertical bands.
@@ -217,8 +222,8 @@ export class Renderer {
     for(let rib=0;rib<3;rib++){
      const along=.18+rib*.31,xx=x+(side===0?1.015:along),yy=y+(side===1?1.015:along);
      const top=h-.28-(hash+rib)%3*.13;
-     this.box(xx,yy,faceBottom,side===0?.12:.16,side===1?.12:.16,top-faceBottom,(hash+rib)%2?5:4);
-     if((hash+rib)%3===0)this.box(xx,yy,top-.8,side===0?.25:.26,side===1?.25:.26,.14,5);
+     this.terrainBox(xx,yy,faceBottom,side===0?.12:.16,side===1?.12:.16,top-faceBottom,(hash+rib)%2?5:4);
+     if((hash+rib)%3===0)this.terrainBox(xx,yy,top-.8,side===0?.25:.26,side===1?.25:.26,.14,5);
     }
    }
   }
@@ -333,48 +338,42 @@ export class Renderer {
  private crane(x:number,y:number,z:number,w:number,h:number,phase:number,id:number,assembly=-1) {
   this.box(x,y,z,.17,.17,h,20,id);this.box(x-w*.5,y,z+h,w+.15,.18,.18,22,id);const lift=assembly<0?.8+Math.floor(phase*6)/6*(h-1.2):assembly+Math.floor(phase*3)*.12;this.box(x-w*.8,y,z+lift,.05,.05,h-lift,19,id);this.box(x-w*.8,y,z+lift-.15,.2,.2,.16,22,id);this.box(x-w*.8,y,z+lift-.55,.42,.42,.4,12,id);this.box(x-w*.8+.12,y,z+lift-.13,.12,.12,.24,22,id);
  }
- private unit(e:Float32Array,o:number,id:number,yaw:number,zoom:number) {
-  const kind=e[o+4];
-  const jitter=kind===21||kind===22||kind===23||kind===30||kind===31;
-  this.shadow(e[o]+(jitter?(id%3-1)*.24:0),e[o+1]+(jitter?(Math.floor(id/3)%3-1)*.24:0),kind===31?2:kind===24?1.8:kind===20?.55:1.15,kind===31?1.6:kind===24?1.2:.8,kind===24?3:kind===20?1:1.8);
-  const start=this.count;
-  this.unitParts(e,o,id);
+ private unit(e:Float32Array,o:number,id:number) {
   const k=e[o+4],friendly=k>=20&&k<=24;
   const combat=k===21||k===22||k===23||k===30||k===31;
-  const scale=k===24?1.12:k===20?1:1.22;
-  const growth=k===21||k===22||k===23?1.28:1;
-  const c=Math.cos(e[o+3]),sn=Math.sin(e[o+3]);
-  // Fixed nine-slot world jitter, radius <= sqrt(2)*.24 = .3395 tiles.
-  // The current ABI exposes packed entity indices as renderer IDs.
   const ox=combat?(id%3-1)*.24:0,oy=combat?(Math.floor(id/3)%3-1)*.24:0;
-  const cx=Math.round(Math.cos(yaw*Math.PI/2)),cy=Math.round(Math.sin(yaw*Math.PI/2));
-  let top=Infinity,bottom=-Infinity;
+  const start=this.count;
+  this.unitParts(e,o,id);
+  const c=Math.cos(e[o+3]),sn=Math.sin(e[o+3]);
+  // World geometry, picking and contours now use one common scale. These
+  // role sizes target ~7 px workers and 8–14 px line silhouettes at zoom 1.
+  let scale=k===20?.42:k===21||k===23?.46:k===22?.52:k===24?.55:k===30?.48:.46;
+  let minX=Infinity,minY=Infinity,minZ=Infinity,maxX=-Infinity,maxY=-Infinity,maxZ=-Infinity;
+  for(let i=start;i<this.count;i++)if(this.owners[i]===id&&this.data[i*8+7]!==-4){
+   const q=i*8,dx=this.data[q]-e[o],dy=this.data[q+1]-e[o+1];
+   const x=dx*c-dy*sn,y=dx*sn+dy*c;
+   minX=Math.min(minX,x-this.data[q+3]/2);maxX=Math.max(maxX,x+this.data[q+3]/2);
+   minY=Math.min(minY,y-this.data[q+4]/2);maxY=Math.max(maxY,y+this.data[q+4]/2);
+   minZ=Math.min(minZ,this.data[q+2]-e[o+2]);maxZ=Math.max(maxZ,this.data[q+2]-e[o+2]+this.data[q+5]);
+  }
+  // Leave room for the one-pixel contour within the ~1.5 tile envelope,
+  // including yaw, recoil, carried cargo and the lowered aircraft sling.
+  scale=Math.min(scale,1.3/Math.max(maxX-minX,maxY-minY,maxZ-minZ));
   for(let i=start;i<this.count;i++){
-   const q=i*8,owned=this.owners[i]===id,bodyGrowth=owned?growth:1;
-   const dx=(this.data[q]-e[o])*scale*bodyGrowth,dy=(this.data[q+1]-e[o+1])*scale*bodyGrowth;
-   this.data[q]=e[o]+dx*c-dy*sn+(owned?ox:0);this.data[q+1]=e[o+1]+dx*sn+dy*c+(owned?oy:0);
-   const core=this.data[q+7]===-4;
-   if(!core){this.data[q+3]*=scale*bodyGrowth;this.data[q+4]*=scale*bodyGrowth;}
-   this.data[q+5]*=bodyGrowth;
+   const q=i*8,owned=this.owners[i]===id,core=this.data[q+7]===-4;
+   const dx=(this.data[q]-e[o])*scale,dy=(this.data[q+1]-e[o+1])*scale;
+   this.data[q]=e[o]+dx*c-dy*sn+ox;this.data[q+1]=e[o+1]+dx*sn+dy*c+oy;
+   this.data[q+2]=e[o+2]+(this.data[q+2]-e[o+2])*scale;
+   if(!core){this.data[q+3]*=scale;this.data[q+4]*=scale;this.data[q+5]*=scale;}
    if(owned){
-    this.data[q+6]+=32*(id+2)+32768*(combat?(friendly?18:19):friendly?17:0);
-    if(combat&&!core){
-     const y=3.4641016*((cx+cy)*this.data[q]+(cx-cy)*this.data[q+1])-6.9282032*this.data[q+2];
-     const half=1.7320508*(this.data[q+3]+this.data[q+4]);
-     top=Math.min(top,y-half-6.9282032*this.data[q+5]);bottom=Math.max(bottom,y+half);
-    }
+    // Cold blue armour owns unit fills; building trim retains teal.
+    const pigment=this.data[q+6]%32;
+    if(friendly&&!core&&pigment>=10&&pigment<=14)this.data[q+6]=pigment<=11?15:17;
+    this.data[q+6]+=32*(id+2)+32768*(combat?(friendly?18:19):17);
    }
   }
-  if(combat){
-   // Grow the complete screen silhouette 40%; cap its conservative projected
-   // box height at 32 raster pixels (16 logical), including closest zoom.
-   // Original world depth, action effects and selection rings are untouched.
-   const vertical=Math.min(1.4,16*zoom/(bottom-top));
-   for(let i=start;i<this.count;i++)if(this.owners[i]===id){
-    const q=i*4;this.actorData[q]=e[o]+ox;this.actorData[q+1]=e[o+1]+oy;
-    this.actorData[q+2]=e[o+2];this.actorData[q+3]=vertical;
-   }
-  }
+  const w=(maxX-minX)*scale,d=(maxY-minY)*scale;
+  this.shadow(e[o]+ox+(minX+maxX)*scale/2,e[o+1]+oy+(minY+maxY)*scale/2,w,d,k===24?1:.45);
  }
  private unitParts(e:Float32Array,o:number,id:number) {
   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],phase=e[o+6],state=e[o+5],moving=state===1||state===6;
@@ -533,15 +532,8 @@ export class Renderer {
    const combat=Math.floor(color/32768)>=18;
    let halfX=horizontal*(this.data[q+3]+this.data[q+4])*.5;
    let halfY=vertical*(this.data[q+3]+this.data[q+4])*.5,rise=height*this.data[q+5];
-   if(combat){
-    const a=i*4,ax=this.actorData[a]-16,ay=this.actorData[a+1]-16;
-    const arx=ax*c-ay*s,ary=ax*s+ay*c;
-    const anchorX=240*GRID+horizontal*(arx-ary),anchorY=136*GRID+vertical*(arx+ary)-height*this.actorData[a+2];
-    px=anchorX+(px-anchorX)*1.4;py=anchorY+(py-anchorY)*this.actorData[a+3];
-    halfX*=1.4;halfY*=this.actorData[a+3];rise*=this.actorData[a+3];
-   }
    if(core){halfX=this.data[q+3]*.5;halfY=this.data[q+4]*.5;rise=0;}
-   // Four raster pixels cover rounding plus the complete two-pixel contour.
+   // Four raster pixels conservatively cover snapping and the one-pixel contour.
    const left=Math.max(0,Math.floor((px-halfX-4)/CONTOUR_TILE)),right=Math.min(CONTOUR_COLUMNS-1,Math.floor((px+halfX+4)/CONTOUR_TILE));
    const top=Math.max(0,Math.floor((py-halfY-rise-4)/CONTOUR_TILE)),bottom=Math.min(CONTOUR_ROWS-1,Math.floor((py+halfY+4)/CONTOUR_TILE));
    for(let row=top;row<=bottom;row++)for(let col=left;col<=right;col++)this.contourData[row*256+col]|=combat?3:1;
@@ -551,7 +543,7 @@ export class Renderer {
   this.time=tick/60;this.count=this.staticCount;this.emissiveCount=this.staticEmissiveCount;this.selected=null;
   for(let id=0;id<n;id++){const o=id*12,k=e[o+4];if(e[o+8]===1)this.selected=id;
    if(k>=10&&k<20)this.building(e,o,id);
-   else if(k>=20&&k<=31)this.unit(e,o,id,yaw,zoom);
+   else if(k>=20&&k<=31)this.unit(e,o,id);
    else if(k===40){const h=e[o+10]>0?1.3+id%3*.35:e[o+11]*1.4;this.shard(e[o],e[o+1],e[o+2],Math.max(.08,h*1.4),31);}
    else if(k===41){this.box(e[o],e[o+1],e[o+2],.38,.36,.23,40);this.box(e[o],e[o+1],e[o+2]-.16,.18,.18,.14,18);}
    else if(k>=50)this.effects(e,o);
@@ -576,7 +568,7 @@ export class Renderer {
   const a=(sum+diff)/2,b=(sum-diff)/2;
   const ox=16+c*a+s*b,oy=16-s*a+c*b,oz=50,dx=-c-s,dy=s-c,dz=-1;
   let best=Infinity,owner=-1;
-  for(let i=0;i<this.worldCount;i++){const o=i*8;if(this.data[o+7]>0||this.data[o+7]<=-3)continue;let near=0,far=Infinity;
+  for(let i=0;i<this.worldCount;i++){const o=i*8;if(this.data[o+7]>0||(this.data[o+7]===-3||this.data[o+7]===-4))continue;let near=0,far=Infinity;
    for(let axis=0;axis<3;axis++){const origin=axis===0?ox:axis===1?oy:oz,dir=axis===0?dx:axis===1?dy:dz;let min=this.data[o+axis]-(axis<2?this.data[o+3+axis]/2:0),max=min+this.data[o+3+axis];if(this.owners[i]>=0&&this.data[o+3]<1&&this.data[o+4]<1){min-=.12;max+=.12;}if(dir===0){if(origin<min||origin>max){far=-1;break;}}else{let t1=(min-origin)/dir,t2=(max-origin)/dir;if(t1>t2){const t=t1;t1=t2;t2=t;}near=Math.max(near,t1);far=Math.min(far,t2);}}
    if(near<=far&&near<best){best=near;owner=this.owners[i];}
   }return owner<0?null:owner;
