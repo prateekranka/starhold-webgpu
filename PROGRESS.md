@@ -3,8 +3,8 @@
 Browser graphics demo: isometric pixel-art space colony, deterministic Rust/WASM
 simulation, and raw WebGPU renderer.
 
-**Mobile pass M1 and art pass 15 are DONE and verified. The next wave is a
-lighting/contrast pass (see "Remaining gap").**
+**Two playable civilizations are now defined. Lighting/contrast pass 16 is specified
+and ready for isolated implementation.**
 
 ## Verified state — mobile M1 + pass 15
 
@@ -73,27 +73,60 @@ Final-build verification (same build as the live URL):
 4. Bottom-right: rotate left, rotate right, zoom out, zoom in (48x48 CSS px each).
 5. Pinch with two fingers to zoom: one level per pinch step, never selects.
 
+## Civilization lock — first two
+
+`docs/CIVILIZATIONS.md` is now binding. It preserves the Vesper March map and
+current Dawnward art while standardizing eight buildings and seven units for each
+playable civilization.
+
+- **Dawnward start:** Charter Keep, Freight Court, Heliowell; 6 Riveters,
+  1 Pack Beetle, 2 Ward Sentinels, 1 Harbor Skiff.
+- **Cinderwake start:** Pyre Ark, Scrap Maw, Ember Siphon; 6 Ashhands,
+  1 Chain Mule, 2 Ash Jackals, 1 Sootwing.
+- Both starts have 80 Alloy, 40 Charge, and 11/15 population. No tower,
+  production hall, support unit, or siege unit is prebuilt.
+- The current t=108 Dawnward autonomous scene remains a separate showcase and
+  keeps its verified simulation hash.
+- No third civilization begins until both factions have 8/8 buildings, 7/7
+  units, complete economy/combat chains, deterministic starts, and distinct
+  normal-zoom silhouettes.
+
+## Active next piece — pass 16 lighting and contrast
+
+Binding spec: `docs/LIGHTING_CONTRAST_SPEC.md`. Worker brief:
+`tasks/brief-pass16.md`. It is renderer-only. Map, structures, props, camera,
+framing, unit scale, simulation, mobile controls, and palette stay unchanged.
+
+The new `--lighting-gate` in `scripts/measure-detail.py` fails the current frame
+as intended: coverage 42.720%, mean 81.577, sd 42.087, >=90 at 30.796%, >=170
+at 4.066%, outside-palette pixels 0. Texture and cliff gates still pass. Pass 16
+must reach mean 86–94, sd >=44, >=90 at >=38%, and >=170 at 5.0–8.5%, then win
+a fresh target-vs-build visual gate.
+
 ## Remaining gap (name it exactly)
 
-All objective gates pass, but a fresh blind critic still rates the frame **WEAK**
-against `.dream-loop/target.png`: the settlement reads flat and uniformly top-lit,
-the amethyst terrain is washed out, and units are tiny and hard to read at
-960x540. The delta of pass 15 is real but small (~2% of pixels changed: terraces,
-8 prop clusters, facade fittings). The next wave must be a **lighting and contrast
-pass** — directional light with a darker south-east falloff, fewer top-lit flats,
+The shipping functional, mobile, palette, texture, cliff, and performance gates pass,
+but the new lighting gate and a fresh blind critic both **FAIL**. Against
+`.dream-loop/target.png`, the settlement reads flat and uniformly top-lit, the
+amethyst terrain lacks value hierarchy, and units are hard to read at 960x540.
+The next wave is the locked **lighting and contrast pass** — world-fixed
+north-west light, darker south-east faces, clearer building hierarchy, and
 stronger unit-scale contrast — not another detail pass.
 
 ## Resume checklist
 
-1. `git pull` / confirm `git log` head; `python3 tasks/quota-check.py` (Plus only).
-2. Write the lighting brief against `docs/WORLD_PLAN.md` light rules.
-3. Launch: `bash tasks/astra-run.sh coder tasks/brief-<n>.md tasks/logs/<n>.log`.
-4. Orchestrator: `npm run build`, then
-   `node scripts/capture.mjs --root dist --out evidence-<n> --min-fps 60 --settle 108`
-   and the mobile trio with `--touch --dsf 2` at 844x390, 1024x768 and 390x844.
-5. `python3 scripts/measure-detail.py evidence-<n>/shot-main.png --top 230 265 --rim 350 465 --x0 180 --x1 430`
-   (all four gates must stay green: grid, colours 31, texture, ramp).
-6. Fresh blind critic. Iterate on the single biggest gap. Never the Pro account.
+1. Confirm clean tree and Plus quota: `git status --short`; `python3 tasks/quota-check.py`.
+2. Launch one fresh worker:
+   `bash tasks/astra-run.sh coder tasks/brief-pass16.md tasks/logs/pass16.log`.
+3. Worker uses GPT-6 Astra Medium, standard mode, `fast_mode=false`, and edits only
+   `src/renderer.ts`.
+4. Orchestrator runs `npm run build`, then desktop and the three mobile capture
+   profiles into `evidence-p16/`.
+5. Orchestrator runs:
+   `python3 scripts/measure-detail.py evidence-p16/shot-main.png --top 230 265 --rim 350 465 --x0 180 --x1 430 --lighting-gate`.
+6. Run four-yaw visual checks and a fresh target-vs-build blind critic.
+7. On a loss, park or revert the source and name one root gap. Never use the Pro
+   account. Do not start civilization implementation until lighting L1 is judged.
 
 ## Agent settings
 

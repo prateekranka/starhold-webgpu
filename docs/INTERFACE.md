@@ -45,9 +45,10 @@ nothing (or only satisfies trivial imports). Required exports:
 Entity array layout (floats, per entity, in order):
 `x, y, z, yaw, kind, state, anim_phase, health, selected, faction, param0, param1`
 
-`kind` codes and `state` codes are defined in `docs/WORLD_PLAN.md`; keep a comment
-block in `sim/src/lib.rs` as the single source of truth and mirror it in
-`src/kinds.ts`.
+Current showcase `kind` and `state` codes are defined in `docs/WORLD_PLAN.md`.
+Playable faction IDs, all future concrete kind IDs, and reserved ranges are defined
+in `docs/CIVILIZATIONS.md`. Keep the Rust ABI comment and `src/kinds.ts` mirror in
+sync with every implemented kind.
 
 ## Runtime contract (the page MUST expose these)
 
@@ -89,8 +90,10 @@ the real DOM buttons, and `__APP.onclick` is the fallback path.
 ## Rendering requirements
 
 - WebGPU only (`navigator.gpu`); show a clear error overlay if unavailable.
-- Internal render resolution **480x270**, upscaled to the canvas with
-  nearest-neighbour (pixel-art lock). The canvas fills the window, letterboxed
+- Fixed physical render resolution **960x540**. World and HUD composition retain
+  a 480x270 logical coordinate space multiplied by `GRID=2`; physical one-pixel
+  contours and emissive accents are allowed. Canvas presentation uses
+  nearest-neighbour scaling, fills the available safe area, and is letterboxed
   to preserve 16:9.
 - Isometric camera: orthographic, pitch ≈ 35.264°, yaw = 45° + 90°·step.
 - Palette locked to `docs/WORLD_PLAN.md` (24-40 colors). No colours outside it.
@@ -100,8 +103,9 @@ the real DOM buttons, and `__APP.onclick` is the fallback path.
 ## Performance contract
 
 - Sim runs at a fixed 60 Hz timestep, decoupled from rendering.
-- Renderer must hold **>60 fps** at 960x540 canvas (480x270 internal) on Intel
-  gen-9 integrated graphics with headless SwiftShader off (hardware Vulkan).
+- Renderer must hold at least **59 fps** with p95 frame time at most 20 ms at
+  the fixed 960x540 physical raster on Intel gen-9 integrated graphics with
+  headless SwiftShader off (hardware Vulkan).
 - No per-frame allocations in the render loop; no `Math.random` in the sim.
 - Prefer one instanced draw per entity kind; batch by texture/material.
 

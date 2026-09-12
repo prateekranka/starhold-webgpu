@@ -13,6 +13,17 @@ contract every worker reads. Do not paraphrase away requirements.
 > World should feel alive and bustling: motion, attack animations, subtle
 > environmental behaviors.
 
+Follow-on direction (2026-09-13):
+
+> i want the next pass to be a lighting/contrast pass but i also want this world
+> to be defined going forward. i like the current look of the map and civ and we
+> should standardize units and buildings by civ. show me what units and buildings
+> a user will start with. let's do 2 full civilizations first
+
+`docs/CIVILIZATIONS.md` is the binding roster and start contract.
+`docs/LIGHTING_CONTRAST_SPEC.md` is the binding next-pass contract. Preserve the
+current map and Dawnward visual language while these two civilizations are built.
+
 ## Agent roster (user-specified)
 
 1. **Planning**: Astra high + fast (gpt-6-astra, reasoning high, fast mode).

@@ -16,6 +16,8 @@ Usage:
 """
 import argparse
 import collections
+from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -82,6 +84,8 @@ def main() -> int:
     ap.add_argument("--rim", nargs=2, type=int, help="y0 y1 of the bottom cliff band")
     ap.add_argument("--x0", type=int, default=180, help="left edge of the cliff band")
     ap.add_argument("--x1", type=int, default=430, help="right edge of the cliff band")
+    ap.add_argument("--lighting-gate", action="store_true",
+                    help="fail unless the canonical lighting/contrast thresholds pass")
     a = ap.parse_args()
 
     img = load(a.image)
@@ -95,6 +99,43 @@ def main() -> int:
           f"  ({'2px BLOCKS - resolution regressed' if pairs > 0.999 else '1px grid'})")
     print(f"colours    {colours}")
     print(f"contrast   lum_sd={lum.std():.1f}  lum_mean={lum.mean():.1f}")
+
+    # Lighting pass L1 uses a stable HUD-free slice. Keep exact void pixels out,
+    # then measure value distribution without inventing semantic masks that can
+    # drift with units or construction. The framing bound prevents a camera or
+    # map-size change from passing as better light.
+    judged = img[max(20, int(h * 0.04)):min(h - 40, int(h * 0.90))]
+    judged_lum = (judged[..., 0].astype(np.float32) * 0.2126
+                   + judged[..., 1].astype(np.float32) * 0.7152
+                   + judged[..., 2].astype(np.float32) * 0.0722)
+    judged_void = np.all(judged == np.array([0x10, 0x12, 0x1C], dtype=np.uint8), axis=2)
+    values = judged_lum[~judged_void]
+    coverage = float((~judged_void).mean() * 100)
+    value_mean = float(values.mean())
+    value_sd = float(values.std())
+    mid_pct = float((values >= 90).mean() * 100)
+    bright_pct = float((values >= 170).mean() * 100)
+
+    kinds = (Path(__file__).resolve().parents[1] / "src" / "kinds.ts").read_text()
+    palette_match = re.search(r"export const palette\s*=\s*\[(.*?)\];", kinds, re.S)
+    if not palette_match:
+        raise RuntimeError("could not read the palette from src/kinds.ts")
+    allowed = {tuple(bytes.fromhex(value))
+               for value in re.findall(r"'([0-9A-Fa-f]{6})'", palette_match.group(1))}
+    frame_colours, frame_counts = np.unique(img.reshape(-1, 3), axis=0, return_counts=True)
+    outside_pixels = sum(int(count) for colour, count in zip(frame_colours, frame_counts)
+                         if tuple(int(channel) for channel in colour) not in allowed)
+    lighting_ok = (colours <= 32 and outside_pixels == 0
+                   and 40 <= coverage <= 46
+                   and 86 <= value_mean <= 94
+                   and value_sd >= 44
+                   and mid_pct >= 38
+                   and 5.0 <= bright_pct <= 8.5)
+    print(f"lighting    coverage={coverage:.3f}%  mean={value_mean:.3f}  sd={value_sd:.3f}"
+          f"  >=90={mid_pct:.3f}%  >=170={bright_pct:.3f}%  outside={outside_pixels}"
+          f"  -> {'PASS' if lighting_ok else 'FAIL'}")
+
+    lighting_failed = a.lighting_gate and not lighting_ok
 
     # The map occupies this stable region in the canonical 960x540 capture.
     # Measure whether violet terrain is one giant slab or authored small regions.
@@ -135,7 +176,7 @@ def main() -> int:
                   f"  lower/upper={ratio:.3f}  slope={slope:+.3f}/row"
                   f"  (want <=0.85 and slope<0)  -> {verdict}")
 
-    return 0
+    return 1 if lighting_failed else 0
 
 
 if __name__ == "__main__":
