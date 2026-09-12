@@ -1,0 +1,19 @@
+Pass 23 objective result: PASS; independent final visual gate: FAIL
+
+Desktop runtime: 8/8 PASS
+FPS: 60.3
+p95: 17.0 ms
+max: 18.0 ms
+Instance saturation: false
+Determinism: {"n":55,"alloy":247,"charge":199,"hash":"20b89f84"} matched
+Console errors: none
+
+Grid: median_run=2 px; identical_h_pairs=0.9092; 1 px physical detail retained
+Colours: 32; outside palette: 0
+Lighting: coverage=42.788%; mean=88.498 PASS; sd=49.770 PASS; >=90=38.529% PASS; >=170=7.194% PASS
+Texture: transition_density=0.2249; #624779_max=1689; #3C3057_max=1070; PASS
+Cliff: top=88.4; upper=75.3; lower=62.6; lower/upper=0.831; slope=-0.176/row; PASS
+
+Delta from pass 22: 2,799 pixels changed (0.53993% of frame). Mean luminance delta on all pixels=-0.03790. Of changed pixels, 73.419% became darker. Timing-sensitive actor/effect pixels account for the brighter minority.
+
+Independent visual gap: emissive-to-shadow separation. Focused correction: one hard one-pixel same-family halo around existing emitters; unchanged core on top.
