@@ -68,7 +68,7 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
   }
  }
  // Small actor top planes gain one step toward their material endpoint.
- if combat>=17. && screen>=-2. && screen<=0. && pigment>=4. && pigment<28. && shade==0. && small {
+ if combat>=17. && screen>=-2. && screen<=0. && pigment>=4. && pigment<28. && shade==0. && max(size.x,max(size.y,size.z)) <= .4 {
   let endpoint=select(select(select(select(9.,14.,pigment>=10.),18.,pigment>=15.),22.,pigment>=19.),27.,pigment>=23.);
   shaded=min(endpoint,shaded+1.);
  }
