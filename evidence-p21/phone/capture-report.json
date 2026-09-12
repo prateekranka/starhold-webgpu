@@ -1,0 +1,116 @@
+{
+  "gates": [
+    {
+      "name": "boots-ready",
+      "pass": true,
+      "detail": "entities=55"
+    },
+    {
+      "name": "instance-budget",
+      "pass": true,
+      "detail": "triangles=114121 saturated=false"
+    },
+    {
+      "name": "touch-layout",
+      "pass": true,
+      "detail": "body=\"touch\" touch=true"
+    },
+    {
+      "name": "no-scroll",
+      "pass": true,
+      "detail": "doc=844x390 client=844x390 scroll=0,0"
+    },
+    {
+      "name": "canvas-fits",
+      "pass": true,
+      "detail": "rect=693.3x390.0@75.3,0.0 aspect=1.778 backing=960x540"
+    },
+    {
+      "name": "hud-unclipped",
+      "pass": true,
+      "detail": "buttons=4 outside=none"
+    },
+    {
+      "name": "touch-targets-44",
+      "pass": true,
+      "detail": "sizes=48x48 48x48 48x48 48x48 overlap=none"
+    },
+    {
+      "name": "safe-area-respected",
+      "pass": true,
+      "detail": "canvas=75.3..768.7 firstBtn=574.0 lastBtn=790.0"
+    },
+    {
+      "name": "rotate-touch",
+      "pass": true,
+      "detail": "0 -> 1"
+    },
+    {
+      "name": "zoom-touch",
+      "pass": true,
+      "detail": "zoom 1 -> 0.8 -> 1"
+    },
+    {
+      "name": "tap-clears",
+      "pass": true,
+      "detail": "boot=7 afterClear=null"
+    },
+    {
+      "name": "tap-select",
+      "pass": true,
+      "detail": "selected=0"
+    },
+    {
+      "name": "pinch-zoom",
+      "pass": true,
+      "detail": "zoom 1 -> 0.8 (idx 1 -> 2)"
+    },
+    {
+      "name": "pinch-keeps-selection",
+      "pass": true,
+      "detail": "0 -> 0"
+    },
+    {
+      "name": "tap-after-pinch",
+      "pass": true,
+      "detail": "clear=null select=0"
+    },
+    {
+      "name": "fps>=59-vsync-locked",
+      "pass": true,
+      "detail": "fps=60.3 p95=16.9ms max=17.2ms"
+    },
+    {
+      "name": "no-console-errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "determinism",
+      "pass": true,
+      "detail": "{\"n\":55,\"alloy\":247,\"charge\":199,\"hash\":\"20b89f84\"} vs {\"n\":55,\"alloy\":247,\"charge\":199,\"hash\":\"20b89f84\"}"
+    }
+  ],
+  "shots": [
+    "shot-selected.png",
+    "shot-pinch.png",
+    "shot-main.png",
+    "shot-rotated.png"
+  ],
+  "errors": [],
+  "viewport": {
+    "width": 844,
+    "height": 390,
+    "dsf": 2,
+    "touch": true,
+    "portrait": false
+  },
+  "fps": {
+    "fps": 60.25,
+    "frames": 241,
+    "mean_ms": 16.647717841927935,
+    "p50_ms": 16.699999809265137,
+    "p95_ms": 16.90000009536743,
+    "max_ms": 17.200000047683716
+  }
+}
