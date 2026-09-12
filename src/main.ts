@@ -1,5 +1,5 @@
 import './style.css';
-import {Renderer, RENDER_WIDTH, RENDER_HEIGHT} from './renderer';
+import {Renderer, RENDER_WIDTH, RENDER_HEIGHT, buttonGlyphPixels} from './renderer';
 import {names, jobs} from './kinds';
 interface SimExports extends WebAssembly.Exports {
  memory:WebAssembly.Memory;
@@ -9,13 +9,16 @@ interface SimExports extends WebAssembly.Exports {
 }
 interface App {
  ready:boolean;error:string|null;
- getState():{yawSteps:number;zoom:number;selected:number|null;entityCount:number;fps:number|null;frameStats:{drawCalls:number;triangles:number}|null};
+ getState():{touch:boolean;yawSteps:number;zoom:number;selected:number|null;entityCount:number;fps:number|null;frameStats:{drawCalls:number;triangles:number}|null};
  rotate(dir:1|-1):void;zoomBy(delta:1|-1):void;selectAt(x:number,y:number):void;fastForward(seconds:number):void;
 }
 declare global {interface Window {__APP:App}}
 let yawSteps=0,zoomIndex=1,sim:SimExports|undefined,entities=new Float32Array(0),entityCount=0,selected:number|null=null,fps:number|null=null;
 const zooms=[4/3,1,4/5,2/3];
 const renderer=new Renderer();
+const touchLayout=navigator.maxTouchPoints>0||matchMedia('(pointer: coarse)').matches;
+document.body.classList.add(touchLayout?'touch':'mouse');
+renderer.hudButtons=!touchLayout;
 function rotate(dir:1|-1) {yawSteps=(yawSteps+(dir===-1?-1:1)+4)%4;}
 function zoomBy(delta:1|-1) {zoomIndex=Math.max(0,Math.min(3,zoomIndex+(delta===-1?-1:1)));}
 function selectAt(x:number,y:number) {
@@ -31,18 +34,84 @@ function fastForward(seconds:number) {
  for(let i=0;i<steps;i++){sim.sim_step(1000/60);tick++;}
  accumulator=0;previous=0;refreshEntities();updateSelection();
 }
-window.__APP={ready:false,error:null,getState:()=>({yawSteps,zoom:zooms[zoomIndex],selected,entityCount,fps,frameStats:window.__APP.ready?renderer.stats:null}),rotate,zoomBy,selectAt,fastForward};
+window.__APP={ready:false,error:null,getState:()=>({touch:touchLayout,yawSteps,zoom:zooms[zoomIndex],selected,entityCount,fps,frameStats:window.__APP.ready?renderer.stats:null}),rotate,zoomBy,selectAt,fastForward};
 const canvas=document.querySelector<HTMLCanvasElement>('#world')!;
 const viewport=document.querySelector<HTMLElement>('#viewport')!;
 const selection=document.querySelector<HTMLOutputElement>('#selection')!;
 function fatal(error:unknown) {if(window.__APP.error)return;window.__APP.error=error instanceof Error?error.message:String(error);const overlay=document.querySelector<HTMLElement>('#error')!;overlay.textContent=window.__APP.error;overlay.hidden=false;}
-function resize() {const fit=Math.min(innerWidth/RENDER_WIDTH,innerHeight/RENDER_HEIGHT);const scale=fit>=1?Math.floor(fit):fit;viewport.style.width=`${RENDER_WIDTH*scale}px`;viewport.style.height=`${RENDER_HEIGHT*scale}px`;}
-window.addEventListener('resize',resize);resize();
+function resize() {
+ const read=(name:string)=>parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name))||0;
+ const availW=innerWidth-read('--safe-l')-read('--safe-r');
+ const availH=innerHeight-read('--safe-t')-read('--safe-b');
+ const fit=Math.min(availW/RENDER_WIDTH,availH/RENDER_HEIGHT);
+ const scale=fit>=1?Math.floor(fit):Math.max(0.1,fit);
+ viewport.style.width=`${RENDER_WIDTH*scale}px`;viewport.style.height=`${RENDER_HEIGHT*scale}px`;
+}
+window.addEventListener('resize',resize);
+window.addEventListener('orientationchange',resize);resize();
+for(const [kind,id] of ['rotate-left','rotate-right','zoom-out','zoom-in'].entries()){
+ const glyph=document.querySelector<HTMLCanvasElement>(`#${id} canvas.glyph`)!;
+ const context=glyph.getContext('2d')!;
+ context.imageSmoothingEnabled=false;context.fillStyle='#F3F0D7';
+ const pixels=buttonGlyphPixels(kind);
+ for(let p=0;p<pixels.length;p++)if(pixels[p])context.fillRect(1+p%10,1+Math.floor(p/10),1,1);
+}
 document.getElementById('rotate-left')!.addEventListener('click',()=>rotate(-1));
 document.getElementById('rotate-right')!.addEventListener('click',()=>rotate(1));
 document.getElementById('zoom-out')!.addEventListener('click',()=>zoomBy(-1));
 document.getElementById('zoom-in')!.addEventListener('click',()=>zoomBy(1));
 canvas.addEventListener('click',e=>selectAt(e.clientX,e.clientY));
+const activePointers=new Map<number,{x:number;y:number}>();
+let downX=0,downY=0,downAt=0,pinched=false,pinchStartDist=0,pinchStartZoom=0;
+let suppressPointerClick=false;
+function resetGesture() {
+ pinched=false;pinchStartDist=0;pinchStartZoom=0;downX=0;downY=0;downAt=0;
+}
+function pointerDistance() {
+ const points=activePointers.values(),a=points.next().value!,b=points.next().value!;
+ return Math.hypot(a.x-b.x,a.y-b.y);
+}
+canvas.addEventListener('pointerdown',e=>{
+ suppressPointerClick=e.pointerType!=='mouse';
+ if(e.pointerType==='mouse')return;
+ e.preventDefault();
+ if(activePointers.size===0){resetGesture();downX=e.clientX;downY=e.clientY;downAt=e.timeStamp;}
+ activePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+ canvas.setPointerCapture(e.pointerId);
+ if(activePointers.size===2){
+  pinched=true;pinchStartZoom=zoomIndex;
+  const distance=pointerDistance();pinchStartDist=distance<20?0:distance;
+ }
+});
+canvas.addEventListener('pointermove',e=>{
+ const point=activePointers.get(e.pointerId);
+ if(e.pointerType==='mouse'||!point)return;
+ e.preventDefault();point.x=e.clientX;point.y=e.clientY;
+ if(activePointers.size===2&&pinched&&pinchStartDist>=20){
+  const ratio=pointerDistance()/pinchStartDist;
+  const steps=Math.round(Math.log(ratio)/Math.log(1.4));
+  zoomIndex=Math.max(0,Math.min(3,pinchStartZoom+steps));
+ }
+});
+canvas.addEventListener('pointerup',e=>{
+ if(e.pointerType==='mouse'||!activePointers.has(e.pointerId))return;
+ e.preventDefault();
+ if(activePointers.size===1&&!pinched&&Math.hypot(e.clientX-downX,e.clientY-downY)<=12&&e.timeStamp-downAt<=400)selectAt(e.clientX,e.clientY);
+ activePointers.delete(e.pointerId);
+ if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId);
+ if(activePointers.size===0)resetGesture();
+});
+canvas.addEventListener('pointercancel',e=>{
+ if(e.pointerType==='mouse')return;
+ for(const id of activePointers.keys())if(canvas.hasPointerCapture(id))canvas.releasePointerCapture(id);
+ activePointers.clear();resetGesture();
+});
+// Keep the existing mouse click path, but stop compatibility clicks from
+// selecting a second time after taps or selecting at the end of a pinch.
+canvas.addEventListener('click',e=>{
+ const pointer=e as PointerEvent;
+ if((pointer.pointerType&&pointer.pointerType!=='mouse')||suppressPointerClick){e.preventDefault();e.stopImmediatePropagation();}
+},true);
 function refreshEntities() {
  if(!sim)return;entityCount=sim.sim_entity_count();const pointer=sim.sim_entity_ptr();
  // Reuse the direct linear-memory view until the pointer/count or buffer changes.

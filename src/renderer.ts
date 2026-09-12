@@ -143,7 +143,21 @@ const postWGSL=paletteWGSL+`
  for(var i=0u;i<32u;i++){let delta=c-palette[i];let d=dot(delta,delta);if d<distance {distance=d;best=palette[i];}}
  return vec4f(best,1.);
 }`;
+// Build the shared bitmap masks once; HUD rebuilds reuse them without allocation.
+const buttonPatterns=Array.from({length:4},(_,kind)=>{
+ const pixels=new Uint8Array(100);
+ for(let row=0;row<10;row++)for(let col=0;col<10;col++){
+  const c=kind===1?9-col:col;
+  const filled=kind>=2
+   ? (row===4||row===5)||(kind===3&&(col===4||col===5))
+   : (row<6&&c>=3-row&&c<=3)||(row>=3&&row<=5&&c>=3&&c<=7)||(row>=5&&row<=8&&c>=7&&c<=8);
+  if(filled)pixels[row*10+col]=1;
+ }
+ return pixels;
+});
+export function buttonGlyphPixels(kind:number):Uint8Array {return buttonPatterns[kind];}
 export class Renderer {
+ hudButtons=true;
  readonly data=new Float32Array(MAX*STRIDE);
  readonly owners=new Int32Array(MAX);
  private actorData=new Float32Array(MAX*4);
@@ -639,17 +653,14 @@ export class Renderer {
  private rect(x:number,y:number,w:number,h:number,c:number) {this.box(x+w/2,y+h/2,0,w,h,0,c,-1,1);}
  private text(value:string,x:number,y:number,color=9) {for(let i=0;i<value.length;i++){const g=glyphs[value[i]]||glyphs[' '];for(let p=0;p<g.pixels.length;p++)if(g.pixels[p])this.rect(x+p%g.width,y+Math.floor(p/g.width),1,1,color);x+=g.width+1;}}
  private buttonGlyph(kind:number,x:number,y:number) {
-  if(kind>=2){this.rect(x,y+4,10,2,9);if(kind===3)this.rect(x+4,y,2,10,9);return;}
-  const mirror=kind===1;for(let row=0;row<10;row++)for(let col=0;col<10;col++){
-   const c=mirror?9-col:col;
-   if((row<6&&c>=3-row&&c<=3)||(row>=3&&row<=5&&c>=3&&c<=7)||(row>=5&&row<=8&&c>=7&&c<=8))this.rect(x+col,y+row,1,1,9);
-  }
+  const pixels=buttonGlyphPixels(kind);
+  for(let p=0;p<pixels.length;p++)if(pixels[p])this.rect(x+p%10,y+Math.floor(p/10),1,1,9);
  }
  private hud(e:Float32Array,alloy:number,charge:number) {
   const o=this.selected===null?-1:this.selected*12;
   const kind=o<0?-1:e[o+4],hp=o<0?-1:Math.round(e[o+7]*100),job=o<0?-1:e[o+5],progress=o<0?-1:Math.floor(e[o+10]*100);
   if(alloy!==this.hudAlloy||charge!==this.hudCharge||o!==this.hudSelection||kind!==this.hudKind||hp!==this.hudHealth||job!==this.hudJob||progress!==this.hudProgress){const start=this.count;this.rect(8,6,464,14,0);this.rect(8,19,464,1,5);this.text('STARHOLD',11,9);this.rect(287,12,4,5,20);this.rect(292,12,4,5,21);this.rect(290,8,4,4,22);this.text('ALLOY '+alloy,300,9,22);this.rect(379,9,5,8,16);this.rect(381,7,2,11,18);this.text('CHARGE '+charge,389,9,18);
-   for(let j=0;j<4;j++){this.rect(370+j*25,244,22,20,5);this.rect(371+j*25,245,20,18,1);this.buttonGlyph(j,376+j*25,249);}
+   if(this.hudButtons)for(let j=0;j<4;j++){this.rect(370+j*25,244,22,20,5);this.rect(371+j*25,245,20,18,1);this.buttonGlyph(j,376+j*25,249);}
    if(o>=0){this.rect(8,242,134,23,5);this.rect(9,243,132,21,0);this.text(names[e[o+4]]||'COLONY',12,244);this.rect(12,252,125,3,3);this.rect(12,252,Math.floor(125*e[o+7]),3,13);const max=e[o+4]===10?1500:e[o+4]===16?900:e[o+4]<20?600:e[o+4]===20?70:e[o+4]===23?110:e[o+4]===24?150:e[o+4]===30?80:e[o+4]===31?240:180;this.text('HP '+Math.round(e[o+7]*max)+' '+(jobs[e[o+5]]||'IDLE')+(e[o+5]===5?' '+Math.floor(e[o+10]*100)+'%':''),12,257,7);}
    this.hudCount=this.count-start;for(let i=0;i<this.hudCount*8;i++)this.hudData[i]=this.data[start*8+i];this.hudAlloy=alloy;this.hudCharge=charge;this.hudSelection=o;this.hudKind=kind;this.hudHealth=hp;this.hudJob=job;this.hudProgress=progress;
   }else{for(let i=0;i<this.hudCount*8;i++)this.data[this.count*8+i]=this.hudData[i];this.count+=this.hudCount;}
