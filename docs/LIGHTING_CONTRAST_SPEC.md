@@ -132,6 +132,21 @@ inside `shadow()`: the broad connected cast fill uses palette index 1 instead of
 2. The separate contact lip remains index 0. Do not change shadow geometry,
 height, direction, or any lit surface.
 
+## 2.8 Pass 23 decision
+
+Pass 23 commit `e01532f` deepens the connected cast fill from palette index 2 to
+1. Objective gates remain green. Cursor Auto sees improved shadows, but Cursor
+and DeepSeek still fail the lighting scope and name emissive-to-shadow separation
+as the remaining gap. A focused DeepSeek critic selected one hard one-pixel
+same-family halo around existing emitters.
+
+Keep pass 23 as the candidate base. In `emissive()`, draw one larger flat box
+first at `(w+2,h+2)` raster pixels using `color-1`, then draw the unchanged core
+at `(w,h)`. Every audited emitter colour is above its family floor, including
+encoded effect colours, so `color-1` stays in-family. `less-equal` depth lets the
+later core overwrite the halo at equal depth. Count this as one emitter and keep
+the 512-emitter cap. No alpha, blend, gradient, new colour, or draw pass.
+
 ## 3. Required visual changes
 
 ### 3.1 World-fixed directional light
@@ -220,8 +235,10 @@ Do not resize or move units in this pass.
   into one dark cluster.
 - The selected entity ring uses bright gold segments with an ink separation from
   the ground. It must remain visible at the 844×390 phone layout.
-- Muzzle flashes and energy cores can use family endpoints. Do not brighten all
-  particles or make static props look interactive.
+- Muzzle flashes and energy cores can use family endpoints. Every existing
+  `emissive()` core receives one hard one-pixel border in the next darker family
+  entry. The core overwrites the center. Do not add new emitter positions.
+- Do not brighten all particles or make static props look interactive.
 
 ### 3.5 Cast and contact shadows
 
