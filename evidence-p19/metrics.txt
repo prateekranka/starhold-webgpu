@@ -1,0 +1,19 @@
+Pass 19 component result: KEEP; complete lighting gate misses highlight floor only
+
+Runtime: 8/8 PASS
+FPS: 60.3
+p95: 17.2 ms
+max: 17.8 ms
+Instance saturation: false
+Determinism: {"n":55,"alloy":247,"charge":199,"hash":"20b89f84"} matched
+Console errors: none
+
+Grid: median_run=2 px; identical_h_pairs=0.9103; 1 px physical detail retained
+Colours: 31; outside palette: 0
+Lighting: coverage=42.779%; mean=87.250 PASS; sd=46.844 PASS; >=90=38.488% PASS; >=170=4.904% FAIL by 0.096 percentage points
+Texture: transition_density=0.2218; #624779_max=1689; #3C3057_max=1070; PASS
+Cliff: top=86.8; upper=75.1; lower=62.6; lower/upper=0.833; slope=-0.175/row; PASS
+
+Delta from pass 18: 9,570 pixels changed (1.8461% of frame). Mean luminance delta on all pixels=+0.5744. Mean delta on changed pixels=+31.1128. Of changed pixels, 93.762% became brighter and 6.238% became darker.
+
+Component gate: KEEP. Full lighting L1 remains open only because approximately 184 more judged pixels must reach luminance 170.
