@@ -73,6 +73,20 @@ It must:
 - `tasks/vision-critic.py` — raw DeepSeek comparative vision gate.
 - `tasks/astra-run.sh` — Plus-only fresh-context runner; fast mode disabled.
 
+## Scheduled mobile continuation
+
+One-shot cron job `9682bd950b42` runs at **2026-09-13 00:22 IST** after the
+Plus reset. It is pinned to `deepseek-v4-flash` at `max` reasoning and reports to
+the Bottymcbotface Bot Chat. Mobile is the first priority before pass 15:
+
+- write `docs/MOBILE_SPEC.md` first;
+- landscape phone/tablet layouts with safe-area support and no clipping;
+- touch targets at least 44×44 CSS px independent of canvas scaling;
+- tap selection and pinch zoom; preserve rotate and +/- controls;
+- explicit portrait treatment;
+- verify 844×390 touch, 390×844 portrait, and 1024×768 tablet in the existing
+  harness; preserve deterministic gameplay and WebGPU performance.
+
 ## Agent settings
 
 - Coding worker: GPT-6 Astra, reasoning `medium`, `fast_mode=false`.
