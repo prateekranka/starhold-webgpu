@@ -1,5 +1,5 @@
 import './style.css';
-import {Renderer} from './renderer';
+import {Renderer, RENDER_WIDTH, RENDER_HEIGHT} from './renderer';
 import {names, jobs} from './kinds';
 interface SimExports extends WebAssembly.Exports {
  memory:WebAssembly.Memory;
@@ -22,7 +22,7 @@ function selectAt(x:number,y:number) {
  if(!sim||!window.__APP.ready)return;
  const rect=canvas.getBoundingClientRect();
  if(x<rect.left||y<rect.top||x>=rect.right||y>=rect.bottom)return;
- selected=renderer.pick((x-rect.left)*480/rect.width,(y-rect.top)*270/rect.height,yawSteps,zooms[zoomIndex]);
+ selected=renderer.pick((x-rect.left)*RENDER_WIDTH/rect.width,(y-rect.top)*RENDER_HEIGHT/rect.height,yawSteps,zooms[zoomIndex]);
  sim.sim_select(selected??-1);refreshEntities();updateSelection();
 }
 function fastForward(seconds:number) {
@@ -36,7 +36,7 @@ const canvas=document.querySelector<HTMLCanvasElement>('#world')!;
 const viewport=document.querySelector<HTMLElement>('#viewport')!;
 const selection=document.querySelector<HTMLOutputElement>('#selection')!;
 function fatal(error:unknown) {if(window.__APP.error)return;window.__APP.error=error instanceof Error?error.message:String(error);const overlay=document.querySelector<HTMLElement>('#error')!;overlay.textContent=window.__APP.error;overlay.hidden=false;}
-function resize() {const fit=Math.min(innerWidth/480,innerHeight/270);const scale=fit>=1?Math.floor(fit):fit;viewport.style.width=`${480*scale}px`;viewport.style.height=`${270*scale}px`;}
+function resize() {const fit=Math.min(innerWidth/RENDER_WIDTH,innerHeight/RENDER_HEIGHT);const scale=fit>=1?Math.floor(fit):fit;viewport.style.width=`${RENDER_WIDTH*scale}px`;viewport.style.height=`${RENDER_HEIGHT*scale}px`;}
 window.addEventListener('resize',resize);resize();
 document.getElementById('rotate-left')!.addEventListener('click',()=>rotate(-1));
 document.getElementById('rotate-right')!.addEventListener('click',()=>rotate(1));

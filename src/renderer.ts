@@ -1,21 +1,35 @@
 import {palette, names, jobs} from './kinds';
 import {glyphs} from './font';
 const MAX=8000, STRIDE=8;
+export const RENDER_WIDTH=960, RENDER_HEIGHT=540;
+const GRID=2;
+const CONTOUR_TILE=16, CONTOUR_COLUMNS=Math.ceil(RENDER_WIDTH/CONTOUR_TILE), CONTOUR_ROWS=Math.ceil(RENDER_HEIGHT/CONTOUR_TILE);
 const colors=palette.map(h=>[parseInt(h.slice(0,2),16)/255,parseInt(h.slice(2,4),16)/255,parseInt(h.slice(4,6),16)/255]);
 const paletteWGSL=`const palette = array<vec3f,32>(${colors.map(c=>`vec3f(${c.join(',')})`).join(',')});`;
 const geometryWGSL=paletteWGSL+`
+const resolution=vec2f(${RENDER_WIDTH}.,${RENDER_HEIGHT}.);
+const grid=${GRID}.;
 struct Camera { rotation:vec2f, magnification:f32, padding:f32 }
 @group(0) @binding(0) var<uniform> camera:Camera;
 struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @location(1) unit:f32, @location(2) rim:vec2f }
 @vertex fn vs(@location(0) vertex:vec3f,@location(1) shade:f32,@location(2) origin:vec3f,@location(3) size:vec3f,@location(4) color:f32,@location(5) screen:f32,@location(6) actor:vec4f)->Out {
  var o:Out;
  let pigment=color%32.;o.unit=floor((color%32768.)/32.);
- // 18/19 mark combat composites; 17 keeps worker/skiff shading unchanged.
+ // 18/19 mark combat composites; 17 identifies the worker/skiff contour.
  let combat=floor(color/32768.);o.rim=vec2f(select(0.,1.,combat>=18.),0.);
  var v=vertex;
- if screen < -0.5 {v=vec3f(vertex.xy*select(1.,select(.55,.08,screen < -1.5),vertex.z>.5),vertex.z);}
- let p=origin+v*size;
- if screen>0.5 {o.position=vec4f(p.x/240.-1.,1.-p.y/135.,0.0001,1.);o.color=palette[u32(pigment)];}
+ if screen < -0.5 && screen > -2.5 {v=vec3f(vertex.xy*select(1.,select(.55,.08,screen < -1.5),vertex.z>.5),vertex.z);}
+ var p=origin+v*size;
+ // Project an extruded footprint onto its terrain plane, away from the
+ // screen-space upper-left key. Rotate the offset back into world space.
+ if screen == -3. {
+  let offset=vec2f(.5,-.1)*vertex.z*size.z;
+  p=origin+vec3f(vertex.xy*size.xy+vec2f(
+   offset.x*camera.rotation.x+offset.y*camera.rotation.y,
+   -offset.x*camera.rotation.y+offset.y*camera.rotation.x),0.);
+ }
+ if screen == -4. {p=origin;}
+ if screen>0.5 {let hud=p.xy*grid/(resolution*.5);o.position=vec4f(hud.x-1.,1.-hud.y,0.0001,1.);o.color=palette[u32(pigment)];}
  else {
  let d=p.xy-vec2f(16.);
  let r=vec2f(d.x*camera.rotation.x-d.y*camera.rotation.y,d.x*camera.rotation.y+d.y*camera.rotation.x);
@@ -26,24 +40,32 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
   let anchor=vec2f(6.*(ar.x-ar.y),3.4641016*(ar.x+ar.y)-6.9282032*actor.z);
   projected=anchor+(projected-anchor)*vec2f(1.4,actor.w);
  }
- let pixel=round(vec2f(240.,136.)+projected*camera.magnification);
- o.position=vec4f(pixel.x/240.-1.,1.-pixel.y/135.,0.5-((r.x+r.y)*0.5773503+p.z*0.5773503)/128.,1.);
+ var pixel=round(vec2f(240.,136.)*grid+projected*camera.magnification*grid);
+ // Emissive details are opaque 1–2 raster pixels, independent of zoom.
+ if screen == -4. {pixel+=vertex.xy*size.xy;}
+ let ndc=pixel/(resolution*.5);
+ o.position=vec4f(ndc.x-1.,1.-ndc.y,0.5-((r.x+r.y)*0.5773503+p.z*0.5773503)/128.,1.);
  // Never shade across palette families (teal feet formerly became ivory,
  // violet soil became orange, and gold cargo became cyan).
- let family=select(select(select(select(select(0.,10.,pigment>=10.),15.,pigment>=15.),19.,pigment>=19.),23.,pigment>=23.),28.,pigment>=28.);
- o.color=palette[u32(max(family,pigment-shade))];
- if combat>0. {
-  // Lit armor sides retain faction value instead of descending into wine or
-  // stone. Ivory trim and weapon glints stay discrete palette blocks.
-  var armor=pigment;
-  if pigment>=12. && pigment<=13. {armor=max(12.,pigment-min(shade,1.));}
-  if pigment==25. {armor=25.;}
-  o.color=palette[u32(armor)];
- }
- // Friendly composite masks keep their outer one-pixel ink contour, but no
- // internal teal rim may overwrite an ivory hood, crest, wing or gold tool.
- // Flat palette faces also keep small light panels from shading into stone.
- if combat==17. {o.color=palette[u32(pigment)];}
+ let family=select(select(select(select(select(select(0.,4.,pigment>=4.),10.,pigment>=10.),15.,pigment>=15.),19.,pigment>=19.),23.,pigment>=23.),28.,pigment>=28.);
+ // Face IDs carry world normals. Lighting follows camera yaw so the visible
+ // left wall is always mid-value and the right wall dark; tops retain base.
+ var normal=vec2f(0.);
+ if shade==1. {normal=vec2f(0.,-1.);}
+ if shade==2. {normal=vec2f(0.,1.);}
+ if shade==3. {normal=vec2f(-1.,0.);}
+ if shade==4. {normal=vec2f(1.,0.);}
+ let rotated=vec2f(normal.x*camera.rotation.x-normal.y*camera.rotation.y,
+  normal.x*camera.rotation.y+normal.y*camera.rotation.x);
+ var steps=select(1.,2.,rotated.x-rotated.y>0.);
+ if shade==0. {steps=0.;}
+ if shade==5. {steps=2.;}
+ // Reserve hot family endpoints for tiny explicit cores, never broad faces.
+ let hot=pigment==9. || pigment==18. || pigment==22. || pigment==27. || pigment==31.;
+ let base=pigment-select(0.,1.,hot);
+ o.color=palette[u32(max(family,base-steps))];
+ if screen == -3. || screen == -4. {o.color=palette[u32(pigment)];}
+ if screen == -4. {o.unit=1.;o.rim=vec2f(0.);}
  } return o;
 }
 struct Fragment { @location(0) color:vec4f, @location(1) mask:vec4f }
@@ -52,17 +74,21 @@ struct Fragment { @location(0) color:vec4f, @location(1) mask:vec4f }
 const postWGSL=paletteWGSL+`
 @group(0) @binding(0) var scene:texture_2d<f32>;
 @group(0) @binding(1) var silhouette:texture_2d<f32>;
+@group(0) @binding(2) var contourTiles:texture_2d<u32>;
 @vertex fn vs(@builtin(vertex_index) i:u32)->@builtin(position) vec4f {
  let p=array<vec2f,3>(vec2f(-1.,-1.),vec2f(3.,-1.),vec2f(-1.,3.));return vec4f(p[i],0.,1.);
 }
 @fragment fn fs(@builtin(position) p:vec4f)->@location(0) vec4f {
  let pixel=vec2i(p.xy);let center=textureLoad(silhouette,pixel,0);
+ // Conservative CPU occupancy skips neighbor walks outside actor/effect
+ // bounds. The palette nearest-color search below remains the final pass.
+ let occupied=textureLoad(contourTiles,pixel/${CONTOUR_TILE},0).r;
  // Per-entity contours also separate overlapping combatants. Mask 1 belongs
  // to projectiles/rings: preserve their color even beside an enlarged hull.
  // Ink surrounds each composite, including actor boundaries.
- if center.r!=1. {for(var axis=0;axis<4;axis++) {
+ if occupied!=0u && center.r!=1. {for(var axis=0;axis<4;axis++) {
   let offsets=array<vec2i,4>(vec2i(-1,0),vec2i(1,0),vec2i(0,-1),vec2i(0,1));
-  let neighbor=textureLoad(silhouette,clamp(pixel+offsets[axis],vec2i(0),vec2i(479,269)),0);
+  let neighbor=textureLoad(silhouette,clamp(pixel+offsets[axis],vec2i(0),vec2i(${RENDER_WIDTH-1},${RENDER_HEIGHT-1})),0);
   let tolerance=select(0.,0.002,center.r==0.);
   if neighbor.r>0.5 && neighbor.r!=center.r && neighbor.g<center.g+tolerance {return vec4f(palette[0],1.);}
  }}
@@ -70,11 +96,11 @@ const postWGSL=paletteWGSL+`
  // Eight neighbors close diagonal seams into one continuous #10121C backing.
  // At actor/actor contacts use two pixels on the rear actor and one on the
  // front actor: a three-pixel ink gutter, with depth and effect masks intact.
- if center.r!=1. {
+ if (occupied&2u)!=0u && center.r!=1. {
   for(var dy=-2;dy<=2;dy++) {for(var dx=-2;dx<=2;dx++) {
    if dx==0 && dy==0 {continue;}
    let distance=max(abs(dx),abs(dy));
-   let neighbor=textureLoad(silhouette,clamp(pixel+vec2i(dx,dy),vec2i(0),vec2i(479,269)),0);
+   let neighbor=textureLoad(silhouette,clamp(pixel+vec2i(dx,dy),vec2i(0),vec2i(${RENDER_WIDTH-1},${RENDER_HEIGHT-1})),0);
    if neighbor.b==0. || neighbor.r==center.r {continue;}
    if distance==1 && neighbor.g<center.g+select(0.,0.002,center.r==0.) {
     return vec4f(palette[0],1.);
@@ -96,6 +122,11 @@ export class Renderer {
  readonly camera=new Float32Array([1,0,1,0]);
  readonly stats={drawCalls:2,triangles:0};
  time=0;count=0;staticCount=0;worldCount=0;selected:number|null=null;
+ private emissiveCount=0;private staticEmissiveCount=0;
+ private contourData=new Uint8Array(256*CONTOUR_ROWS);
+ private contourUpload:any;
+ private contourLayout={bytesPerRow:256,rowsPerImage:CONTOUR_ROWS};
+ private contourSize={width:CONTOUR_COLUMNS,height:CONTOUR_ROWS,depthOrArrayLayers:1};
  private device:any;private context:any;private pipeline:any;private post:any;private vertex:any;private buffer:any;private uniform:any;private group:any;private postGroup:any;
  private scenePass:any;private presentPass:any;
  private hudAlloy=-1;private hudCharge=-1;private hudSelection=-2;private hudKind=-1;private hudHealth=-1;private hudJob=-1;private hudProgress=-1;private hudData=new Float32Array(24000);private hudCount=0;
@@ -112,9 +143,9 @@ export class Renderer {
   face([-.5,-.5,1],[.5,-.5,1],[.5,.5,1],[-.5,.5,1],0);
   face([-.5,-.5,0],[.5,-.5,0],[.5,-.5,1],[-.5,-.5,1],1);
   face([.5,.5,0],[-.5,.5,0],[-.5,.5,1],[.5,.5,1],2);
-  face([-.5,.5,0],[-.5,-.5,0],[-.5,-.5,1],[-.5,.5,1],1);
-  face([.5,-.5,0],[.5,.5,0],[.5,.5,1],[.5,-.5,1],2);
-  face([-.5,.5,0],[.5,.5,0],[.5,-.5,0],[-.5,-.5,0],2);
+  face([-.5,.5,0],[-.5,-.5,0],[-.5,-.5,1],[-.5,.5,1],3);
+  face([.5,-.5,0],[.5,.5,0],[.5,.5,1],[.5,-.5,1],4);
+  face([-.5,.5,0],[.5,.5,0],[.5,-.5,0],[-.5,-.5,0],5);
   this.vertex=d.createBuffer({size:mesh.length*4,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});d.queue.writeBuffer(this.vertex,0,new Float32Array(mesh));
   this.buffer=d.createBuffer({size:this.data.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});
   this.actorBuffer=d.createBuffer({size:this.actorData.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});
@@ -122,11 +153,14 @@ export class Renderer {
   const module=d.createShaderModule({code:geometryWGSL});
   this.pipeline=d.createRenderPipeline({layout:'auto',vertex:{module,entryPoint:'vs',buffers:[{arrayStride:16,attributes:[{shaderLocation:0,offset:0,format:'float32x3'},{shaderLocation:1,offset:12,format:'float32'}]},{arrayStride:32,stepMode:'instance',attributes:[{shaderLocation:2,offset:0,format:'float32x3'},{shaderLocation:3,offset:12,format:'float32x3'},{shaderLocation:4,offset:24,format:'float32'},{shaderLocation:5,offset:28,format:'float32'}]},{arrayStride:16,stepMode:'instance',attributes:[{shaderLocation:6,offset:0,format:'float32x4'}]}]},fragment:{module,entryPoint:'fs',targets:[{format:'rgba8unorm'},{format:'rgba16float'}]},primitive:{topology:'triangle-list'},depthStencil:{format:'depth24plus',depthWriteEnabled:true,depthCompare:'less-equal'}});
   this.group=d.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:this.uniform}}]});
-  const scene=d.createTexture({size:[480,270],format:'rgba8unorm',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.TEXTURE_BINDING});
-  const silhouette=d.createTexture({size:[480,270],format:'rgba16float',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.TEXTURE_BINDING});
-  const depth=d.createTexture({size:[480,270],format:'depth24plus',usage:GPUTextureUsage.RENDER_ATTACHMENT});
+  const scene=d.createTexture({size:[RENDER_WIDTH,RENDER_HEIGHT],format:'rgba8unorm',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.TEXTURE_BINDING});
+  const silhouette=d.createTexture({size:[RENDER_WIDTH,RENDER_HEIGHT],format:'rgba16float',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.TEXTURE_BINDING});
+  const depth=d.createTexture({size:[RENDER_WIDTH,RENDER_HEIGHT],format:'depth24plus',usage:GPUTextureUsage.RENDER_ATTACHMENT});
+  const textureUsage=GPUTextureUsage as typeof GPUTextureUsage & {COPY_DST:number};
+  const contourTiles=d.createTexture({size:[CONTOUR_COLUMNS,CONTOUR_ROWS],format:'r8uint',usage:textureUsage.TEXTURE_BINDING|textureUsage.COPY_DST});
+  this.contourUpload={texture:contourTiles};
   const postModule=d.createShaderModule({code:postWGSL});this.post=d.createRenderPipeline({layout:'auto',vertex:{module:postModule,entryPoint:'vs'},fragment:{module:postModule,entryPoint:'fs',targets:[{format}]},primitive:{topology:'triangle-list'}});
-  const sceneView=scene.createView(),silhouetteView=silhouette.createView();this.postGroup=d.createBindGroup({layout:this.post.getBindGroupLayout(0),entries:[{binding:0,resource:sceneView},{binding:1,resource:silhouetteView}]});
+  const sceneView=scene.createView(),silhouetteView=silhouette.createView();this.postGroup=d.createBindGroup({layout:this.post.getBindGroupLayout(0),entries:[{binding:0,resource:sceneView},{binding:1,resource:silhouetteView},{binding:2,resource:contourTiles.createView()}]});
   this.scenePass={colorAttachments:[{view:sceneView,clearValue:{r:16/255,g:18/255,b:28/255,a:1},loadOp:'clear',storeOp:'store'},{view:silhouetteView,clearValue:{r:0,g:1,b:0,a:1},loadOp:'clear',storeOp:'store'}],depthStencilAttachment:{view:depth.createView(),depthClearValue:1,depthLoadOp:'clear',depthStoreOp:'discard'}};
   this.presentPass={colorAttachments:[{view:null,loadOp:'clear',storeOp:'store',clearValue:{r:16/255,g:18/255,b:28/255,a:1}}]};
   this.terrain.set(terrain);this.makeTerrain();
@@ -137,9 +171,20 @@ export class Renderer {
   const i=this.count*8;this.data[i]=x;this.data[i+1]=y;this.data[i+2]=z;this.data[i+3]=sx;this.data[i+4]=sy;this.data[i+5]=sz;this.data[i+6]=color;this.data[i+7]=screen;this.owners[this.count++]=owner;
  }
  ground(x:number,y:number) {return this.terrain[Math.max(0,Math.min(31,Math.floor(y)))*32+Math.max(0,Math.min(31,Math.floor(x)))];}
+ private emissive(x:number,y:number,z:number,color:number,owner=-1,w=1,h=2) {
+  // At most 2,048 hot world pixels (<0.4% of 960×540), before occlusion.
+  // HUD glyphs retain their existing size and palette; broad world faces use
+  // the next darker entry. Fixed storage and no extra draw or blend pass.
+  if(this.emissiveCount>=512)return;
+  this.emissiveCount++;this.box(x,y,z,w,h,0,color,owner,-4);
+ }
+ private shadow(x:number,y:number,w:number,d:number,h:number) {
+  this.box(x,y,this.ground(x,y)+.09,w,d,h,2,-1,-3);
+ }
  private shard(x:number,y:number,z:number,h:number,c=30,owner=-1) {
   this.box(x,y,z,.62,.65,h,c,owner,-2);
   this.box(x+.25,y+.12,z,.24,.25,h*.56,c-1,owner,-2);
+  this.emissive(x,y,z+h,c<19?18:31,owner);
  }
  private makeTerrain() {
   // Broken outer contour and staggered basalt columns avoid the old square plate.
@@ -185,12 +230,13 @@ export class Renderer {
   for(let i=0;i<5;i++){const x=19+i*1.75,y=27.8-i%2*.3,z=this.ground(x,y);this.box(x,y,z,.68,.65,.65+i%2*.2,4);this.box(x+.65,y+.2,z,.42,.5,.3,5);if(i%2===0){this.box(x,y,z+.65,.35,.42,.45,5);this.box(x+.24,y,z+1.05,.65,.45,.15,4);}}
   for(let i=0;i<18;i++){const x=3+(i*43%263)/10,y=3+(i*71%263)/10;if(x>8&&x<23&&y>9&&y<24)continue;this.box(x,y,this.ground(x,y),.3+i%3*.1,.35,.2+i%3*.15,4);}
   for(let i=0;i<7;i++){const x=26.8+i%3*1.2,y=3+i*1.25,z=this.ground(x,y);this.box(x,y,z,.6,.6,1.1+i%3*.45,3);this.box(x,y,z+1.1+i%3*.45,.75,.75,.22,5);}
-  this.staticCount=this.count;
+  this.staticCount=this.count;this.staticEmissiveCount=this.emissiveCount;
  }
  private building(e:Float32Array,o:number,id:number) {
   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],p=e[o+10],phase=e[o+6];
   const w=k===10||k===17?4:k===12||k===16?2:3,depth=k===15?2:k===17?3:w;
-  this.box(x+.2,y+.25,z+.01,w+.5,depth+.5,.035,2);
+  const height=k===10?5:k===12||k===16?4:k===13||k===14?3:2.5;
+  this.shadow(x,y,w+.2,depth+.2,p<.2?.35:p<.5?1.4:p<.85?2.8:height);
   this.box(x,y,z,w+.2,depth+.2,.19,7,id);
   this.box(x,y,z+.19,w-.12,depth-.12,.12,11,id);
   if(p<1){
@@ -228,14 +274,14 @@ export class Renderer {
    this.box(x,y,z+4.35,.8,.1,.1,21,id);
    this.box(x,y+1.9,z+.2,.72,.1,1.3,1,id);this.box(x,y+1.96,z+.3,.12,.04,.45,26,id);
    for(let j=0;j<3;j++)this.box(x,y+2.05+j*.21,z,.9,.25,.3-j*.08,7,id);
-   for(let j=-1;j<=1;j+=2){this.box(x+j*1.35,y+1.9,z+.8,.16,.09,.45,22,id);this.box(x+1.9,y+j*.9,z+.85,.08,.18,.5,22,id);}
+   for(let j=-1;j<=1;j+=2){this.box(x+j*1.35,y+1.9,z+.8,.16,.09,.45,22,id);this.box(x+1.9,y+j*.9,z+.85,.08,.18,.5,22,id);this.emissive(x+j*1.35,y+1.96,z+1.05,22,id);this.emissive(x+1.95,y+j*.9,z+1.1,22,id);}
    this.banner(x-.9,y+1.98,z+2.3,phase,id);
    this.banner(x+1.98,y+.85,z+2.3,phase+.3,id);
   } else if(k===12){
    this.box(x,y,z+.3,1.8,1.8,.3,12,id,-1);
    for(let j=0;j<6;j++){const a=j*Math.PI/3;this.box(x+Math.cos(a)*.8,y+Math.sin(a)*.8,z+.25,.45,.45,.45,8,id);}
    if(p>=.2)for(let a=-1;a<=1;a+=2)this.box(x+a*.8,y,z+.55,.24,.46,p<.5?1.3:2.5,8,id);
-   if(p>=.5){const bob=Math.floor(phase*4)%2*.08;this.shard(x,y,z+.65+bob,2.9,17,id);for(let j=0;j<3;j++){this.box(x,y,z+.85+j*.65,.75,.75,.12,16,id);this.box(x-.18,y+.26,z+.9+j*.65,.08,.08,.48,Math.floor(phase*4)===j?18:17,id);}this.box(x,y,z+3.55,.1,.1,.4,18,id);}
+   if(p>=.5){const bob=Math.floor(phase*4)%2*.08;this.shard(x,y,z+.65+bob,2.9,17,id);for(let j=0;j<3;j++){this.box(x,y,z+.85+j*.65,.75,.75,.12,16,id);this.box(x-.18,y+.26,z+.9+j*.65,.08,.08,.48,17,id);this.emissive(x-.18,y+.31,z+1.14+j*.65,Math.floor(phase*4)===j?18:17,id);}this.emissive(x,y,z+3.75,18,id);}
   } else if(k===16){
    const levels=p<.5?1:p<.85?2:3;
    for(let j=0;j<levels;j++){if(p>=.85||j===0)this.box(x,y,z+.3+j*.85,1.65-j*.28,1.65-j*.28,.72,12,id);
@@ -245,14 +291,17 @@ export class Renderer {
    if(p>=.5){this.box(x,y-.2,z+2.12,1.25,.14,.13,21,id);this.box(x,y,z+2.3,.38,.38,.3,16,id);}
    if(p>=.85){const dx=Math.cos(e[o+3]),dy=Math.sin(e[o+3]);this.box(x,y,z+3.,.5,.5,.55,12,id);for(let j=0;j<4;j++)this.box(x+dx*j*.23,y+dy*j*.23,z+3.2,.23,.23,.2,j===3?18:16,id);for(let a=-1;a<=1;a+=2)this.box(x+a*.66,y,z+3.,.08,.08,.95,22,id);
     for(let j=0;j<3;j++)this.box(x+.43,y+.24,z+2.35+j*.2,.13,.16,.12,phase>j/3?17:15,id);
-    if(e[o+5]===2&&phase<.035)this.box(x+dx*.85,y+dy*.85,z+3.18,.28,.28,.26,18);}
+    this.emissive(x+dx*.74,y+dy*.74,z+3.3,18,id);
+    if(e[o+5]===2&&phase<.035)this.emissive(x+dx*.85,y+dy*.85,z+3.31,18,-1,2,2);}
   } else if(k===15){
    for(let a=-1;a<=1;a++){this.box(x+a*.98,y,z+.3,.87,1.7,.25,12,id);for(let b=-1;b<=1;b+=2)this.box(x+a*.98,y+b*.68,z+.55,.8,.16,p<.5?.55:1.25,7,id);if(p>=.5){this.box(x+a*.98,y,z+.55,.8,1.5,1.1,8,id);this.box(x+a*.98,y,z+1.65,.95,1.8,.25,8,id,-1);this.box(x+a*.98,y,z+1.9,.58,1.05,.14,12,id);this.box(x+a*.98,y+.79,z+.85,.19,.07,.45,19,id);this.box(x+a*.98,y+.84,z+.9,.1,.04,.3,22,id);this.box(x+a*.98,y+1.,z+1.45,.88,.5,.1,12,id);}}
+   if(p>=.5)for(let a=-1;a<=1;a++)this.emissive(x+a*.98,y+.89,z+1.05,22,id);
    if(p>=.85)this.box(x+1.15,y-.6,z+2,.06,.06,.5,22,id);
   } else if(k===17){
    // Open landing deck, crescent edge and independent control hut.
    for(let j=-2;j<=2;j++)if(p>=(j+3)*.08)this.box(x+j*.7,y,z+.3,.62,2.5,.1,11,id);
    if(p>=.5){for(let a=-1;a<=1;a+=2){this.box(x+a*1.8,y,z+.4,.25,2.7,.3,8,id);this.box(x,y+a*1.3,z+.4,3.4,.23,.3,8,id);}this.box(x-1.2,y-.7,z+.4,.9,.9,1.1,12,id);this.box(x-1.2,y-.7,z+1.5,1.,1.,.18,8,id);this.box(x-1.2,y-.23,z+.95,.5,.08,.3,17,id);this.crane(x+1.5,y-.9,z,1.5,2.5,phase,id);}
+   if(p>=.5)this.emissive(x-1.2,y-.17,z+1.1,18,id,2,1);
    if(p>=.85)for(let j=0;j<8;j++)this.box(x-1.3+j*.37,y+1.18,z+.72,.19,.1,.035,j===Math.floor(phase*8)?22:20,id);
   } else if(k===11){
    for(let a=-1;a<=1;a+=2){this.box(x+a*1.25,y,z+.3,.38,2.7,p<.5?.7:1.25,11,id);for(let j=-1;j<=1;j++)this.box(x+a*1.42,y+j,z+.3,.16,.22,1.4,7,id);}
@@ -268,7 +317,7 @@ export class Renderer {
    this.box(x,y,z+.3,2.7,2.6,p<.5?.5:1.4,4,id);
    for(let a=-1;a<=1;a+=2)this.box(x+a*1.3,y,z+.3,.25,2.6,1.8,8,id);
    if(p>=.5){this.box(x,y,z+1.7,2.8,2.7,.22,7,id);this.box(x-.7,y-.6,z+1.9,.55,.6,1.1,4,id);this.box(x-.7,y-.6,z+2.95,.68,.7,.15,7,id);this.box(x+.65,y-.5,z+1.9,.4,.4,.85,7,id);this.box(x+.65,y-.5,z+2.75,.4,.4,.15,22,id);
-    this.box(x,y+1.34,z+.3,1.25,.18,1.3,1,id);this.box(x,y+1.45,z+.35,.9,.12,.95,25,id);this.box(x,y+1.53,z+.4,.45,.1,.65,27,id);this.box(x,y+1.8,z+.21,.5,.6,.06,26,id);
+    this.box(x,y+1.34,z+.3,1.25,.18,1.3,1,id);this.box(x,y+1.45,z+.35,.9,.12,.95,25,id);this.box(x,y+1.53,z+.4,.45,.1,.65,27,id);this.box(x,y+1.8,z+.21,.5,.6,.06,26,id);this.emissive(x,y+1.6,z+.73,27,id,2,2);
     for(let j=0;j<8;j++){const a=(j/8+phase)*Math.PI*2;this.box(x+1.48,y+Math.cos(a)*.55,z+1.+Math.sin(a)*.55,.2,.24,.24,21,id);}
     for(let j=0;j<5;j++){const q=(this.time/2+j/5)%1,size=.32+Math.floor(q*3)*.24;this.box(x-.7+q*.95,y-.6+q*.25,z+3.1+q*2.1,size,size,.28+q*.2,q<.65?6:4);}}
   }
@@ -285,6 +334,9 @@ export class Renderer {
   this.box(x,y,z,.17,.17,h,20,id);this.box(x-w*.5,y,z+h,w+.15,.18,.18,22,id);const lift=assembly<0?.8+Math.floor(phase*6)/6*(h-1.2):assembly+Math.floor(phase*3)*.12;this.box(x-w*.8,y,z+lift,.05,.05,h-lift,19,id);this.box(x-w*.8,y,z+lift-.15,.2,.2,.16,22,id);this.box(x-w*.8,y,z+lift-.55,.42,.42,.4,12,id);this.box(x-w*.8+.12,y,z+lift-.13,.12,.12,.24,22,id);
  }
  private unit(e:Float32Array,o:number,id:number,yaw:number,zoom:number) {
+  const kind=e[o+4];
+  const jitter=kind===21||kind===22||kind===23||kind===30||kind===31;
+  this.shadow(e[o]+(jitter?(id%3-1)*.24:0),e[o+1]+(jitter?(Math.floor(id/3)%3-1)*.24:0),kind===31?2:kind===24?1.8:kind===20?.55:1.15,kind===31?1.6:kind===24?1.2:.8,kind===24?3:kind===20?1:1.8);
   const start=this.count;
   this.unitParts(e,o,id);
   const k=e[o+4],friendly=k>=20&&k<=24;
@@ -301,11 +353,12 @@ export class Renderer {
    const q=i*8,owned=this.owners[i]===id,bodyGrowth=owned?growth:1;
    const dx=(this.data[q]-e[o])*scale*bodyGrowth,dy=(this.data[q+1]-e[o+1])*scale*bodyGrowth;
    this.data[q]=e[o]+dx*c-dy*sn+(owned?ox:0);this.data[q+1]=e[o+1]+dx*sn+dy*c+(owned?oy:0);
-   this.data[q+3]*=scale*bodyGrowth;this.data[q+4]*=scale*bodyGrowth;
+   const core=this.data[q+7]===-4;
+   if(!core){this.data[q+3]*=scale*bodyGrowth;this.data[q+4]*=scale*bodyGrowth;}
    this.data[q+5]*=bodyGrowth;
    if(owned){
     this.data[q+6]+=32*(id+2)+32768*(combat?(friendly?18:19):friendly?17:0);
-    if(combat){
+    if(combat&&!core){
      const y=3.4641016*((cx+cy)*this.data[q]+(cx-cy)*this.data[q+1])-6.9282032*this.data[q+2];
      const half=1.7320508*(this.data[q+3]+this.data[q+4]);
      top=Math.min(top,y-half-6.9282032*this.data[q+5]);bottom=Math.max(bottom,y+half);
@@ -314,7 +367,7 @@ export class Renderer {
   }
   if(combat){
    // Grow the complete screen silhouette 40%; cap its conservative projected
-   // box height at 16 internal pixels, including at the closest zoom.
+   // box height at 32 raster pixels (16 logical), including closest zoom.
    // Original world depth, action effects and selection rings are untouched.
    const vertical=Math.min(1.4,16*zoom/(bottom-top));
    for(let i=start;i<this.count;i++)if(this.owners[i]===id){
@@ -326,7 +379,6 @@ export class Renderer {
  private unitParts(e:Float32Array,o:number,id:number) {
   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],phase=e[o+6],state=e[o+5],moving=state===1||state===6;
   const gait=moving?(phase<.5?-.16:.16):0;
-  this.box(x,y,this.ground(x,y)+.045,k===24?.9:k===31?1.8:k===20?.38:k<30?.55:1.1,k===24?.45:k===31?1.3:k===20?.3:k===22?.7:.5,.025,0);
   if(k===24){this.box(x,y,z,1.8,.8,.25,13,id);this.box(x,y,z+.25,1.25,.6,.25,14,id);for(let a=-1;a<=1;a+=2){this.box(x+a*.85,y,z,.25,1.25,.3,8,id);this.box(x+a*.75,y-.55,z+.1,.22,.4,.2,7,id);this.box(x+a*.6,y-.5,z-.05,.16,.25,.1,phase<.5?17:18,id);}this.box(x,y+.4,z+.15,1.4,.18,.15,8,id);this.box(x-.4,y,z+.5,.35,.4,.15,3,id);if(e[o+10]>0)this.crate(x+.2,y,z+.5,.45,id);if(state===7){this.box(x,y,z-1.,.04,.04,1.,21,id);this.crate(x,y,z-1.3,.35,id);}return;}
   // Brief numeric roles: 21 tall lancer, 22 wing/disc, 23 rifle knight.
   // Keep the simulation's existing kind names, cargo and action fields intact.
@@ -350,7 +402,7 @@ export class Renderer {
    this.box(x+.38-recoil,y+.32,z+.96,.92,.2,.2,10,id);
    this.box(x+.95-recoil,y+.32,z+.99,.14,.08,.14,22,id);
    if(k===21&&e[o+10]>0)this.crate(x-.36,y-.24,z+.55,.38,id);
-   if(attacking&&e[o+11]>.8)this.box(x+1.23-recoil,y+.32,z+.98,.35,.26,.26,k===23?18:22);
+   if(attacking&&e[o+11]>.8)this.emissive(x+1.23-recoil,y+.32,z+1.11,k===23?18:22,id,2,2);
    return;
   }
   if(k===22){
@@ -368,7 +420,7 @@ export class Renderer {
    this.box(x-recoil,y,z+.88,.13,.13,.04,17,id);
    this.box(x+.65-recoil,y,z+.78,.65,.22,.2,10,id);
    this.box(x+.95-recoil,y,z+.81,.14,.08,.14,22,id);
-   if(attacking&&e[o+11]>.8)this.box(x+.98-recoil,y,z+.82,.34,.3,.25,22);
+   if(attacking&&e[o+11]>.8)this.emissive(x+.98-recoil,y,z+.95,22,id,2,2);
    return;
   }
   if(k===30){
@@ -389,7 +441,7 @@ export class Renderer {
    this.box(x+.99+lunge,y,z+.76,.18,.1,.16,27,id);
    this.box(x-.19+lunge,y,z+.97,.2,.66,.12,23,id);
    this.box(x-.64,y,z+.66,.45,.23,.2,25,id,-2);
-   if(attacking&&e[o+11]>.72)this.box(x+1.1+lunge,y,z+.72,.32,.28,.24,27);
+   if(attacking&&e[o+11]>.72)this.emissive(x+1.1+lunge,y,z+.84,27,id,2,2);
    return;
   }
   if(k===31){
@@ -407,7 +459,7 @@ export class Renderer {
    this.box(x+1.2-recoil,y,z+.85,.18,.1,.16,27,id);
    this.box(x-.2-recoil,y,z+1.06,.2,1.25,.12,23,id);
    this.box(x+.22-recoil,y,z+.98,.47,.5,attacking?.8:.55,25,id,-2);
-   if(attacking&&e[o+11]>.88)this.box(x+1.27-recoil,y,z+.8,.4,.35,.3,27);
+   if(attacking&&e[o+11]>.88)this.emissive(x+1.27-recoil,y,z+.95,27,id,2,2);
    return;
   }
   // Riveter: compact round hood and backpack, with a warm face/tool cluster.
@@ -430,7 +482,8 @@ export class Renderer {
   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],sub=e[o+10],age=e[o+11],dx=Math.cos(e[o+3]),dy=Math.sin(e[o+3]);
   if(k===50){const color=sub===30||sub===31?26:sub===22?22:17;
    const steps=sub===30?3:sub===23?7:sub===31?5:4;
-   for(let j=steps-1;j>=0;j--){const q=j*(sub===30?.48:.26);this.box(x-dx*q,y-dy*q,z-(sub===31?j*.035:0),.26,.26,.23,32+(j===0?(sub===30||sub===31?27:sub===22?9:18):color));}
+   for(let j=steps-1;j>=0;j--){const q=j*(sub===30?.48:.26);this.box(x-dx*q,y-dy*q,z-(sub===31?j*.035:0),.13,.13,.115,32+color);}
+   this.emissive(x,y,z+.12,32+(sub===30||sub===31?27:sub===22?22:18),-1,2,1);
    if(sub===31)this.box(x,y,this.ground(x,y)+.05,.22,.22,.02,2);
   }else if(k===51){
    const blast=sub===31,r=.18+Math.floor(age*12)*(blast?.23:.1);
@@ -468,8 +521,34 @@ export class Renderer {
    this.hudCount=this.count-start;for(let i=0;i<this.hudCount*8;i++)this.hudData[i]=this.data[start*8+i];this.hudAlloy=alloy;this.hudCharge=charge;this.hudSelection=o;this.hudKind=kind;this.hudHealth=hp;this.hudJob=job;this.hudProgress=progress;
   }else{for(let i=0;i<this.hudCount*8;i++)this.data[this.count*8+i]=this.hudData[i];this.count+=this.hudCount;}
  }
+ private markContours(yaw:number,zoom:number) {
+  this.contourData.fill(0);
+  const c=Math.round(Math.cos(yaw*Math.PI/2)),s=Math.round(Math.sin(yaw*Math.PI/2));
+  const horizontal=6*GRID/zoom,vertical=3.4641016*GRID/zoom,height=6.9282032*GRID/zoom;
+  for(let i=0;i<this.worldCount;i++){
+   const q=i*8,color=this.data[q+6],core=this.data[q+7]===-4;
+   if(Math.floor((color%32768)/32)===0&&!core)continue;
+   const x=this.data[q]-16,y=this.data[q+1]-16,rx=x*c-y*s,ry=x*s+y*c;
+   let px=240*GRID+horizontal*(rx-ry),py=136*GRID+vertical*(rx+ry)-height*this.data[q+2];
+   const combat=Math.floor(color/32768)>=18;
+   let halfX=horizontal*(this.data[q+3]+this.data[q+4])*.5;
+   let halfY=vertical*(this.data[q+3]+this.data[q+4])*.5,rise=height*this.data[q+5];
+   if(combat){
+    const a=i*4,ax=this.actorData[a]-16,ay=this.actorData[a+1]-16;
+    const arx=ax*c-ay*s,ary=ax*s+ay*c;
+    const anchorX=240*GRID+horizontal*(arx-ary),anchorY=136*GRID+vertical*(arx+ary)-height*this.actorData[a+2];
+    px=anchorX+(px-anchorX)*1.4;py=anchorY+(py-anchorY)*this.actorData[a+3];
+    halfX*=1.4;halfY*=this.actorData[a+3];rise*=this.actorData[a+3];
+   }
+   if(core){halfX=this.data[q+3]*.5;halfY=this.data[q+4]*.5;rise=0;}
+   // Four raster pixels cover rounding plus the complete two-pixel contour.
+   const left=Math.max(0,Math.floor((px-halfX-4)/CONTOUR_TILE)),right=Math.min(CONTOUR_COLUMNS-1,Math.floor((px+halfX+4)/CONTOUR_TILE));
+   const top=Math.max(0,Math.floor((py-halfY-rise-4)/CONTOUR_TILE)),bottom=Math.min(CONTOUR_ROWS-1,Math.floor((py+halfY+4)/CONTOUR_TILE));
+   for(let row=top;row<=bottom;row++)for(let col=left;col<=right;col++)this.contourData[row*256+col]|=combat?3:1;
+  }
+ }
  render(e:Float32Array,n:number,yaw:number,zoom:number,alloy:number,charge:number,tick:number) {
-  this.time=tick/60;this.count=this.staticCount;this.selected=null;
+  this.time=tick/60;this.count=this.staticCount;this.emissiveCount=this.staticEmissiveCount;this.selected=null;
   for(let id=0;id<n;id++){const o=id*12,k=e[o+4];if(e[o+8]===1)this.selected=id;
    if(k>=10&&k<20)this.building(e,o,id);
    else if(k>=20&&k<=31)this.unit(e,o,id,yaw,zoom);
@@ -480,8 +559,10 @@ export class Renderer {
   if(this.selected!==null){const o=this.selected*12,r=e[o+4]<20?(e[o+4]===10?2.5:e[o+4]===16?1.5:1.8):e[o+4]===20?.65:e[o+4]===31?1.65:1.35;for(let j=0;j<24;j++){if(j%3===Math.floor(this.time/.6)%2)continue;const a=j*Math.PI/12;this.box(e[o]+Math.cos(a)*r,e[o+1]+Math.sin(a)*r,this.ground(e[o],e[o+1])+.08,.2,.2,.035,54);}}
   this.ambient(this.time);
   this.worldCount=this.count;this.hud(e,alloy,charge);
+  this.markContours(yaw,zoom);
   this.camera[0]=Math.round(Math.cos(yaw*Math.PI/2));this.camera[1]=Math.round(Math.sin(yaw*Math.PI/2));this.camera[2]=1/zoom;
   const d=this.device;d.queue.writeBuffer(this.uniform,0,this.camera);d.queue.writeBuffer(this.buffer,0,this.data.buffer,0,this.count*32);d.queue.writeBuffer(this.actorBuffer,0,this.actorData.buffer,0,this.count*16);
+  d.queue.writeTexture(this.contourUpload,this.contourData,this.contourLayout,this.contourSize);
   const encoder=d.createCommandEncoder();const pass=encoder.beginRenderPass(this.scenePass);pass.setPipeline(this.pipeline);pass.setBindGroup(0,this.group);pass.setVertexBuffer(0,this.vertex);pass.setVertexBuffer(1,this.buffer);pass.setVertexBuffer(2,this.actorBuffer);pass.draw(36,this.count);pass.end();
   this.presentPass.colorAttachments[0].view=this.context.getCurrentTexture().createView();const post=encoder.beginRenderPass(this.presentPass);post.setPipeline(this.post);post.setBindGroup(0,this.postGroup);post.draw(3);post.end();d.queue.submit(this.commands(encoder.finish()));this.stats.triangles=this.count*12+1;
  }
@@ -491,11 +572,11 @@ export class Renderer {
   // Orthographic screen ray. Intersect the very same component boxes submitted
   // to the depth buffer; static terrain can occlude the selectable geometry.
   const c=Math.round(Math.cos(yaw*Math.PI/2)),s=Math.round(Math.sin(yaw*Math.PI/2));
-  const diff=(px-240)*zoom/6,sum=(py-136)*zoom/3.4641016+100;
+  const diff=(px/GRID-240)*zoom/6,sum=(py/GRID-136)*zoom/3.4641016+100;
   const a=(sum+diff)/2,b=(sum-diff)/2;
   const ox=16+c*a+s*b,oy=16-s*a+c*b,oz=50,dx=-c-s,dy=s-c,dz=-1;
   let best=Infinity,owner=-1;
-  for(let i=0;i<this.worldCount;i++){const o=i*8;if(this.data[o+7]>0)continue;let near=0,far=Infinity;
+  for(let i=0;i<this.worldCount;i++){const o=i*8;if(this.data[o+7]>0||this.data[o+7]<=-3)continue;let near=0,far=Infinity;
    for(let axis=0;axis<3;axis++){const origin=axis===0?ox:axis===1?oy:oz,dir=axis===0?dx:axis===1?dy:dz;let min=this.data[o+axis]-(axis<2?this.data[o+3+axis]/2:0),max=min+this.data[o+3+axis];if(this.owners[i]>=0&&this.data[o+3]<1&&this.data[o+4]<1){min-=.12;max+=.12;}if(dir===0){if(origin<min||origin>max){far=-1;break;}}else{let t1=(min-origin)/dir,t2=(max-origin)/dir;if(t1>t2){const t=t1;t1=t2;t2=t;}near=Math.max(near,t1);far=Math.min(far,t2);}}
    if(near<=far&&near<best){best=near;owner=this.owners[i];}
   }return owner<0?null:owner;
