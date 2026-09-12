@@ -6,10 +6,19 @@ const paletteWGSL=`const palette = array<vec3f,32>(${colors.map(c=>`vec3f(${c.jo
 const geometryWGSL=paletteWGSL+`
 struct Camera { rotation:vec2f, magnification:f32, padding:f32 }
 @group(0) @binding(0) var<uniform> camera:Camera;
-struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @location(1) unit:f32 }
+struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @location(1) unit:f32, @location(2) rim:vec2f }
 @vertex fn vs(@location(0) vertex:vec3f,@location(1) shade:f32,@location(2) origin:vec3f,@location(3) size:vec3f,@location(4) color:f32,@location(5) screen:f32)->Out {
  var o:Out;
- let pigment=color%32.;o.unit=floor(color/32.);
+ let pigment=color%32.;o.unit=floor((color%32768.)/32.);
+ // Combat-only metadata packs faction and eight local facing directions into
+ // the existing color word; no extra instances, buffers or per-frame arrays.
+ let combat=floor(color/32768.);o.rim=vec2f(0.);
+ if combat>0. {
+  let angle=((combat-1.)%8.)*0.7853981634;
+  let facing=vec2f(cos(angle),sin(angle));
+  let rotated=vec2f(facing.x*camera.rotation.x-facing.y*camera.rotation.y,facing.x*camera.rotation.y+facing.y*camera.rotation.x);
+  o.rim=vec2f(select(13.,26.,combat>8.),select(-1.,1.,rotated.x>=rotated.y));
+ }
  var v=vertex;
  if screen < -0.5 {v=vec3f(vertex.xy*select(1.,select(.55,.08,screen < -1.5),vertex.z>.5),vertex.z);}
  let p=origin+v*size;
@@ -23,10 +32,18 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  // violet soil became orange, and gold cargo became cyan).
  let family=select(select(select(select(select(0.,10.,pigment>=10.),15.,pigment>=15.),19.,pigment>=19.),23.,pigment>=23.),28.,pigment>=28.);
  o.color=palette[u32(max(family,pigment-shade))];
+ if combat>0. {
+  // Lit armor sides retain faction value instead of descending into wine or
+  // stone. Ivory trim and weapon glints stay discrete palette blocks.
+  var armor=pigment;
+  if pigment>=12. && pigment<=13. {armor=max(12.,pigment-min(shade,1.));}
+  if pigment==25. {armor=25.;}
+  o.color=palette[u32(armor)];
+ }
  } return o;
 }
 struct Fragment { @location(0) color:vec4f, @location(1) mask:vec4f }
-@fragment fn fs(i:Out)->Fragment {var f:Fragment;f.color=vec4f(i.color,1.);f.mask=vec4f(i.unit,i.position.z,0.,1.);return f;}
+@fragment fn fs(i:Out)->Fragment {var f:Fragment;f.color=vec4f(i.color,1.);f.mask=vec4f(i.unit,i.position.z,i.rim);return f;}
 `;
 const postWGSL=paletteWGSL+`
 @group(0) @binding(0) var scene:texture_2d<f32>;
@@ -38,13 +55,25 @@ const postWGSL=paletteWGSL+`
  let pixel=vec2i(p.xy);let center=textureLoad(silhouette,pixel,0);
  // Per-entity contours also separate overlapping combatants. Mask 1 belongs
  // to projectiles/rings: preserve their color even beside an enlarged hull.
- // Palette ink #10121C is the locked-palette substitute for brief #151925.
+ // Ink remains outside the bright faction rim, including actor boundaries.
  if center.r!=1. {for(var axis=0;axis<4;axis++) {
   let offsets=array<vec2i,4>(vec2i(-1,0),vec2i(1,0),vec2i(0,-1),vec2i(0,1));
   let neighbor=textureLoad(silhouette,clamp(pixel+offsets[axis],vec2i(0),vec2i(479,269)),0);
   let tolerance=select(0.,0.002,center.r==0.);
   if neighbor.r>0.5 && neighbor.r!=center.r && neighbor.g<center.g+tolerance {return vec4f(palette[0],1.);}
  }}
+ // One internal pixel along the exposed top and forward screen side. A closer
+ // occluder never triggers a rim on the hidden body's cut edge. The existing
+ // depth-aware outer contour above keeps adjacent actors separated by ink.
+ if center.b>0. {
+  for(var edge=0;edge<2;edge++) {
+   let offset=select(vec2i(0,-1),vec2i(i32(center.a),0),edge==1);
+   let neighbor=textureLoad(silhouette,clamp(pixel+offset,vec2i(0),vec2i(479,269)),0);
+   if neighbor.r!=center.r && neighbor.r!=1. && neighbor.g>=center.g {
+    return vec4f(palette[u32(center.b)],1.);
+   }
+  }
+ }
  let c=textureLoad(scene,pixel,0).rgb;var best=palette[0];var distance=100.;
  for(var i=0u;i<32u;i++){let delta=c-palette[i];let d=dot(delta,delta);if d<distance {distance=d;best=palette[i];}}
  return vec4f(best,1.);
@@ -249,17 +278,19 @@ export class Renderer {
   // Component centers stay in world space so selection uses submitted geometry.
   const k=e[o+4],scale=k===24?1.12:k===20?1:1.22;
   const c=Math.cos(e[o+3]),sn=Math.sin(e[o+3]);
+  const combat=k===21||k===22||k===23||k===30||k===31;
+  const rim=combat?1+((Math.round(e[o+3]/(Math.PI/4))%8+8)%8)+(k>=30?8:0):0;
   for(let i=start;i<this.count;i++){
    const q=i*8,dx=(this.data[q]-e[o])*scale,dy=(this.data[q+1]-e[o+1])*scale;
    this.data[q]=e[o]+dx*c-dy*sn;this.data[q+1]=e[o+1]+dx*sn+dy*c;
    this.data[q+3]*=scale;this.data[q+4]*=scale;
-   if(this.owners[i]===id)this.data[q+6]+=32*(id+2);
+   if(this.owners[i]===id)this.data[q+6]+=32*(id+2)+32768*rim;
   }
  }
  private unitParts(e:Float32Array,o:number,id:number) {
   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],phase=e[o+6],state=e[o+5],moving=state===1||state===6;
   const gait=moving?(phase<.5?-.16:.16):0;
-  this.box(x,y,this.ground(x,y)+.045,k===24?1.6:k===31?1.8:k===20?.65:1.1,k===24?.8:k===31?1.3:k===22?1.5:.5,.025,2);
+  this.box(x,y,this.ground(x,y)+.045,k===24?1.6:k===31?1.8:k===20?.65:1.1,k===24?.8:k===31?1.3:k===22?1.5:.5,.025,k===21||k===22||k===23||k===30||k===31?0:2);
   if(k===24){this.box(x,y,z,1.8,.8,.25,11,id);this.box(x,y,z+.25,1.25,.6,.25,12,id);for(let a=-1;a<=1;a+=2){this.box(x+a*.85,y,z,.25,1.25,.3,8,id);this.box(x+a*.75,y-.55,z+.1,.22,.4,.2,7,id);this.box(x+a*.6,y-.5,z-.05,.16,.25,.1,phase<.5?17:18,id);}this.box(x,y+.4,z+.15,1.4,.18,.15,8,id);this.box(x-.4,y,z+.5,.35,.4,.15,3,id);if(e[o+10]>0)this.crate(x+.2,y,z+.5,.45,id);if(state===7){this.box(x,y,z-1.,.04,.04,1.,21,id);this.crate(x,y,z-1.3,.35,id);}return;}
   // Brief numeric roles: 21 tall lancer, 22 wing/disc, 23 rifle knight.
   // Keep the simulation's existing kind names, cargo and action fields intact.
@@ -284,12 +315,12 @@ export class Renderer {
    return;
   }
   if(k===22){
-   // Low teal hub, ivory swept wings, split landing feet: wider than tall.
+   // Low teal hub and swept wings, ivory tips, split landing feet.
    const spread=attacking?.16:0;
    for(let side=-1;side<=1;side+=2){
     this.box(x-.12+gait*side,y+side*.4,z,.35,.25,.24,10,id);
-    this.box(x-.15-recoil,y+side*(.49+spread),z+.42,.63,.68,.22,8,id,-1);
-    this.box(x-.35-recoil,y+side*(.85+spread),z+.44,.4,.3,.16,7,id,-2);
+    this.box(x-.15-recoil,y+side*(.49+spread),z+.42,.63,.68,.22,13,id,-1);
+    this.box(x-.35-recoil,y+side*(.85+spread),z+.44,.4,.3,.16,8,id,-2);
    }
    this.box(x-recoil,y,z+.28,.75,.76,.4,12,id,-1);
    this.box(x-recoil,y,z+.67,.43,.46,.2,13,id,-1);
@@ -299,20 +330,20 @@ export class Renderer {
    return;
   }
   if(k===30){
-   // Four feet, two separated rear hocks, wine wedge and long sand muzzle.
+   // Four feet, two separated rear hocks, red wedge and long heat muzzle.
    // The body stays low; the raised red shoulder makes a forward-leaning arch.
    const lunge=attacking?(phase<.18?-.18:.12):0;
    for(let side=-1;side<=1;side+=2){
-    this.box(x-.52+gait*side,y+side*.38,z,.29,.23,.23,23,id);
-    this.box(x-.56+gait*side,y+side*.38,z+.19,.19,.22,.43,24,id);
+    this.box(x-.52+gait*side,y+side*.38,z,.29,.23,.23,0,id);
+    this.box(x-.56+gait*side,y+side*.38,z+.19,.19,.22,.43,25,id);
     this.box(x-.38,y+side*.36,z+.51,.42,.23,.23,25,id);
-    this.box(x+.35+lunge-gait*side,y+side*.33,z,.23,.22,.51,23,id);
+    this.box(x+.35+lunge-gait*side,y+side*.33,z,.23,.22,.51,25,id);
    }
-   this.box(x-.12+lunge,y,z+.48,.98,.67,.48,24,id,-1);
+   this.box(x-.12+lunge,y,z+.48,.98,.67,.48,25,id,-1);
    this.box(x+.19+lunge,y,z+.72,.65,.65,.55,25,id,-2);
-   this.box(x+.48+lunge,y,z+.66,.55,.4,.29,24,id);
+   this.box(x+.48+lunge,y,z+.66,.55,.4,.29,25,id);
    this.box(x+.75+lunge,y,z+.72,.44,.29,.22,27,id);
-   this.box(x+.94+lunge,y,z+.69,.35,.18,.16,23,id);
+   this.box(x+.94+lunge,y,z+.69,.35,.18,.16,27,id);
    this.box(x-.64,y,z+.66,.45,.23,.2,25,id,-2);
    if(attacking&&e[o+11]>.72)this.box(x+1.1+lunge,y,z+.72,.32,.28,.24,27);
    return;
@@ -321,13 +352,13 @@ export class Renderer {
    // Heavy low chassis: broad armored rails and a stepped siege gun.
    const brace=attacking?.12:0;
    for(let side=-1;side<=1;side+=2){
-    this.box(x,y+side*(.62+brace),z,1.54,.36,.32,23,id);
+    this.box(x,y+side*(.62+brace),z,1.54,.36,.32,0,id);
     this.box(x-.1,y+side*(.6+brace),z+.3,1.5,.34,.38,25,id,-1);
    }
-   this.box(x-.14-recoil,y,z+.46,1.65,1.25,.59,24,id,-1);
+   this.box(x-.14-recoil,y,z+.46,1.65,1.25,.59,25,id,-1);
    this.box(x-.43-recoil,y,z+.94,.75,.97,.2,25,id,-1);
    this.box(x+.41-recoil,y,z+.67,.7,.55,.34,27,id);
-   this.box(x+.84-recoil,y,z+.79,.78,.28,.25,23,id);
+   this.box(x+.84-recoil,y,z+.79,.78,.28,.25,27,id);
    this.box(x+.22-recoil,y,z+.98,.47,.5,attacking?.8:.55,25,id,-2);
    if(attacking&&e[o+11]>.88)this.box(x+1.27-recoil,y,z+.8,.4,.35,.3,27);
    return;
