@@ -3,12 +3,21 @@
 Browser graphics demo: isometric pixel-art space colony, deterministic Rust/WASM
 simulation, and raw WebGPU renderer.
 
-**IN DREAM LOOP — pass 15 (macro depth and lived-in settlement density) ready.**
+**PAUSED — Codex Plus five-hour quota exhausted during pass 15.**
+
+## Stop state — 2026-09-12 20:36 IST
+
+- Plus account only (`~/.codex-linux`): `allowed=False`, primary window **100% used**.
+- Codex reported retry at **2026-09-13 00:20 IST**.
+- No Codex or Astra process remains active.
+- Pass 15 reached the quota limit before it edited any file. There is no partial patch.
+- Git tree remained clean at verified pass 14.
+- Final park build (`npm run build`): **PASS**.
 
 ## Latest verified state — pass 14
 
 Implementation commit `549b55e` (`art: pass 14 — authored basalt texture and restored
-cliff ramp`).
+cliff ramp`). Orchestrator evidence commit `4e61ffe`.
 
 - Build: **PASS**.
 - Browser/runtime: **7/7 gates PASS**.
@@ -18,59 +27,55 @@ cliff ramp`).
   `{"n":55,"alloy":247,"charge":199,"hash":"20b89f84"}`.
 - True 1 px grid: PASS (`identical_h_pairs=0.9025`).
 - Palette: 31 permitted colours; no expansion.
-- Texture gate: **PASS** — density `0.2315`; largest `#624779` region `2,210 px`;
+- Terrain texture: **PASS** — density `0.2315`; largest `#624779` region `2,210 px`;
   largest `#3C3057` region `1,131 px`.
 - Cliff ramp: **FAIL, close** — lower/upper `0.882`, slope `-0.125/row`.
 - Evidence: `evidence-p14/`.
 
 ## Current visual gate — FAIL
 
-Both independent critics and direct inspection agree: the amethyst material now has
-small-scale breakup, but it repeats evenly over one broad level. The world still lacks
-macro elevation structure, meaningful settlement prop clusters, and facade-scale life.
-It reads as a clean vertical slice, not a lived-in AoE2:DE settlement.
+The latest independent critics agree: the amethyst ground now has fine texture, but
+the settlement still reads as one broad, low platform. It lacks strong internal
+terraces, functional prop clusters, and facade-scale life. The single largest gap is
+macro depth and lived-in settlement density.
 
-Pass 15 (`tasks/brief-pass15.md`) is the final high-impact pass for this Plus window:
+Pass 15 is fully specified in `tasks/brief-pass15.md` but did not run to implementation.
+It must:
 
-- render existing terrain height differences as internal retaining faces and ramps;
-- add functional prop clusters around forge, depot, barracks, Bastion and crystal garden;
-- add facade doors/windows/ladders/pipes/banners/trim to existing buildings;
-- darken the outer cliff base enough to restore lower/upper ≤0.85;
-- preserve gameplay, terrain texture metrics, units, roads, camera and performance.
+- render existing height differences as internal retaining faces and ramps;
+- add functional prop clusters around forge, depot, barracks, Bastion and crystals;
+- add facade doors, windows, ladders, pipes, banners and trim;
+- darken the outer cliff base enough to reach lower/upper ≤0.85;
+- preserve gameplay, unit art, roads, terrain texture metrics, camera and performance.
 
-## Structural work verified
+## Resume checklist
 
-1. Fixed-60-Hz deterministic Rust/WASM sim, raw WebGPU renderer, HUD and controls.
-2. Buildings, staged construction, resource routes, raids, projectiles and selection.
-3. Distinct factions, unit silhouettes, combat formations and effects.
-4. 960×540 true-1-px internal render grid.
-5. Fixed top-left directional light, hard contact/drop shadows.
-6. Four-step outer cliff ramp with numeric slope gate.
-7. Authored amethyst material with numeric density and connected-slab gates.
-8. Exact raw-WASM state hash gate.
-9. Uncapped headroom probe: 515.4 fps at old grid; current grid stable at 60.3 fps.
-10. Two independent critics: raw DeepSeek target-vs-build and Cursor Auto build-only.
+1. Confirm Plus quota: `python3 tasks/quota-check.py`.
+2. Confirm clean tree: `git status --short`.
+3. Launch pass 15 in a **fresh** context:
+   `bash tasks/astra-run.sh coder tasks/brief-pass15.md tasks/logs/pass15-retry.log`.
+4. Worker must be GPT-6 Astra Medium, standard mode, `fast_mode=false`.
+5. Orchestrator runs `npm run build`.
+6. Orchestrator runs:
+   `node scripts/capture.mjs --root dist --out evidence-p15 --min-fps 60 --settle 108`.
+7. Run:
+   `python3 scripts/measure-detail.py evidence-p15/shot-main.png --top 230 265 --rim 350 465 --x0 180 --x1 430`.
+8. Run fresh raw DeepSeek target-vs-build and Cursor Auto critics.
+9. Continue from the single largest visible gap. Do not switch to Pro.
 
-## Loop procedure
-
-1. `python3 tasks/quota-check.py`; stop at `allowed=False` / 100%; never use Pro.
-2. Fresh worker: `bash tasks/astra-run.sh coder tasks/brief-passN.md tasks/logs/passN.log`.
-3. Worker = GPT-6 Astra Medium, standard mode, `fast_mode=false`.
-4. Orchestrator builds and runs `scripts/capture.mjs` at t=108 s.
-5. Run `scripts/measure-detail.py` with the canonical bands.
-6. Run fresh raw DeepSeek and Cursor Auto critics.
-7. Iterate on the single biggest gap; update this file and commit evidence.
-
-## Binding files
+## Binding and verification files
 
 - `docs/DIRECTIVE.md`, `docs/INTERFACE.md`, `docs/WORLD_PLAN.md`.
 - `.dream-loop/target.png` — target at tick 6480.
-- `scripts/capture.mjs`, `scripts/measure-detail.py`, `scripts/headroom-probe.mjs`.
-- `tasks/vision-critic.py`, `tasks/astra-run.sh`.
+- `scripts/capture.mjs` — runtime, controls, performance and determinism gates.
+- `scripts/measure-detail.py` — grid, palette, texture, slab and cliff-ramp metrics.
+- `scripts/headroom-probe.mjs` — uncapped GPU headroom probe.
+- `tasks/vision-critic.py` — raw DeepSeek comparative vision gate.
+- `tasks/astra-run.sh` — Plus-only fresh-context runner; fast mode disabled.
 
-## Quota / environment
+## Agent settings
 
-- Plus after pass 14 validation: **92% primary used**, allowed; ~227 minutes to reset.
-- Astra Codex CLI: `~/.local/codex-154/node_modules/.bin/codex`.
+- Coding worker: GPT-6 Astra, reasoning `medium`, `fast_mode=false`.
+- Astra CLI: `~/.local/codex-154/node_modules/.bin/codex`.
 - Plus home: `~/.codex-linux`.
-- WebGPU capture: Playwright headless shell, Intel gen-9 Vulkan/ANGLE.
+- WebGPU capture: Playwright headless shell through Intel gen-9 Vulkan/ANGLE.
