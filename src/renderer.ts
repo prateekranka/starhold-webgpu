@@ -37,7 +37,7 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  if screen == -4. {pixel+=vertex.xy*size.xy;}
  let ndc=pixel/(resolution*.5);
  o.position=vec4f(ndc.x-1.,1.-ndc.y,0.5-((r.x+r.y)*0.5773503+p.z*0.5773503)/128.,1.);
- // Stone shades through ink; coloured materials stay in their own family.
+ // Legacy stone shades through ink; normal structural stone gets a floor below.
  let family=select(select(select(select(select(0.,10.,pigment>=10.),15.,pigment>=15.),19.,pigment>=19.),23.,pigment>=23.),28.,pigment>=28.);
  // World face IDs: top, north, south, west, east, underside. West receives
  // the key; north loses one step, south is cross-light, east loses two.
@@ -51,7 +51,19 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  let base=pigment-select(0.,1.,hot && !small);
  // Palette entry 0 is the background/outline colour; solid geometry must
  // never shade down into it or the rock silhouette dissolves into the sky.
- o.color=palette[u32(max(1.,max(family,base-steps)))];
+ var shaded=max(1.,max(family,base-steps));
+ if screen == 0. && pigment>=4. && pigment<28. {
+  // Authored ink/recesses (0–3) never inherit the structural stone floor.
+  if pigment<=9. {shaded=max(4.,shaded);}
+  // Only top and west key faces gain one discrete family step. Preserve
+  // existing authored endpoints, but never promote broad faces into them.
+  if shade==0. || shade==3. {
+   let cap=select(select(select(select(8.,13.,pigment>=10.),17.,pigment>=15.),21.,pigment>=19.),26.,pigment>=23.);
+   let ceiling=select(cap,pigment,hot && small);
+   shaded=max(shaded,min(ceiling,shaded+1.));
+  }
+ }
+ o.color=palette[u32(shaded)];
  // Terrain caps, ledges and ribs share the parent column's height bands.
  if screen == -5. {
   let level=clamp((p.z-actor.x)/(actor.y-actor.x),0.,1.);
@@ -403,6 +415,10 @@ export class Renderer {
    this.groundMark(x,y,.86,.57,4);
    this.groundMark(x+.16,y+.19,.44,.25,5,.032);
   }
+  // Roads, ground patches and retaining skins were ordinary boxes. Keep
+  // their original shading in mode -6, outside the structural floor/lift.
+  // Position, material, cliff bands, depth and picking remain identical.
+  for(let i=0;i<this.count;i++)if(this.data[i*8+7]===0)this.data[i*8+7]=-6;
   const gardens=[[8,4,1.9],[9,6,2.3],[11,4,1.4],[12,6,1.8],[3,21,1.1],[3.6,26,1.5],[7,28,1.2],[17,5,.95],[28,18,.8]];
   for(let i=0;i<gardens.length;i++){const [x,y,h]=gardens[i];for(let j=0;j<3+i%2;j++){
    const xx=x+(j===1?-.55:j===2?.48:.12),yy=y+(j===1?.3:j===2?.5:-.25);
@@ -549,7 +565,7 @@ export class Renderer {
     this.emissive(x+dx*.74,y+dy*.74,z+3.3,18,id);
     if(e[o+5]===2&&phase<.035)this.emissive(x+dx*.85,y+dy*.85,z+3.31,18,-1,2,2);}
   } else if(k===15){
-   for(let a=-1;a<=1;a++){this.box(x+a*.98,y,z+.3,.87,1.7,.25,12,id);for(let b=-1;b<=1;b+=2)this.box(x+a*.98,y+b*.68,z+.55,.8,.16,p<.5?.55:1.25,6,id);if(p>=.5){this.box(x+a*.98,y,z+.55,.8,1.5,1.1,7,id);this.box(x+a*.98,y,z+1.65,.95,1.8,.25,7,id,-1);this.box(x+a*.98,y,z+1.9,.58,1.05,.14,12,id);this.box(x+a*.98,y+.79,z+.85,.19,.07,.45,19,id);this.box(x+a*.98,y+.84,z+.9,.1,.04,.3,22,id);this.box(x+a*.98,y+1.,z+1.45,.88,.5,.1,12,id);}}
+   for(let a=-1;a<=1;a++){this.box(x+a*.98,y,z+.3,.87,1.7,.25,12,id);for(let b=-1;b<=1;b+=2)this.box(x+a*.98,y+b*.68,z+.55,.8,.16,p<.5?.55:1.25,7,id);if(p>=.5){this.box(x+a*.98,y,z+.55,.8,1.5,1.1,8,id);this.box(x+a*.98,y,z+1.65,.95,1.8,.25,8,id,-1);this.box(x+a*.98,y,z+1.9,.58,1.05,.14,12,id);this.box(x+a*.98,y+.79,z+.85,.19,.07,.45,19,id);this.box(x+a*.98,y+.84,z+.9,.1,.04,.3,22,id);this.box(x+a*.98,y+1.,z+1.45,.88,.5,.1,12,id);}}
    if(p>=.5)for(let a=-1;a<=1;a++)this.emissive(x+a*.98,y+.89,z+1.05,22,id);
    if(p>=.85)this.box(x+1.15,y-.6,z+2,.06,.06,.5,22,id);
   } else if(k===17){
