@@ -20,14 +20,11 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  var v=vertex;
  if screen < -0.5 && screen > -2.5 {v=vec3f(vertex.xy*select(1.,select(.55,.08,screen < -1.5),vertex.z>.5),vertex.z);}
  var p=origin+v*size;
- // Project an extruded footprint onto its terrain plane, away from the
- // screen-space key direction (-sqrt(3)/2,-1/2), with screen Y down.
- // Rotate the capped 0.4-tile cast offset back into world space.
+ // West-biased north-west key (-1,-0.4,above): the opposite cast vector
+ // stays in world space. Its length remains capped at 0.4 tile.
  if screen == -3. {
-  let offset=vec2f(.4,0.)*vertex.z*min(size.z,1.);
-  p=origin+vec3f(vertex.xy*size.xy+vec2f(
-   offset.x*camera.rotation.x+offset.y*camera.rotation.y,
-   -offset.x*camera.rotation.y+offset.y*camera.rotation.x),0.);
+  let offset=vec2f(.3713907,.1485563)*vertex.z*min(size.z,1.);
+  p=origin+vec3f(vertex.xy*size.xy+offset,0.);
  }
  if screen == -4. {p=origin;}
  if screen>0.5 {let hud=p.xy*grid/(resolution*.5);o.position=vec4f(hud.x-1.,1.-hud.y,select(0.0001,.999,screen==2.),1.);o.color=palette[u32(pigment)];}
@@ -42,21 +39,16 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  o.position=vec4f(ndc.x-1.,1.-ndc.y,0.5-((r.x+r.y)*0.5773503+p.z*0.5773503)/128.,1.);
  // Stone shades through ink; coloured materials stay in their own family.
  let family=select(select(select(select(select(0.,10.,pigment>=10.),15.,pigment>=15.),19.,pigment>=19.),23.,pigment>=23.),28.,pigment>=28.);
- // Face IDs carry world normals. Lighting follows camera yaw so the visible
- // left wall is always mid-value and the right wall dark; tops retain base.
- var normal=vec2f(0.);
- if shade==1. {normal=vec2f(0.,-1.);}
- if shade==2. {normal=vec2f(0.,1.);}
- if shade==3. {normal=vec2f(-1.,0.);}
- if shade==4. {normal=vec2f(1.,0.);}
- let rotated=vec2f(normal.x*camera.rotation.x-normal.y*camera.rotation.y,
-  normal.x*camera.rotation.y+normal.y*camera.rotation.x);
- var steps=select(1.,2.,rotated.x-rotated.y>0.);
- if shade==0. {steps=0.;}
- if shade==5. {steps=2.;}
- // Reserve hot family endpoints for tiny explicit cores, never broad faces.
+ // World face IDs: top, north, south, west, east, underside. West receives
+ // the key; north loses one step, south is cross-light, east loses two.
+ // Camera yaw changes visibility only, never this hard-light table.
+ let faceSteps=array<f32,6>(0.,1.,1.,0.,2.,32.);
+ let steps=faceSteps[u32(shade)];
+ // Endpoints belong to small authored glints/cores. Broad slabs retain the
+ // penultimate family entry; no RGB multiplication or camera-facing bias.
  let hot=pigment==9. || pigment==18. || pigment==22. || pigment==27. || pigment==31.;
- let base=pigment-select(0.,1.,hot);
+ let small=max(size.x,max(size.y,size.z))<=.3 && (combat>=17. || o.unit==1. || pigment==9.);
+ let base=pigment-select(0.,1.,hot && !small);
  // Palette entry 0 is the background/outline colour; solid geometry must
  // never shade down into it or the rock silhouette dissolves into the sky.
  o.color=palette[u32(max(1.,max(family,base-steps)))];
@@ -105,10 +97,10 @@ fn basalt(world:vec2f, province:u32)->u32 {
 }
 @fragment fn fs(i:Out)->Fragment {var f:Fragment;f.color=vec4f(i.color,1.);
  // Four hard bands, top to bottom: 4/3/2/1 on the lit wall,
- // 3/2/1/0 on the opposing wall. No interpolated RGB or dithering.
+ // 3/2/1/1 on the opposing wall. Solid rock never reaches void index 0.
  // The bright rim occupies 15%, then 20% midstone, 25% shadow, 40% base.
  // Identical thresholds on ribs prevent bright strips reaching the foot.
- if i.cliff.x>=0. {let band=select(0.,1.,i.cliff.x<.85)+select(0.,1.,i.cliff.x<.65)+select(0.,1.,i.cliff.x<.40);f.color=vec4f(palette[u32(max(0.,i.cliff.y-band))],1.);}
+ if i.cliff.x>=0. {let band=select(0.,1.,i.cliff.x<.85)+select(0.,1.,i.cliff.x<.65)+select(0.,1.,i.cliff.x<.40);f.color=vec4f(palette[u32(max(1.,i.cliff.y-band))],1.);}
  else if i.material!=0u {f.color=vec4f(palette[basalt(i.ground,i.material-1u)],1.);}
  f.mask=vec4f(i.unit,i.position.z,i.rim);return f;}
 `;
@@ -356,9 +348,11 @@ export class Renderer {
     for(const r of roads){const rx=r[2]-r[0],ry=r[3]-r[1],t=Math.max(0,Math.min(1,((xx-r[0])*rx+(yy-r[1])*ry)/(rx*rx+ry*ry)));if(Math.hypot(xx-r[0]-t*rx,yy-r[1]-t*ry)<1.05){lane=true;break;}}
     if(lane)continue;
     const w=dx?.075:1,d=dy?.075:1,rise=high-low;
-    for(let band=0;band<3;band++)this.box(xx,yy,low+rise*band/3,w,d,rise/3,3+band);
+    // Keep the retaining skin's geometry; its south/east contacts sit one
+    // stone step below the north/west lips, independently of the view.
+    for(let band=0;band<3;band++)this.box(xx,yy,low+rise*band/3,w,d,rise/3,3+band-(dx>0||dy>0?1:0));
     this.box(xx,yy,low+.012,w+.015,d+.015,.055,1);
-    if(dx<0||dy<0)this.box(xx-dx*.045,yy-dy*.045,high+.012,dx?.06:1,dy?.06:1,.015,high===1?30:6);
+    if(dx<0||dy<0)this.box(xx-dx*.045,yy-dy*.045,high+.012,dx?.06:1,dy?.06:1,.015,30);
    }
   }
   // Each patch has a stepped shoulder and a short connected crack/ore vein.
@@ -513,16 +507,18 @@ export class Renderer {
    if(p<.2)return;
   }
   if(k===10){
-   this.box(x,y,z+.3,3.7,3.7,1.45,7,id);
-   this.box(x,y+1.86,z+.42,3.4,.08,.85,11,id);
-   this.box(x+1.86,y,z+.42,.08,3.4,.85,11,id);
+   // Broad ivory establishes the civic landmark; teal panels and the door
+   // retain separate shadow masses. Highest ivory is reserved for glints.
+   this.box(x,y,z+.3,3.7,3.7,1.45,8,id);
+   this.box(x,y+1.86,z+.42,3.4,.08,.85,12,id);
+   this.box(x+1.86,y,z+.42,.08,3.4,.85,12,id);
    for(let j=-1;j<=1;j++)for(let side=0;side<2;side++){
     this.box(x+(side?1.82:j*1.25),y+(side?j*1.25:1.82),z+.3,side?.48:.35,side?.35:.48,1.65,8,id);
     this.box(x+(side?2.02:j*1.25),y+(side?j*1.25:2.02),z+.2,.45,.45,.45,7,id);
    }
    for(let a=-1;a<=1;a+=2)for(let b=-1;b<=1;b+=2){this.box(x+a*1.65,y+b*1.65,z+.3,.45,.45,2.1,8,id);this.box(x+a*1.65,y+b*1.65,z+2.4,.5,.5,.2,8,id);this.box(x+a*1.65,y+b*1.65,z+2.6,.08,.08,.45,22,id);}
    this.box(x,y,z+1.75,3.9,3.9,.22,8,id);
-   this.box(x,y,z+1.97,2.8,2.8,.8,7,id);
+   this.box(x,y,z+1.97,2.8,2.8,.8,8,id);
    this.box(x,y,z+2.1,2.35,2.35,.6,12,id);
    for(let a=-1;a<=1;a+=2){this.box(x+a*1.27,y+1.27,z+1.97,.27,.27,1.,8,id);this.box(x+1.27,y+a*1.27,z+1.97,.27,.27,1.,8,id);}
    this.box(x,y,z+2.77,3.,3.,.2,8,id);
@@ -537,13 +533,13 @@ export class Renderer {
    this.banner(x-.9,y+1.98,z+2.3,phase,id);
    this.banner(x+1.98,y+.85,z+2.3,phase+.3,id);
   } else if(k===12){
-   this.box(x,y,z+.3,1.8,1.8,.3,12,id,-1);
+   this.box(x,y,z+.3,1.8,1.8,.3,13,id,-1);
    for(let j=0;j<6;j++){const a=j*Math.PI/3;this.box(x+Math.cos(a)*.8,y+Math.sin(a)*.8,z+.25,.45,.45,.45,8,id);}
    if(p>=.2)for(let a=-1;a<=1;a+=2)this.box(x+a*.8,y,z+.55,.24,.46,p<.5?1.3:2.5,8,id);
    if(p>=.5){const bob=Math.floor(phase*4)%2*.08;this.shard(x,y,z+.65+bob,2.9,17,id);for(let j=0;j<3;j++){this.box(x,y,z+.85+j*.65,.75,.75,.12,16,id);this.box(x-.18,y+.26,z+.9+j*.65,.08,.08,.48,17,id);this.emissive(x-.18,y+.31,z+1.14+j*.65,Math.floor(phase*4)===j?18:17,id);}this.emissive(x,y,z+3.75,18,id);}
   } else if(k===16){
    const levels=p<.5?1:p<.85?2:3;
-   for(let j=0;j<levels;j++){if(p>=.85||j===0)this.box(x,y,z+.3+j*.85,1.65-j*.28,1.65-j*.28,.72,12,id);
+   for(let j=0;j<levels;j++){if(p>=.85||j===0)this.box(x,y,z+.3+j*.85,1.65-j*.28,1.65-j*.28,.72,p>=.85?13:12,id);
     else {this.box(x,y-.52,z+.3+j*.85,1.35,.18,.72,11,id);this.box(x-.52,y,z+.3+j*.85,.18,1.2,.72,7,id);}this.box(x,y,z+.98+j*.85,1.8-j*.28,1.8-j*.28,.15,8,id);}
    // Incomplete cheeks remain separate: empty upper volume and exposed cross ribs.
    for(let a=-1;a<=1;a+=2){this.box(x+a*(p<.85?.96:.62),y,z+.3,.32,.7,levels*.85+.35,8,id);this.box(x+a*.6,y-.25,z+.3,.13,.13,levels*.85+.6,7,id);}
@@ -553,7 +549,7 @@ export class Renderer {
     this.emissive(x+dx*.74,y+dy*.74,z+3.3,18,id);
     if(e[o+5]===2&&phase<.035)this.emissive(x+dx*.85,y+dy*.85,z+3.31,18,-1,2,2);}
   } else if(k===15){
-   for(let a=-1;a<=1;a++){this.box(x+a*.98,y,z+.3,.87,1.7,.25,12,id);for(let b=-1;b<=1;b+=2)this.box(x+a*.98,y+b*.68,z+.55,.8,.16,p<.5?.55:1.25,7,id);if(p>=.5){this.box(x+a*.98,y,z+.55,.8,1.5,1.1,8,id);this.box(x+a*.98,y,z+1.65,.95,1.8,.25,8,id,-1);this.box(x+a*.98,y,z+1.9,.58,1.05,.14,12,id);this.box(x+a*.98,y+.79,z+.85,.19,.07,.45,19,id);this.box(x+a*.98,y+.84,z+.9,.1,.04,.3,22,id);this.box(x+a*.98,y+1.,z+1.45,.88,.5,.1,12,id);}}
+   for(let a=-1;a<=1;a++){this.box(x+a*.98,y,z+.3,.87,1.7,.25,12,id);for(let b=-1;b<=1;b+=2)this.box(x+a*.98,y+b*.68,z+.55,.8,.16,p<.5?.55:1.25,6,id);if(p>=.5){this.box(x+a*.98,y,z+.55,.8,1.5,1.1,7,id);this.box(x+a*.98,y,z+1.65,.95,1.8,.25,7,id,-1);this.box(x+a*.98,y,z+1.9,.58,1.05,.14,12,id);this.box(x+a*.98,y+.79,z+.85,.19,.07,.45,19,id);this.box(x+a*.98,y+.84,z+.9,.1,.04,.3,22,id);this.box(x+a*.98,y+1.,z+1.45,.88,.5,.1,12,id);}}
    if(p>=.5)for(let a=-1;a<=1;a++)this.emissive(x+a*.98,y+.89,z+1.05,22,id);
    if(p>=.85)this.box(x+1.15,y-.6,z+2,.06,.06,.5,22,id);
   } else if(k===17){
@@ -563,17 +559,17 @@ export class Renderer {
    if(p>=.5)this.emissive(x-1.2,y-.17,z+1.1,18,id,2,1);
    if(p>=.85)for(let j=0;j<8;j++)this.box(x-1.3+j*.37,y+1.18,z+.72,.19,.1,.035,j===Math.floor(phase*8)?22:20,id);
   } else if(k===11){
-   for(let a=-1;a<=1;a+=2){this.box(x+a*1.25,y,z+.3,.38,2.7,p<.5?.7:1.25,11,id);for(let j=-1;j<=1;j++)this.box(x+a*1.42,y+j,z+.3,.16,.22,1.4,7,id);}
-   this.box(x,y-1.25,z+.3,2.5,.35,1.3,11,id);
+   for(let a=-1;a<=1;a+=2){this.box(x+a*1.25,y,z+.3,.38,2.7,p<.5?.7:1.25,12,id);for(let j=-1;j<=1;j++)this.box(x+a*1.42,y+j,z+.3,.16,.22,1.4,7,id);}
+   this.box(x,y-1.25,z+.3,2.5,.35,1.3,12,id);
    if(p>=.5){for(let a=-1;a<=1;a+=2)this.box(x+a*1.1,y,z+1.6,.9,2.8,.17,12,id);this.box(x,y-1.,z+1.6,2.7,.65,.17,13,id);this.box(x,y+.4,z+1.75,3.1,.7,.15,21,id);this.crane(x+1.6,y+.4,z,3.1,2.,phase,id);}
    for(let j=0;j<4;j++)this.crate(x-1.+j*.62,y+.9+(j%2)*.8,z+.2,.48,id);
   } else if(k===13){
-   this.box(x,y,z+.3,2.7,2.7,p<.5?.35:1.5,11,id);
+   this.box(x,y,z+.3,2.7,2.7,p<.5?.35:1.5,12,id);
    for(let a=-1;a<=1;a+=2)for(let j=-1;j<=1;j++)this.box(x+a*1.36,y+j,z+.3,.22,.25,1.8,8,id);
    if(p>=.5){for(let j=0;j<4;j++)this.box(x,y,z+1.85+j*.22,3.05,2.9-j*.6,.22,j===3?13:12,id);this.box(x,y,z+2.74,3.15,.16,.14,7,id);for(let a=-1;a<=1;a+=2){this.box(x+a*.48,y+1.38,z+.3,.64,.12,1.3,1,id);this.box(x+a*.83,y+1.43,z+.3,.16,.18,1.4,8,id);}this.box(x,y+1.5,z+1.7,.42,.1,.5,22,id);}
    if(p>=.85)this.banner(x-1.4,y-1.,z+3.1,phase,id);
   } else if(k===14){
-   this.box(x,y,z+.3,2.7,2.6,p<.5?.5:1.4,4,id);
+   this.box(x,y,z+.3,2.7,2.6,p<.5?.5:1.4,6,id);
    for(let a=-1;a<=1;a+=2)this.box(x+a*1.3,y,z+.3,.25,2.6,1.8,8,id);
    if(p>=.5){this.box(x,y,z+1.7,2.8,2.7,.22,7,id);this.box(x-.7,y-.6,z+1.9,.55,.6,1.1,4,id);this.box(x-.7,y-.6,z+2.95,.68,.7,.15,7,id);this.box(x+.65,y-.5,z+1.9,.4,.4,.85,7,id);this.box(x+.65,y-.5,z+2.75,.4,.4,.15,22,id);
     this.box(x,y+1.34,z+.3,1.25,.18,1.3,1,id);this.box(x,y+1.45,z+.35,.9,.12,.95,25,id);this.box(x,y+1.53,z+.4,.45,.1,.65,27,id);this.box(x,y+1.8,z+.21,.5,.6,.06,26,id);this.emissive(x,y+1.6,z+.73,27,id,2,2);
@@ -723,7 +719,8 @@ export class Renderer {
    this.box(x-recoil,y,z+1.32,.42,.44,.16,0,id);
    this.box(x-recoil,y,z+1.48,.36,.38,.27,8,id,-2);
    this.box(x+.19-recoil,y,z+1.52,.16,.22,.14,18,id);
-   for(let side=-1;side<=1;side+=2)this.box(x-recoil,y+side*.3,z+1.02,.46,.27,.26,8,id);
+   // One shoulder carries an ivory glint inside the unchanged actor contour.
+   for(let side=-1;side<=1;side+=2)this.box(x-recoil,y+side*.3,z+1.02,.46,.27,.26,side<0?9:8,id);
    // Side-mounted barrel has a continuous large fill and a long tip.
    this.box(x+.38-recoil,y+.32,z+.96,.92,.2,.2,10,id);
    this.box(x+.95-recoil,y+.32,z+.99,.14,.08,.14,22,id);
@@ -742,7 +739,7 @@ export class Renderer {
    }
    this.box(x-recoil,y,z+.28,.75,.76,.4,13,id,-1);
    this.box(x+.12-recoil,y,z+.67,.48,.5,.12,0,id);
-   this.box(x+.22-recoil,y,z+.79,.35,.38,.23,8,id,-1);
+   this.box(x+.22-recoil,y,z+.79,.35,.38,.23,9,id,-1);
    this.box(x-recoil,y,z+.88,.13,.13,.04,17,id);
    this.box(x+.65-recoil,y,z+.78,.65,.22,.2,10,id);
    this.box(x+.95-recoil,y,z+.81,.14,.08,.14,22,id);
@@ -793,7 +790,7 @@ export class Renderer {
   this.box(x+.15,y-gait+.12,z,.2,.24,.25,10,id);
   this.box(x,y,z+.24,.5,.46,.43,14,id,-1);
   this.box(x,y-.27,z+.3,.36,.22,.4,13,id);
-  this.box(x,y,z+.65,.49,.46,.28,8,id,-1);
+  this.box(x,y,z+.65,.49,.46,.28,9,id,-1);
   this.box(x+.23,y,z+.69,.19,.2,.14,22,id);
   if(e[o+10]>0)this.crate(x-.35,y,z+.3,.28+Math.min(4,e[o+10])*.03,id);
   const working=state===3||state===8,strike=working&&phase<.22;
@@ -872,6 +869,8 @@ export class Renderer {
    else if(k===41){this.box(e[o],e[o+1],e[o+2],.38,.36,.23,40);this.box(e[o],e[o+1],e[o+2]-.16,.18,.18,.14,18);}
    else if(k>=50)this.effects(e,o);
   }
+  // Mask 1 protects the gold segment fill; the existing neighbor contour
+  // supplies its one-pixel ink gap. Small segments now retain endpoint 22.
   if(this.selected!==null){const o=this.selected*12,r=e[o+4]<20?(e[o+4]===10?2.5:e[o+4]===16?1.5:1.8):e[o+4]===20?.65:e[o+4]===31?1.65:1.35;for(let j=0;j<24;j++){if(j%3===Math.floor(this.time/.6)%2)continue;const a=j*Math.PI/12;this.box(e[o]+Math.cos(a)*r,e[o+1]+Math.sin(a)*r,this.ground(e[o],e[o+1])+.08,.2,.2,.035,54);}}
   this.ambient(this.time);
   this.worldCount=this.count;this.hud(e,alloy,charge);
