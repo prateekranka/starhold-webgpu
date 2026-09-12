@@ -193,6 +193,33 @@ async function entityHash(page) {
   });
 }
 
+/** Replay the raw simulation without browser rAF timing and hash all exported
+ * entity bytes plus resources. This measures deterministic fixed-tick output. */
+async function wasmReplayHash(seconds) {
+  const bytes = await readFile(join(ROOT, 'sim.wasm'));
+  const { instance } = await WebAssembly.instantiate(bytes, {});
+  const sim = instance.exports;
+  const seed = Number.isFinite(Number(SEED)) ? Number(SEED) >>> 0 : 73129;
+  sim.sim_init(seed);
+  const steps = Math.round(seconds * 60);
+  for (let i = 0; i < steps; i++) sim.sim_step(1000 / 60);
+  const n = sim.sim_entity_count();
+  const stride = sim.sim_entity_stride();
+  const ptr = sim.sim_entity_ptr();
+  const view = new Uint8Array(sim.memory.buffer, ptr, n * stride * 4);
+  let hash = 0x811c9dc5;
+  for (const byte of view) {
+    hash ^= byte;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return JSON.stringify({
+    n,
+    alloy: sim.sim_alloy(),
+    charge: sim.sim_charge(),
+    hash: hash.toString(16).padStart(8, '0'),
+  });
+}
+
 const results = { gates: [], shots: [], errors: [] };
 function gate(name, pass, detail) {
   results.gates.push({ name, pass, detail });
@@ -286,16 +313,13 @@ function gate(name, pass, detail) {
     gate('no-console-errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 
     // --- pass 2: determinism --------------------------------------------------
-    // Compare two fresh pages at the same canonical simulation time. Comparing
-    // the interacted main page with a new boot measured different ticks.
-    const { page: detA, errors: errorsA } = await newPage(browser, baseUrl);
-    const { page: detB, errors: errorsB } = await newPage(browser, baseUrl);
-    await Promise.all([waitReady(detA), waitReady(detB)]);
-    await Promise.all([settle(detA, SETTLE), settle(detB, SETTLE)]);
-    const [h1, h2] = await Promise.all([entityHash(detA), entityHash(detB)]);
+    // Browser pages can differ by one rAF tick. Replay the raw WASM twice for
+    // an exact number of fixed ticks and compare full entity/resource hashes.
+    const [h1, h2] = await Promise.all([
+      wasmReplayHash(SETTLE),
+      wasmReplayHash(SETTLE),
+    ]);
     gate('determinism', h1 === h2, `${h1} vs ${h2}`);
-    results.errors.push(...errorsA, ...errorsB);
-    await Promise.all([detA.close(), detB.close()]);
   } catch (e) {
     results.errors.push(String(e));
     gate('harness', false, String(e).slice(0, 300));
