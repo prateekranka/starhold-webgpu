@@ -14,6 +14,13 @@ simulation, and raw WebGPU renderer.
 - Git tree remained clean at verified pass 14.
 - Final park build (`npm run build`): **PASS**.
 
+## Live phone build
+
+- Tailnet-only URL: `https://bobby.taile5de76.ts.net:8446/`.
+- Tailscale Serve proxies HTTPS port 8446 to `127.0.0.1:5199`.
+- Verified page and JavaScript bundle: HTTP 200.
+- The preview server is intentionally left running for phone access.
+
 ## Latest verified state — pass 14
 
 Implementation commit `549b55e` (`art: pass 14 — authored basalt texture and restored
