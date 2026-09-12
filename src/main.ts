@@ -45,14 +45,14 @@ function refreshEntities() {
 }
 let lastSelection=-2,lastHealth=-1,lastJob=-1;
 function updateSelection() {const o=selected===null?-1:selected*12;const hp=o<0?0:Math.round(entities[o+7]*100),job=o<0?-1:entities[o+5];if(lastSelection===(selected??-1)&&lastHealth===hp&&lastJob===job)return;lastSelection=selected??-1;lastHealth=hp;lastJob=job;selection.hidden=o<0;selection.textContent=o<0?'':`${names[entities[o+4]]} — HP ${hp}% — ${jobs[job]}`;}
-let previous=0,accumulator=0,windowStart=0,frames=0;
+let previous=0,accumulator=0,windowStart=0,frames=0,tick=0;
 function frame(now:number) {
  if(window.__APP.error||!sim)return;
  try {
   if(previous===0){previous=now;windowStart=now;}
   accumulator+=Math.min(now-previous,250);previous=now;
-  while(accumulator>=1000/60){sim.sim_step(1000/60);accumulator-=1000/60;}
-  refreshEntities();updateSelection();renderer.render(entities,entityCount,yawSteps,zooms[zoomIndex],sim.sim_alloy(),sim.sim_charge());
+  while(accumulator>=1000/60){sim.sim_step(1000/60);tick++;accumulator-=1000/60;}
+  refreshEntities();updateSelection();renderer.render(entities,entityCount,yawSteps,zooms[zoomIndex],sim.sim_alloy(),sim.sim_charge(),tick);
   frames++;if(now-windowStart>=1000){fps=frames*1000/(now-windowStart);frames=0;windowStart=now;}
   window.__APP.ready=true;requestAnimationFrame(frame);
  }catch(error){fatal(error);}
