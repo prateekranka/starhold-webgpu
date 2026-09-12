@@ -52,6 +52,29 @@ def median_run(img: np.ndarray) -> int:
     return -1
 
 
+def largest_component(mask: np.ndarray) -> int:
+    """Largest 4-connected component in a boolean mask (no scipy dependency)."""
+    h, w = mask.shape
+    seen = np.zeros_like(mask, dtype=bool)
+    best = 0
+    for y, x in zip(*np.nonzero(mask)):
+        if seen[y, x]:
+            continue
+        seen[y, x] = True
+        stack = [(int(y), int(x))]
+        size = 0
+        while stack:
+            cy, cx = stack.pop()
+            size += 1
+            for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                ny, nx = cy + dy, cx + dx
+                if 0 <= ny < h and 0 <= nx < w and mask[ny, nx] and not seen[ny, nx]:
+                    seen[ny, nx] = True
+                    stack.append((ny, nx))
+        best = max(best, size)
+    return best
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("image")
@@ -72,6 +95,18 @@ def main() -> int:
           f"  ({'2px BLOCKS - resolution regressed' if pairs > 0.999 else '1px grid'})")
     print(f"colours    {colours}")
     print(f"contrast   lum_sd={lum.std():.1f}  lum_mean={lum.mean():.1f}")
+
+    # The map occupies this stable region in the canonical 960x540 capture.
+    # Measure whether violet terrain is one giant slab or authored small regions.
+    ground = img[150:390, 120:850]
+    transitions = float(np.any(ground[:, 1:] != ground[:, :-1], axis=2).mean())
+    violet_light = np.all(img == np.array([0x62, 0x47, 0x79], dtype=np.uint8), axis=2)
+    violet_dark = np.all(img == np.array([0x3C, 0x30, 0x57], dtype=np.uint8), axis=2)
+    light_component = largest_component(violet_light)
+    dark_component = largest_component(violet_dark)
+    texture_pass = light_component < 8000 and dark_component < 6000 and 0.20 <= transitions <= 0.30
+    print(f"texture    transition_density={transitions:.4f}  #624779_max={light_component}"
+          f"  #3C3057_max={dark_component}  -> {'PASS' if texture_pass else 'FAIL'}")
 
     if a.top and a.rim:
         top = lum[a.top[0]:a.top[1]].mean()
