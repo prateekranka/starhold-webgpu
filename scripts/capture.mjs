@@ -286,13 +286,16 @@ function gate(name, pass, detail) {
     gate('no-console-errors', errors.length === 0, errors.slice(0, 3).join(' | '));
 
     // --- pass 2: determinism --------------------------------------------------
-    const { page: page2, errors: errors2 } = await newPage(browser, baseUrl);
-    await waitReady(page2);
-    await page2.waitForTimeout(1500);
-    const h1 = await entityHash(page);
-    const h2 = await entityHash(page2);
+    // Compare two fresh pages at the same canonical simulation time. Comparing
+    // the interacted main page with a new boot measured different ticks.
+    const { page: detA, errors: errorsA } = await newPage(browser, baseUrl);
+    const { page: detB, errors: errorsB } = await newPage(browser, baseUrl);
+    await Promise.all([waitReady(detA), waitReady(detB)]);
+    await Promise.all([settle(detA, SETTLE), settle(detB, SETTLE)]);
+    const [h1, h2] = await Promise.all([entityHash(detA), entityHash(detB)]);
     gate('determinism', h1 === h2, `${h1} vs ${h2}`);
-    results.errors.push(...errors2);
+    results.errors.push(...errorsA, ...errorsB);
+    await Promise.all([detA.close(), detB.close()]);
   } catch (e) {
     results.errors.push(String(e));
     gate('harness', false, String(e).slice(0, 300));
