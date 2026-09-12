@@ -260,17 +260,22 @@ export class Renderer {
   if(k===24){this.box(x,y,z,1.8,.8,.25,11,id);this.box(x,y,z+.25,1.25,.6,.25,12,id);for(let a=-1;a<=1;a+=2){this.box(x+a*.85,y,z,.25,1.25,.3,8,id);this.box(x+a*.75,y-.55,z+.1,.22,.4,.2,7,id);this.box(x+a*.6,y-.5,z-.05,.16,.25,.1,phase<.5?17:18,id);}this.box(x,y+.4,z+.15,1.4,.18,.15,8,id);this.box(x-.4,y,z+.5,.35,.4,.15,3,id);if(e[o+10]>0)this.crate(x+.2,y,z+.5,.45,id);if(state===7){this.box(x,y,z-1.,.04,.04,1.,21,id);this.crate(x,y,z-1.3,.35,id);}return;}
   if(k===21){for(let a=-1;a<=1;a+=2)for(let b=-1;b<=1;b++){this.box(x+a*.58,y+b*.4+gait*a,z,.15,.2,.4,4,id);this.box(x+a*.43,y+b*.4,z+.35,.4,.17,.16,21,id);}this.box(x,y,z+.45,1.15,1.2,.35,12,id);this.box(x,y+.55,z+.5,.65,.18,.25,8,id);for(let j=0;j<2;j++)if(e[o+10]>j*8)this.crate(x+(j-.5)*.5,y,z+.8,.45,id);this.box(x-.3,y+.4,z+.8,.07,.07,.35,22,id);return;}
   if(k===31){for(let a=-1;a<=1;a+=2){this.box(x+a*.65,y+.15+gait*a,z,.28,.5,.2,24,id);this.box(x+a*.65,y+.15+gait*a,z+.2,.18,.2,.9,25,id);this.box(x+a*.65,y-.2,z+1.,.2,.65,.18,24,id);this.box(x+a*.52,y-.4,z+1.1,.2,.2,.75,25,id);}this.box(x,y,z+1.5,1.5,1.3,.75,24,id,-1);this.box(x-.45,y,z+1.7,.22,1.4,.65,25,id);this.box(x,y+.66,z+1.6,.65,.09,.35,26,id);for(let j=0;j<4;j++)this.box(x+dx*j*.22,y+dy*j*.22,z+1.9,.32,.3,.25,j===3?26:23,id);if(state===2&&phase<.12)this.box(x+dx*.85,y+dy*.85,z+1.9,.35,.35,.25,27);return;}
-  const h=k===23?1.45:k===22?1.3:k===30?1.05:.94;
-  this.box(x-.15,y+gait,z,.18,.26,.33,enemy?23:10,id);this.box(x+.15,y-gait,z,.18,.26,.33,enemy?23:10,id);
+  const h=k===23?1.45:k===22?1.35:k===30?1.2:1.13;
+  const lean=enemy?.18:0,stance=state===2?.24:.15;
+  this.box(x-stance,y+gait-.12,z,.2,.26,.33,enemy?23:10,id);this.box(x+stance,y-gait+.12,z,.2,.26,.33,enemy?23:10,id);
   if(k===23)this.box(x-.15,y-.17-gait*.25,z+.18,.72,.23,.99,12,id,-1);
-  this.box(x,y,z+.33,.57,.5,h-.56,enemy?25:12,id);
+  this.box(x+lean*.5,y,z+.33,.57,.5,h-.56,enemy?25:13,id);
+  // A sand shoulder and swept wine tail give the raider a forward profile;
+  // friendly breastplates retain a compact ivory edge over teal armor.
+  this.box(x+lean,y+.24,z+h-.5,.32,.13,.2,enemy?27:8,id);
+  if(enemy)this.box(x-.32,y,z+.32,.5,.28,.36,24,id,-2);
   // Hands flank the torso; the forward arm lifts to the weapon or work tool.
   const action=state===2||state===3||state===8;
   this.box(x+.28,y+.23,z+(action?.58:.38)+gait*.3,.26,.19,.24,enemy?24:12,id);
   this.box(x-.12,y-.28,z+.4-gait*.3,.23,.19,.25,enemy?24:12,id);
-  this.box(x,y,z+h-.27,.49,.46,.09,enemy?23:10,id);
-  this.box(x,y,z+h-.2,.49,.46,.25,enemy?25:8,id,enemy?-2:0);
-  this.box(x+dx*.23,y+dy*.23,z+h-.15,.19,.15,.08,enemy?26:17,id);
+  this.box(x+lean,y,z+h-.27,.49,.46,.09,enemy?23:10,id);
+  this.box(x+lean,y,z+h-.2,.49,.46,.25,enemy?25:8,id,enemy?-2:0);
+  this.box(x+lean+dx*.23,y+dy*.23,z+h-.15,.19,.15,.12,enemy?27:18,id);
   if(k===22||k===23){this.box(x-.3,y,z+h-.52,.24,.46,.18,8,id);this.box(x+.3,y,z+h-.52,.24,.46,.18,8,id);}
   if(k===22){this.box(x-.12,y+.38,z+.3,.58,.16,.74,19,id);this.box(x-.12,y+.4,z+.39,.48,.18,.58,22,id);this.box(x-.37,y+.17,z+.51,.2,.2,.3,22,id);}
   if(k===20){this.box(x,y-.27,z+.38,.36,.22,.4,11,id);if(e[o+10]>0)this.crate(x-.35,y,z+.4,.28+Math.min(4,e[o+10])*.03,id);
@@ -280,20 +285,27 @@ export class Renderer {
   }else{
    const reach=k===23?1.05:.65,recoil=state===2&&phase<.12?.14:0;
    for(let j=0;j<3;j++){const q=.25+j*reach/3-recoil;this.box(x+dx*q,y+dy*q,z+h-.48,.18,.18,.15,k===23?8:enemy?23:10,id);}
-   if(k===30){this.box(x,y-.28,z+.5,.3,.4,.35,24,id,-2);this.box(x+dx*.65,y+dy*.65,z+.35,.11,.11,.3,23,id);}
-   if(state===2&&(phase<.075||k===23&&phase>.8)){const q=reach+.15;this.box(x+dx*q,y+dy*q,z+h-.46,.22,.22,.18,enemy?27:k===23?18:22);if(phase<.045)this.box(x+dx*(q+.18),y+dy*(q+.18),z+h-.46,.12,.12,.12,9);}
+   if(k===30){this.box(x,y-.28,z+.5,.3,.4,.35,24,id,-2);this.box(x+dx*.65,y+dy*.65,z+h-.48,.13,.13,.35,23,id);}
+   // A stepped, persistent muzzle flare reads as a burst at internal resolution.
+   // Cooldown is set only by an actual simulated launch, including pool limits.
+   if(state===2&&e[o+11]>(enemy?.72:.8)){
+    const q=reach+.15,hot=e[o+11]>.91;
+    this.box(x+dx*q,y+dy*q,z+h-.46,.32,.28,.24,enemy?27:k===23?18:22);
+    this.box(x+dx*(q+.22),y+dy*(q+.22),z+h-.42,.28,.17,.13,hot?9:enemy?26:18);
+    if(hot)this.box(x+dx*q,y+dy*q,z+h-.56,.13,.18,.46,enemy?27:9);
+   }
   }
  }
  private effects(e:Float32Array,o:number) {
   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],sub=e[o+10],age=e[o+11],dx=Math.cos(e[o+3]),dy=Math.sin(e[o+3]);
   if(k===50){const color=sub===30||sub===31?26:sub===22?22:17;
-   const steps=sub===23?12:sub===31?7:4;
-   for(let j=steps-1;j>=0;j--){const q=j*(sub===23?.3:.22);this.box(x-dx*q,y-dy*q,z-(sub===31?j*.035:0),j===0?.25:.16,j===0?.25:.16,.16,32+(j===0?(sub===30||sub===31?27:sub===22?9:18):color));}
+   const steps=sub===30?3:sub===23?7:sub===31?5:4;
+   for(let j=steps-1;j>=0;j--){const q=j*(sub===30?.48:.26);this.box(x-dx*q,y-dy*q,z-(sub===31?j*.035:0),.26,.26,.23,32+(j===0?(sub===30||sub===31?27:sub===22?9:18):color));}
    if(sub===31)this.box(x,y,this.ground(x,y)+.05,.22,.22,.02,2);
   }else if(k===51){
-   const blast=sub===31,r=.18+Math.floor(age*18)*(blast?.23:.12);
-   if(age<.12)this.box(x,y,z,.3,.3,.35,blast?27:9,-1,-2);
-   for(let j=0;j<8;j++){const a=j*Math.PI/4;this.box(x+Math.cos(a)*r,y+Math.sin(a)*r,z+.08+(j%2)*.12,.18,.18,.18,age<.15?blast?26:18:20);}
+   const blast=sub===31,r=.18+Math.floor(age*12)*(blast?.23:.1);
+   if(age<.2)this.box(x,y,z,.38,.38,.46,32+(blast?27:9),-1,-2);
+   for(let j=0;j<6;j++){const a=j*Math.PI/3;this.box(x+Math.cos(a)*r,y+Math.sin(a)*r,z+.08+(j%2)*.16,.24,.24,.23,32+(age<.25?(sub===30||blast?26:18):20));}
    if(blast&&age>.2)for(let j=0;j<5;j++)this.box(x+(j-2)*r*.45,y+(j%2)*.4,this.ground(x,y)+.1,.3,.35,.12,age<.5?5:4);
   }
   else if(k===52){this.box(x,y,z,.48,.45,.2,sub>=30?23:4);this.box(x+.28,y+.12,z,.2,.2,.14,sub>=30?24:7);}

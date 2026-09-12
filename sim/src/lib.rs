@@ -8,6 +8,11 @@
 use std::cell::RefCell;
 const CAP: usize = 160;
 const STRIDE: usize = 12;
+// Two staggered ranks on the eastern terrace. At yaw 0 adjacent centers
+// project at least 13 pixels apart; every foot stays on the z=.5 mesa.
+const RAID_POSTS: [(f32,f32);8] = [(26.6,16.),(26.6,18.6),(26.6,21.2),(28.3,15.1),(28.3,17.7),(28.3,20.3),(27.,23.6),(28.3,22.9)];
+// Planted infantry screen in front of the buildings, with rifle support behind.
+const GUARD_POSTS: [(f32,f32);6] = [(23.1,15.8),(23.2,18.4),(23.1,21.),(19.5,24.),(19.,18.8),(19.3,22.)];
 #[derive(Clone, Copy)]
 struct Entity { data: [f32; STRIDE], x: i32, y: i32, target: usize, timer: u32, route: usize, origin: [f32;3], destination: [f32;3], active: bool }
 impl Entity {
@@ -45,18 +50,39 @@ impl Sim {
     else {let route=self.entities[id].route;let node=27+(id-8)*2;let x=if route==0 {self.entities[node].data[0]+0.6}else{7.+(id%3) as f32*0.45};let y=if route==0 {self.entities[node].data[1]+0.6}else{25.};if self.walk(id,x,y,1.4) {self.entities[id].data[5]=3.;self.entities[id].timer+=1;if self.entities[id].timer>=if route==0 {120}else{48} {self.entities[id].timer=0;if route==0 {self.entities[id].data[10]+=1.;if self.entities[id].data[10]>=4. {self.entities[id].route=1;}}else{self.alloy=(self.alloy+self.entities[id].data[10] as u32).min(300);self.entities[id].data[10]=0.;self.entities[id].route=0;}}}}
    } else if kind==21 {let route=self.entities[id].route;let (x,y)=if route==0 {(9.,24.)}else if route==1 {(11.,20.)}else if route==2 {(self.entities[site].data[0]+2.,self.entities[site].data[1]+2.)}else{(13.,18.)};if self.walk(id,x,y,1.) {self.entities[id].timer+=1;self.entities[id].data[5]=7.;if self.entities[id].timer>=48 {self.entities[id].timer=0;self.entities[id].route=(route+1)%4;self.entities[id].data[10]=if route==0 {16.}else{0.};}}}
    else if kind==24 {let points=[(21.5,22.),(16.,23.),(13.,17.),(19.,14.)];let r=self.entities[id].route;if self.walk(id,points[r].0,points[r].1,2.) {self.entities[id].route=(r+1)%4;}self.entities[id].data[2]=3.5+0.08*((t+id as u32*13) as f32/23.).sin();}
-   else {if self.entities[id].data[5]==2. {self.entities[id].data[5]=0.;}else{let r=self.entities[id].route;let x=22.5+(id%3) as f32*0.8+if r==0 {0.}else{1.5};let y=11.+(id%2) as f32*2.+if r==0 {0.}else{1.5};if self.walk(id,x,y,1.6) {self.entities[id].route=1-r;}}}
+   else {
+    let (x,y)=GUARD_POSTS[id-20];
+    let threat=(40..52).any(|j|self.entities[j].active);
+    let patrol=if threat {0.}else if self.entities[id].route==0 {-0.45}else{0.45};
+    if self.walk(id,x+patrol,y,1.6) {self.entities[id].data[5]=0.;if !threat {self.entities[id].route=1-self.entities[id].route;}}
+   }
   }
-  if t>=2160 {let wave=(t-2160)/1800;let age=(t-2160)%1800;let n=if wave%4==0 {4}else if wave%4==3 {8}else{6};for j in 0..n {if age==j*72 {self.add(40+j as usize,30,30.5,2.+j as f32*0.35,1.);}}if wave%4>=2 && age==480 {self.add(50,31,29.,5.,1.);}if wave%4==3 && age==570 {self.add(51,31,30.,3.,1.);}
-   // Separate approach lanes keep successive arrivals exposed on the causeway,
-   // outside the whole garrison's overlapping ranges until the final advance.
-   for id in 40..52 {if !self.entities[id].active {continue;}let gait_period=if id>=50 {48}else{24};self.entities[id].data[6]=((t+id as u32*17)%gait_period) as f32/gait_period as f32;if age>=1740 {self.entities[id].active=false;continue;}let r=self.entities[id].route;let lane=(id%3) as f32;let (x,y)=if age>=1440 {(31.,2.)}else if r==0 {(29.+lane*0.7,5.+lane*0.7)}else if r==1 {(30.2+lane*0.65,9.5+(id%4) as f32*0.85)}else{(28.7+lane*0.65,11.+(id%4) as f32*0.85)};if self.walk(id,x,y,if id>=50 {0.9}else{1.8}) {self.entities[id].route=(r+1).min(2);}if age>=1440 {self.entities[id].data[5]=6.;}}
+  if t>=2160 {let wave=(t-2160)/1800;let age=(t-2160)%1800;let n=if wave%4==0 {4}else if wave%4==3 {8}else{6};for j in 0..n {if age==j*72 {self.add(40+j as usize,30,30.5,13.8,1.);}}if wave%4>=2 && age==480 {self.add(50,31,29.,5.,1.);}if wave%4==3 && age==570 {self.add(51,31,30.,3.,1.);}
+   // Each arrival owns a distinct lane all the way to its firing post. Earlier
+   // arrivals take the farthest posts, allowing the staggered wave to fan out.
+   for id in 40..52 {
+    if !self.entities[id].active {continue;}
+    let gait_period=if id>=50 {48}else{24};self.entities[id].data[6]=((t+id as u32*17)%gait_period) as f32/gait_period as f32;
+    if age>=1740 {self.entities[id].active=false;continue;}
+    let slot=if id<48 {(5+8-(id-40))%8}else{0};
+    let (px,py)=if id>=50 {(28.,11.+(id-50) as f32*2.)}else{RAID_POSTS[slot]};
+    // Enter from the causeway's south exit, beyond the old tower's kill zone.
+    // Front rank assembles behind the screen before advancing together; this
+    // repeats each raid, without changing spawn, attack, or retreat clocks.
+    let (x,y)=if age>=1440 {(31.,2.)}else if id<48&&slot<3&&age<690 {(28.6,py+0.8)}else{(px,py)};
+    if self.walk(id,x,y,if id>=50 {0.9}else{1.8}) {self.entities[id].route=1;self.entities[id].data[5]=0.;}
+    if age>=1440 {self.entities[id].data[5]=6.;}
+   }
   }
   for id in 0..52 {if !self.entities[id].active {continue;}let k=self.entities[id].data[4] as u32;if !(k==16||k==22||k==23||k==30||k==31)||self.entities[id].data[10]<1.||self.entities[id].data[5]==6. {continue;}
-   let enemy=self.entities[id].data[9]==1.;let range=if k==16 {8.}else if k==23||k==31 {7.}else{5.};let mut nearest=CAP;let mut best=range*range;
+   let enemy=self.entities[id].data[9]==1.;
+   let period=if k==16 {108}else if k==31 {144}else if k==23 {96}else if enemy {48}else{60};
+   self.entities[id].data[11]=(self.entities[id].data[11]-1./period as f32).max(0.);
+   let range=if k==16 {8.}else if k==23||k==31 {7.}else{5.};let mut nearest=CAP;let mut best=range*range;
    for j in 0..52 {let e=self.entities[j];let jk=e.data[4] as u32;if !e.active||e.data[9]==self.entities[id].data[9]||!(jk==16||jk==22||jk==23||jk==30||jk==31) {continue;}let d=(e.data[0]-self.entities[id].data[0]).powi(2)+(e.data[1]-self.entities[id].data[1]).powi(2);if d<best {best=d;nearest=j;}}
-   if nearest<CAP {self.entities[id].data[5]=2.;let period=if k==16 {108}else if k==31 {144}else if k==23 {96}else if enemy {48}else{60};let offset=if k==16||id%4==0 {0}else{id as u32*7};self.entities[id].data[6]=((t+offset)%period) as f32/period as f32;self.entities[id].data[3]=(self.entities[nearest].data[1]-self.entities[id].data[1]).atan2(self.entities[nearest].data[0]-self.entities[id].data[0]);if (t+offset)%period==0 && (k!=16||self.charge>0) {if let Some(p)=(60..108).find(|&p|!self.entities[p].active) {if k==16 {self.charge-=1;}let e=self.entities[id];self.add(p,50,e.data[0],e.data[1],e.data[9]);let muzzle=if k==16 {3.2}else if k==31 {1.9}else if k==23 {0.97}else if k==22 {0.82}else{0.57};
-    let reach=if k==23 {1.2}else{0.85};
+   if nearest<CAP {self.entities[id].data[5]=2.;let period=if k==16 {108}else if k==31 {144}else if k==23 {96}else if enemy {48}else{60};let offset=if k==16||id%4==0 {0}else{id as u32*7};self.entities[id].data[6]=((t+offset)%period) as f32/period as f32;self.entities[id].data[3]=(self.entities[nearest].data[1]-self.entities[id].data[1]).atan2(self.entities[nearest].data[0]-self.entities[id].data[0]);if (t+offset)%period==0 && (k!=16||self.charge>0) {if let Some(p)=(60..108).find(|&p|!self.entities[p].active) {if k==16 {self.charge-=1;}let e=self.entities[id];self.add(p,50,e.data[0],e.data[1],e.data[9]);let muzzle=if k==16 {3.2}else if k==31 {1.9}else if k==23 {0.99}else if k==22 {0.89}else{0.74};
+    self.entities[id].data[11]=1.;
+    let reach=if k==23 {1.464}else if k==16 {0.85}else if k==31 {0.952}else{0.976};
     let px=e.data[0]+e.data[3].cos()*reach;let py=e.data[1]+e.data[3].sin()*reach;
     let victim=self.entities[nearest];let shot=&mut self.entities[p];
     shot.x=(px*1024.) as i32;shot.y=(py*1024.) as i32;
@@ -66,7 +92,7 @@ impl Sim {
   }
   // Fixed launch endpoints make shells visibly dodgeable. All impact onsets and
   // muzzle/tracer lifetimes belong to simulation time, independent of rendering.
-  for id in 108..144 {if self.entities[id].active {self.entities[id].timer+=1;self.entities[id].data[11]=self.entities[id].timer as f32/60.;let life=if self.entities[id].data[4]==52. {120}else if self.entities[id].data[10]==31. {51}else{12};if self.entities[id].timer>=life {self.entities[id].active=false;}}}
+  for id in 108..144 {if self.entities[id].active {self.entities[id].timer+=1;self.entities[id].data[11]=self.entities[id].timer as f32/60.;let life=if self.entities[id].data[4]==52. {120}else if self.entities[id].data[10]==31. {51}else{24};if self.entities[id].timer>=life {self.entities[id].active=false;}}}
   for id in 60..108 {
    if !self.entities[id].active {continue;}
    let shot=self.entities[id];let k=shot.data[10] as u32;
