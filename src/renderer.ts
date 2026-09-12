@@ -10,10 +10,10 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
 @vertex fn vs(@location(0) vertex:vec3f,@location(1) shade:f32,@location(2) origin:vec3f,@location(3) size:vec3f,@location(4) color:f32,@location(5) screen:f32)->Out {
  var o:Out;
  let pigment=color%32.;o.unit=floor((color%32768.)/32.);
- // Combat-only metadata packs faction and eight local facing directions into
+ // Actor metadata packs faction and eight local facing directions into
  // the existing color word; no extra instances, buffers or per-frame arrays.
  let combat=floor(color/32768.);o.rim=vec2f(0.);
- if combat>0. {
+ if combat>0. && combat<=16. {
   let angle=((combat-1.)%8.)*0.7853981634;
   let facing=vec2f(cos(angle),sin(angle));
   let rotated=vec2f(facing.x*camera.rotation.x-facing.y*camera.rotation.y,facing.x*camera.rotation.y+facing.y*camera.rotation.x);
@@ -40,6 +40,10 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
   if pigment==25. {armor=25.;}
   o.color=palette[u32(armor)];
  }
+ // Friendly composite masks keep their outer one-pixel ink contour, but no
+ // internal teal rim may overwrite an ivory hood, crest, wing or gold tool.
+ // Flat palette faces also keep small light panels from shading into stone.
+ if combat==17. {o.color=palette[u32(pigment)];}
  } return o;
 }
 struct Fragment { @location(0) color:vec4f, @location(1) mask:vec4f }
@@ -276,22 +280,28 @@ export class Renderer {
   this.unitParts(e,o,id);
   // Broader readable silhouettes, rotated as a whole with the simulated facing.
   // Component centers stay in world space so selection uses submitted geometry.
-  const k=e[o+4],scale=k===24?1.12:k===20?1:1.22;
+  const k=e[o+4],friendly=k>=20&&k<=24;
+  const scale=k===24?1.12:k===20?1:1.22;
+  const growth=k===21||k===22||k===23?1.28:1;
   const c=Math.cos(e[o+3]),sn=Math.sin(e[o+3]);
   const combat=k===21||k===22||k===23||k===30||k===31;
-  const rim=combat?1+((Math.round(e[o+3]/(Math.PI/4))%8+8)%8)+(k>=30?8:0):0;
+  const rim=friendly?17:combat?1+((Math.round(e[o+3]/(Math.PI/4))%8+8)%8)+(k>=30?8:0):0;
   for(let i=start;i<this.count;i++){
-   const q=i*8,dx=(this.data[q]-e[o])*scale,dy=(this.data[q+1]-e[o+1])*scale;
+   // Only owned body/cargo/weapon geometry grows. Contact shadows and action
+   // sparks keep their dimensions; pose heights and timing remain unchanged.
+   const q=i*8,bodyGrowth=this.owners[i]===id?growth:1;
+   const dx=(this.data[q]-e[o])*scale*bodyGrowth,dy=(this.data[q+1]-e[o+1])*scale*bodyGrowth;
    this.data[q]=e[o]+dx*c-dy*sn;this.data[q+1]=e[o+1]+dx*sn+dy*c;
-   this.data[q+3]*=scale;this.data[q+4]*=scale;
+   this.data[q+3]*=scale*bodyGrowth;this.data[q+4]*=scale*bodyGrowth;
+   this.data[q+5]*=bodyGrowth;
    if(this.owners[i]===id)this.data[q+6]+=32*(id+2)+32768*rim;
   }
  }
  private unitParts(e:Float32Array,o:number,id:number) {
   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],phase=e[o+6],state=e[o+5],moving=state===1||state===6;
   const gait=moving?(phase<.5?-.16:.16):0;
-  this.box(x,y,this.ground(x,y)+.045,k===24?1.6:k===31?1.8:k===20?.65:1.1,k===24?.8:k===31?1.3:k===22?1.5:.5,.025,k===21||k===22||k===23||k===30||k===31?0:2);
-  if(k===24){this.box(x,y,z,1.8,.8,.25,11,id);this.box(x,y,z+.25,1.25,.6,.25,12,id);for(let a=-1;a<=1;a+=2){this.box(x+a*.85,y,z,.25,1.25,.3,8,id);this.box(x+a*.75,y-.55,z+.1,.22,.4,.2,7,id);this.box(x+a*.6,y-.5,z-.05,.16,.25,.1,phase<.5?17:18,id);}this.box(x,y+.4,z+.15,1.4,.18,.15,8,id);this.box(x-.4,y,z+.5,.35,.4,.15,3,id);if(e[o+10]>0)this.crate(x+.2,y,z+.5,.45,id);if(state===7){this.box(x,y,z-1.,.04,.04,1.,21,id);this.crate(x,y,z-1.3,.35,id);}return;}
+  this.box(x,y,this.ground(x,y)+.045,k===24?.9:k===31?1.8:k===20?.38:k<30?.55:1.1,k===24?.45:k===31?1.3:k===20?.3:k===22?.7:.5,.025,0);
+  if(k===24){this.box(x,y,z,1.8,.8,.25,13,id);this.box(x,y,z+.25,1.25,.6,.25,14,id);for(let a=-1;a<=1;a+=2){this.box(x+a*.85,y,z,.25,1.25,.3,8,id);this.box(x+a*.75,y-.55,z+.1,.22,.4,.2,7,id);this.box(x+a*.6,y-.5,z-.05,.16,.25,.1,phase<.5?17:18,id);}this.box(x,y+.4,z+.15,1.4,.18,.15,8,id);this.box(x-.4,y,z+.5,.35,.4,.15,3,id);if(e[o+10]>0)this.crate(x+.2,y,z+.5,.45,id);if(state===7){this.box(x,y,z-1.,.04,.04,1.,21,id);this.crate(x,y,z-1.3,.35,id);}return;}
   // Brief numeric roles: 21 tall lancer, 22 wing/disc, 23 rifle knight.
   // Keep the simulation's existing kind names, cargo and action fields intact.
   const attacking=state===2,recoil=attacking&&phase<.18?.23:0;
@@ -302,11 +312,11 @@ export class Renderer {
     this.box(x-.16,y+side*brace,z,.48,.25,.16,11,id);
    }
    // Wide planted cloak hem narrows to a high ivory crest.
-   this.box(x-.12-recoil,y,z+.28,.72,.84,1.03,12,id,-2);
-   this.box(x-recoil,y,z+.67,.48,.48,.76,13,id);
+   this.box(x-.12-recoil,y,z+.28,.72,.84,1.03,13,id,-1);
+   this.box(x-recoil,y,z+.67,.48,.48,.76,14,id);
    this.box(x-recoil,y,z+1.37,.36,.38,.38,8,id,-2);
    this.box(x+.19-recoil,y,z+1.42,.16,.3,.14,18,id);
-   this.box(x-recoil,y+.3,z+1.02,.46,.27,.26,8,id);
+   for(let side=-1;side<=1;side+=2)this.box(x-recoil,y+side*.3,z+1.02,.46,.27,.26,8,id);
    // Side-mounted barrel has a continuous large fill and a long tip.
    this.box(x+.38-recoil,y+.32,z+.96,.92,.2,.2,8,id);
    this.box(x+.95-recoil,y+.32,z+.99,.45,.16,.14,22,id);
@@ -319,12 +329,12 @@ export class Renderer {
    const spread=attacking?.16:0;
    for(let side=-1;side<=1;side+=2){
     this.box(x-.12+gait*side,y+side*.4,z,.35,.25,.24,10,id);
-    this.box(x-.15-recoil,y+side*(.49+spread),z+.42,.63,.68,.22,13,id,-1);
-    this.box(x-.35-recoil,y+side*(.85+spread),z+.44,.4,.3,.16,8,id,-2);
+    this.box(x-.15-recoil,y+side*(.49+spread),z+.42,.63,.68,.22,14,id);
+    this.box(x-.35-recoil,y+side*(.85+spread),z+.44,.4,.3,.16,8,id);
    }
-   this.box(x-recoil,y,z+.28,.75,.76,.4,12,id,-1);
-   this.box(x-recoil,y,z+.67,.43,.46,.2,13,id,-1);
-   this.box(x+.33-recoil,y,z+.57,.2,.32,.18,18,id);
+   this.box(x-recoil,y,z+.28,.75,.76,.4,13,id,-1);
+   this.box(x-recoil,y,z+.67,.43,.46,.2,14,id,-1);
+   this.box(x-recoil,y,z+.88,.13,.13,.04,17,id);
    this.box(x+.65-recoil,y,z+.78,.65,.22,.2,8,id);
    if(attacking&&e[o+11]>.8)this.box(x+.98-recoil,y,z+.82,.34,.3,.25,22);
    return;
@@ -366,10 +376,10 @@ export class Renderer {
   // Riveter: compact round hood and backpack, with a warm face/tool cluster.
   this.box(x-.15,y+gait-.12,z,.2,.24,.25,10,id);
   this.box(x+.15,y-gait+.12,z,.2,.24,.25,10,id);
-  this.box(x,y,z+.24,.5,.46,.43,13,id,-1);
-  this.box(x,y-.27,z+.3,.36,.22,.4,11,id);
+  this.box(x,y,z+.24,.5,.46,.43,14,id,-1);
+  this.box(x,y-.27,z+.3,.36,.22,.4,13,id);
   this.box(x,y,z+.65,.49,.46,.28,8,id,-1);
-  this.box(x+.23,y,z+.69,.19,.2,.14,27,id);
+  this.box(x+.23,y,z+.69,.19,.2,.14,22,id);
   if(e[o+10]>0)this.crate(x-.35,y,z+.3,.28+Math.min(4,e[o+10])*.03,id);
   const working=state===3||state===8,strike=working&&phase<.22;
   const lift=working?(phase<.45?.28:-.1):0;
