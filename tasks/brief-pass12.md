@@ -44,8 +44,14 @@ unit silhouette now reads almost as large as a building.
 - Cliff/terrain side faces get a vertical value ramp that darkens downward in discrete
   palette steps (3–4 steps, hard edges, no dithering gradient).
 - Plateau top surfaces must read clearly lighter than any side face.
-- **Measurable acceptance:** in the final frame, the mean luminance of the bottom cliff
-  band must be at least 25% lower than the mean luminance of the plateau top surface.
+- **Measurable acceptance (the orchestrator runs this exact check):**
+  `python3 scripts/measure-detail.py <shot> --top 230 265 --rim 350 465 --x0 180 --x1 430`
+  must report `terrain ... -> PASS`, which requires
+  `cliff_lower/cliff_upper <= 0.85` **and** `slope < 0`.
+  Current measured baseline is a FAIL: `top_lum=79.0 cliff_upper=91.2 cliff_lower=91.8
+  lower/upper=1.007 slope=+0.010` — the cliff sides are BRIGHTER than the plateau top
+  and completely flat. Invert that: sides clearly darker than the top, and darker at the
+  base than at the rim.
 - Do not add colours outside the 32-colour palette. Build the ramp from the existing
   stone/void families already listed in WORLD_PLAN.md.
 
