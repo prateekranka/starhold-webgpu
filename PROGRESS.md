@@ -4,8 +4,8 @@ Browser graphics demo: isometric pixel-art space colony, deterministic Rust/WASM
 simulation, and raw WebGPU renderer.
 
 **Two playable civilizations are defined. Passes 16 and 17 were rejected. Passes
-18 and 19 are kept. Pass 20 is the final actor-highlight correction. The phone
-URL remains on verified pass 15.**
+18–20 are kept. Pass 21 is the final one-line actor-highlight correction. The
+phone URL remains on verified pass 15.**
 
 ## Verified state — mobile M1 + pass 15
 
@@ -92,21 +92,21 @@ playable civilization.
   units, complete economy/combat chains, deterministic starts, and distinct
   normal-zoom silhouettes.
 
-## Active next piece — pass 20 small actor endpoint glints
+## Active next piece — pass 21 widen actor glint eligibility
 
-Binding spec: `docs/LIGHTING_CONTRAST_SPEC.md`. Final corrective worker brief:
-`tasks/brief-pass20.md`.
+Binding spec: `docs/LIGHTING_CONTRAST_SPEC.md`. Final worker brief:
+`tasks/brief-pass21.md`.
 
-Pass 19 (`b90631c`) is a kept visual component. It passes runtime, simulation,
-performance, palette, coverage, mean (87.250), contrast (46.844), midtones
-(38.488%), texture, cliff, and capacity gates. Both critics judge it material.
-It misses only highlight share: 4.904% versus the 5.0% floor, approximately 184
-judged pixels. Evidence is in `evidence-p19/`.
+Pass 20 (`d2cd6c1`) is a kept visual component. It passes runtime, simulation,
+performance, palette, coverage, mean (87.282), contrast (46.896), midtones
+(38.500%), texture, cliff, and capacity gates. It changes 157 pixels, all
+brighter. The independent crop critic says KEEP, CLEAN, and EXPAND. It misses
+only highlight share: 4.953% versus the 5.0% floor, approximately 90 pixels.
+Evidence is in `evidence-p20/`.
 
-Pass 20 promotes only small top-facing actor-owned planes by one palette step,
-capped at existing family endpoints. It cannot change broad actor planes,
-buildings, terrain, roads, map lighting, effects, geometry, camera, simulation,
-controls, or palette.
+Pass 21 changes only the actor endpoint-glint size condition from the shared
+0.30-tile `small` value to a dedicated 0.40-tile maximum. It cannot modify the
+shared `small` rule or any other shader, art, map, simulation, or control value.
 
 The live Tailnet route no longer reads mutable repo `dist/`. It proxies port 5200,
 which serves the frozen pass-15 artifact at
@@ -128,10 +128,10 @@ stronger unit-scale contrast — not another detail pass.
 
 1. Confirm clean tree and Plus quota: `git status --short`; `python3 tasks/quota-check.py`.
 2. Launch one fresh worker:
-   `bash tasks/astra-run.sh coder tasks/brief-pass20.md tasks/logs/pass20.log`.
+   `bash tasks/astra-run.sh coder tasks/brief-pass21.md tasks/logs/pass21.log`.
 3. Worker uses GPT-6 Astra Medium, standard mode, `fast_mode=false`, and edits only
    `src/renderer.ts`.
-4. Orchestrator runs `npm run build`, then desktop capture into `evidence-p20/`.
+4. Orchestrator runs `npm run build`, then desktop capture into `evidence-p21/`.
 5. Orchestrator requires the complete lighting gate: mean 86–94, SD >=44,
    midtones >=38%, highlights 5.0–8.5%, plus all preservation metrics.
 6. Only after desktop metrics pass, run all mobile profiles, four-yaw visual checks,
