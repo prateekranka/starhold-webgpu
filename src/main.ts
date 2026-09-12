@@ -43,8 +43,8 @@ function refreshEntities() {
  if(entities.buffer!==sim.memory.buffer||entities.byteOffset!==pointer)entities=new Float32Array(sim.memory.buffer,pointer);
  selected=null;for(let i=0;i<entityCount;i++)if(entities[i*12+8]===1){selected=i;break;}
 }
-let lastSelection=-2,lastHealth=-1,lastJob=-1;
-function updateSelection() {const o=selected===null?-1:selected*12;const hp=o<0?0:Math.round(entities[o+7]*100),job=o<0?-1:entities[o+5];if(lastSelection===(selected??-1)&&lastHealth===hp&&lastJob===job)return;lastSelection=selected??-1;lastHealth=hp;lastJob=job;selection.hidden=o<0;selection.textContent=o<0?'':`${names[entities[o+4]]} — HP ${hp}% — ${jobs[job]}`;}
+let lastSelection=-2,lastHealth=-1,lastJob=-1,lastProgress=-1;
+function updateSelection() {const o=selected===null?-1:selected*12;const hp=o<0?0:Math.round(entities[o+7]*100),job=o<0?-1:entities[o+5],progress=o<0?-1:Math.floor(entities[o+10]*100);if(lastSelection===(selected??-1)&&lastHealth===hp&&lastJob===job&&lastProgress===progress)return;lastSelection=selected??-1;lastHealth=hp;lastJob=job;lastProgress=progress;selection.hidden=o<0;selection.textContent=o<0?'':`${names[entities[o+4]]} — HP ${hp}% — ${jobs[job]}${job===5?` ${progress}%`:""}`;}
 let previous=0,accumulator=0,windowStart=0,frames=0,tick=0;
 function frame(now:number) {
  if(window.__APP.error||!sim)return;

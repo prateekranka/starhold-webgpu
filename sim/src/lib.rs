@@ -9,9 +9,9 @@ use std::cell::RefCell;
 const CAP: usize = 160;
 const STRIDE: usize = 12;
 #[derive(Clone, Copy)]
-struct Entity { data: [f32; STRIDE], x: i32, y: i32, target: usize, timer: u32, route: usize, active: bool }
+struct Entity { data: [f32; STRIDE], x: i32, y: i32, target: usize, timer: u32, route: usize, origin: [f32;3], destination: [f32;3], active: bool }
 impl Entity {
-    const EMPTY: Self = Self { data: [0.; STRIDE], x: 0, y: 0, target: 0, timer: 0, route: 0, active: false };
+    const EMPTY: Self = Self { data: [0.; STRIDE], x: 0, y: 0, target: 0, timer: 0, route: 0, origin: [0.;3], destination: [0.;3], active: false };
 }
 struct Sim { entities: [Entity; CAP], snapshot: [f32; CAP*STRIDE], ids: [usize; CAP], terrain: [f32;1024], count: usize, tick: u32, accumulator: f64, rng: u32, selected: usize, alloy: u32, charge: u32 }
 thread_local! { static SIM: RefCell<Sim> = RefCell::new(Sim { entities:[Entity::EMPTY;CAP], snapshot:[0.;CAP*STRIDE], ids:[0;CAP], terrain:[0.;1024], count:0,tick:0,accumulator:0.,rng:1,selected:CAP,alloy:160,charge:120 }); }
@@ -32,7 +32,7 @@ impl Sim {
   let site=if t<1440 {4}else if t<3240 {5}else if t<4680 {6}else{7};
   for id in 8..27 {
    let kind=self.entities[id].data[4] as u32;
-   self.entities[id].data[6]=((t+id as u32*17)%72) as f32/72.;
+   let animation_period=if self.entities[id].data[5]==1. {if kind==20 {24}else{36}}else{72};self.entities[id].data[6]=((t+id as u32*17)%animation_period) as f32/animation_period as f32;
    if kind==20 {
     if id>=14 {let assigned=if id<16 {if t<1440 {4}else{6}}else if t<3240 {5}else{7};let site=assigned;let x=self.entities[site].data[0]+if id%2==0 {1.6}else{-1.6};let y=self.entities[site].data[1]+1.8;if self.walk(id,x,y,1.4) {self.entities[id].data[5]=if site==4&&t<1440||site==5&&(1440..3240).contains(&t)||site==6&&(3240..4680).contains(&t)||site==7&&t>=4680 {3.}else{0.};}}
     else {let route=self.entities[id].route;let node=27+(id-8)*2;let x=if route==0 {self.entities[node].data[0]+0.6}else{7.+(id%3) as f32*0.45};let y=if route==0 {self.entities[node].data[1]+0.6}else{25.};if self.walk(id,x,y,1.4) {self.entities[id].data[5]=3.;self.entities[id].timer+=1;if self.entities[id].timer>=if route==0 {120}else{48} {self.entities[id].timer=0;if route==0 {self.entities[id].data[10]+=1.;if self.entities[id].data[10]>=4. {self.entities[id].route=1;}}else{self.alloy=(self.alloy+self.entities[id].data[10] as u32).min(300);self.entities[id].data[10]=0.;self.entities[id].route=0;}}}}
@@ -40,16 +40,54 @@ impl Sim {
    else if kind==24 {let points=[(21.5,22.),(16.,23.),(13.,17.),(19.,14.)];let r=self.entities[id].route;if self.walk(id,points[r].0,points[r].1,2.) {self.entities[id].route=(r+1)%4;}self.entities[id].data[2]=3.5+0.08*((t+id as u32*13) as f32/23.).sin();}
    else {let r=self.entities[id].route;let x=22.5+(id%3) as f32*0.8+if r==0 {0.}else{1.5};let y=11.+(id%2) as f32*2.+if r==0 {0.}else{1.5};if self.walk(id,x,y,1.6) {self.entities[id].route=1-r;}}
   }
-  if t>=2160 {let wave=(t-2160)/1800;let age=(t-2160)%1800;let n=if wave%4==0 {4}else if wave%4==3 {8}else{6};for j in 0..n {if age==j*72 {self.add(40+j as usize,30,30.5,2.+j as f32*0.35,1.);}}if wave%4>=2 && age==480 {self.add(50,31,30.,3.,1.);}
-   for id in 40..52 {if !self.entities[id].active {continue;}if age>=1740 {self.entities[id].active=false;continue;}let r=self.entities[id].route;let (x,y)=if age>=1440 {(31.,2.)}else if r==0 {(29.,5.)}else if r==1 {(27.,8.)}else{(26.5+(id%3) as f32*0.55,10.+(id%4) as f32)};if self.walk(id,x,y,if id==50 {0.9}else{1.8}) {self.entities[id].route=(r+1).min(2);}if age>=1440 {self.entities[id].data[5]=6.;}}
+  if t>=2160 {let wave=(t-2160)/1800;let age=(t-2160)%1800;let n=if wave%4==0 {4}else if wave%4==3 {8}else{6};for j in 0..n {if age==j*72 {self.add(40+j as usize,30,30.5,2.+j as f32*0.35,1.);}}if wave%4>=2 && age==480 {self.add(50,31,29.,5.,1.);}if wave%4==3 && age==570 {self.add(51,31,30.,3.,1.);}
+   for id in 40..52 {if !self.entities[id].active {continue;}let gait_period=if id>=50 {48}else{24};self.entities[id].data[6]=((t+id as u32*17)%gait_period) as f32/gait_period as f32;if age>=1740 {self.entities[id].active=false;continue;}let r=self.entities[id].route;let (x,y)=if age>=1440 {(31.,2.)}else if r==0 {(29.,5.)}else if r==1 {(27.,8.)}else{(26.5+(id%3) as f32*0.55,10.+(id%4) as f32)};if self.walk(id,x,y,if id>=50 {0.9}else{1.8}) {self.entities[id].route=(r+1).min(2);}if age>=1440 {self.entities[id].data[5]=6.;}}
   }
   for id in 0..52 {if !self.entities[id].active {continue;}let k=self.entities[id].data[4] as u32;if !(k==16||k==22||k==23||k==30||k==31)||self.entities[id].data[10]<1.||self.entities[id].data[5]==6. {continue;}
    let enemy=self.entities[id].data[9]==1.;let range=if k==16 {8.}else if k==23||k==31 {7.}else{5.};let mut nearest=CAP;let mut best=range*range;
    for j in 0..52 {let e=self.entities[j];let jk=e.data[4] as u32;if !e.active||e.data[9]==self.entities[id].data[9]||!(jk==16||jk==22||jk==23||jk==30||jk==31) {continue;}let d=(e.data[0]-self.entities[id].data[0]).powi(2)+(e.data[1]-self.entities[id].data[1]).powi(2);if d<best {best=d;nearest=j;}}
-   if nearest<CAP {self.entities[id].data[5]=2.;let period=if k==16 {108}else if enemy {48}else{60};self.entities[id].data[6]=((t+id as u32*7)%period) as f32/period as f32;self.entities[id].data[3]=(self.entities[nearest].data[1]-self.entities[id].data[1]).atan2(self.entities[nearest].data[0]-self.entities[id].data[0]);if (t+id as u32*7)%period==0 {if let Some(p)=(60..108).find(|&p|!self.entities[p].active) {let e=self.entities[id];self.add(p,50,e.data[0],e.data[1],e.data[9]);self.entities[p].data[2]=e.data[2]+1.;self.entities[p].target=nearest;self.entities[p].data[10]=k as f32;}}}
+   if nearest<CAP {self.entities[id].data[5]=2.;let period=if k==16 {108}else if k==31 {144}else if k==23 {96}else if enemy {48}else{60};self.entities[id].data[6]=((t+id as u32*7)%period) as f32/period as f32;self.entities[id].data[3]=(self.entities[nearest].data[1]-self.entities[id].data[1]).atan2(self.entities[nearest].data[0]-self.entities[id].data[0]);if (t+id as u32*7)%period==0 {if let Some(p)=(60..108).find(|&p|!self.entities[p].active) {let e=self.entities[id];self.add(p,50,e.data[0],e.data[1],e.data[9]);let muzzle=if k==16 {3.2}else if k==31 {1.9}else if k==23 {0.97}else if k==22 {0.82}else{0.57};
+    let reach=if k==23 {1.2}else{0.85};
+    let px=e.data[0]+e.data[3].cos()*reach;let py=e.data[1]+e.data[3].sin()*reach;
+    let victim=self.entities[nearest];let shot=&mut self.entities[p];
+    shot.x=(px*1024.) as i32;shot.y=(py*1024.) as i32;
+    shot.data[0]=px;shot.data[1]=py;shot.data[2]=e.data[2]+muzzle;
+    shot.data[3]=e.data[3];shot.target=nearest;shot.data[10]=k as f32;
+    shot.origin=[px,py,shot.data[2]];shot.destination=[victim.data[0],victim.data[1],victim.data[2]+0.8];}}}
   }
-  for id in 60..108 {if !self.entities[id].active {continue;}let target=self.entities[id].target;if !self.entities[target].active {self.entities[id].active=false;continue;}let z=self.entities[id].data[2];let e=self.entities[target];if self.walk(id,e.data[0],e.data[1],12.) {let damage=if self.entities[id].data[9]==1. {0.015}else{0.15};self.entities[target].data[7]-=damage;if self.entities[target].data[7]<=0. {if target>=40 {self.entities[target].active=false;if self.selected==target {self.selected=CAP;}}else{self.entities[target].data[7]=1.;}}self.entities[id].active=false;}else{self.entities[id].data[2]=z+(e.data[2]+0.8-z)*0.1;self.entities[id].data[11]+=1./60.;}}
-  for id in 0..4 {self.entities[id].data[6]=((t+id as u32*31)%144) as f32/144.;}
+  // Fixed launch endpoints make shells visibly dodgeable. All impact onsets and
+  // muzzle/tracer lifetimes belong to simulation time, independent of rendering.
+  for id in 108..144 {if self.entities[id].active {self.entities[id].timer+=1;self.entities[id].data[11]=self.entities[id].timer as f32/60.;let life=if self.entities[id].data[4]==52. {120}else if self.entities[id].data[10]==31. {51}else{12};if self.entities[id].timer>=life {self.entities[id].active=false;}}}
+  for id in 60..108 {
+   if !self.entities[id].active {continue;}
+   let shot=self.entities[id];let k=shot.data[10] as u32;
+   let distance=((shot.destination[0]-shot.origin[0]).powi(2)+(shot.destination[1]-shot.origin[1]).powi(2)).sqrt();
+   let duration=if k==31 {54}else{(distance/if k==22 {16.}else if k==23 {40.}else{12.}*60.).ceil().max(1.) as u32};
+   let age=shot.timer+1;let q=(age as f32/duration as f32).min(1.);
+   let e=&mut self.entities[id];e.timer=age;e.data[11]=age as f32/60.;
+   for axis in 0..3 {e.data[axis]=shot.origin[axis]+(shot.destination[axis]-shot.origin[axis])*q;}
+   if k==31 {e.data[2]+=12.*q*(1.-q);}
+   if age>=duration {
+    let hit=self.entities[id];self.entities[id].active=false;
+    let fx=(108..132).find(|&i|!self.entities[i].active).unwrap_or(108+(t as usize%24));
+    self.add(fx,51,hit.data[0],hit.data[1],shot.data[9]);self.entities[fx].data[2]=hit.data[2];self.entities[fx].data[10]=k as f32;
+    let target=shot.target;
+    if self.entities[target].active {
+     let victim=self.entities[target];let miss=(victim.data[0]-hit.data[0]).powi(2)+(victim.data[1]-hit.data[1]).powi(2);
+     if k!=31||miss<1.44 {
+      self.entities[target].data[7]-=if shot.data[9]==1. {0.015}else{0.15};
+      if self.entities[target].data[7]<=0. {
+       if target>=40 {
+        self.entities[target].active=false;if self.selected==target {self.selected=CAP;}
+        let wreck=(132..144).find(|&i|!self.entities[i].active).unwrap_or(132+t as usize%12);
+        self.add(wreck,52,victim.data[0],victim.data[1],victim.data[9]);self.entities[wreck].data[10]=victim.data[4];
+       }else{self.entities[target].data[7]=1.;}
+      }
+     }
+    }
+   }
+  }
+  for id in 0..4 {if self.entities[id].data[5]!=2. {self.entities[id].data[6]=((t+id as u32*31)%144) as f32/144.;}}
   for id in 52..54 {let phase=(t+id as u32*37) as f32/if id==52 {95.}else{124.};let x=if id==52 {16.}else{5.};let y=if id==52 {16.}else{18.};self.entities[id].data[0]=x+phase.cos()*2.4;self.entities[id].data[1]=y+phase.sin()*2.4;self.entities[id].data[2]=3.2;self.entities[id].data[6]=(t%120) as f32/120.;}
   self.pack();
  }
