@@ -332,6 +332,10 @@ function gate(name, pass, detail) {
     await settle(page, SETTLE);
     const s0 = await state(page);
     gate('boots-ready', true, `entities=${s0.entityCount}`);
+    // A saturated instance list silently drops late draws (outer rim, backdrop,
+    // ambient). Losing content is easy to miss; this gate makes it loud.
+    gate('instance-budget', !(s0.frameStats && s0.frameStats.saturated === true),
+      s0.frameStats ? `triangles=${s0.frameStats.triangles} saturated=${s0.frameStats.saturated === true}` : 'no frame stats');
 
     if (PORTRAIT) {
       // ---- portrait gates (before rotation) ----------------------------------

@@ -1,6 +1,6 @@
 import {palette, names, jobs} from './kinds';
 import {glyphs} from './font';
-const MAX=8000, STRIDE=8;
+const MAX=16000, STRIDE=8;
 export const RENDER_WIDTH=960, RENDER_HEIGHT=540;
 const GRID=2;
 const CONTOUR_TILE=16, CONTOUR_COLUMNS=Math.ceil(RENDER_WIDTH/CONTOUR_TILE), CONTOUR_ROWS=Math.ceil(RENDER_HEIGHT/CONTOUR_TILE);
@@ -57,7 +57,9 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  // Reserve hot family endpoints for tiny explicit cores, never broad faces.
  let hot=pigment==9. || pigment==18. || pigment==22. || pigment==27. || pigment==31.;
  let base=pigment-select(0.,1.,hot);
- o.color=palette[u32(max(family,base-steps))];
+ // Palette entry 0 is the background/outline colour; solid geometry must
+ // never shade down into it or the rock silhouette dissolves into the sky.
+ o.color=palette[u32(max(1.,max(family,base-steps)))];
  // Terrain caps, ledges and ribs share the parent column's height bands.
  if screen == -5. {
   let level=clamp((p.z-actor.x)/(actor.y-actor.x),0.,1.);
@@ -163,9 +165,9 @@ export class Renderer {
  private actorData=new Float32Array(MAX*4);
  private actorBuffer:any;
  readonly camera=new Float32Array([1,0,1,0]);
- readonly stats={drawCalls:2,triangles:0};
+ readonly stats={drawCalls:2,triangles:0,saturated:false};
  time=0;count=0;staticCount=0;worldCount=0;selected:number|null=null;
- private emissiveCount=0;private staticEmissiveCount=0;
+ private emissiveCount=0;private staticEmissiveCount=0;private dropped=0;
  private contourData=new Uint8Array(256*CONTOUR_ROWS);
  private contourUpload:any;
  private contourLayout={bytesPerRow:256,rowsPerImage:CONTOUR_ROWS};
@@ -210,7 +212,7 @@ export class Renderer {
  }
  onError(callback:(message:string)=>void) {this.device.addEventListener('uncapturederror',(e:any)=>callback(e.error.message));this.device.lost.then((info:any)=>callback(`WebGPU device lost: ${info.message}`));}
  box(x:number,y:number,z:number,sx:number,sy:number,sz:number,color:number,owner=-1,screen=0) {
-  if(this.count>=MAX) return;
+  if(this.count>=MAX){this.dropped++;return;}
   const i=this.count*8;this.data[i]=x;this.data[i+1]=y;this.data[i+2]=z;this.data[i+3]=sx;this.data[i+4]=sy;this.data[i+5]=sz;this.data[i+6]=color;this.data[i+7]=screen;this.owners[this.count++]=owner;
  }
  ground(x:number,y:number) {return this.terrain[Math.max(0,Math.min(31,Math.floor(y)))*32+Math.max(0,Math.min(31,Math.floor(x)))];}
@@ -862,7 +864,7 @@ export class Renderer {
   }
  }
  render(e:Float32Array,n:number,yaw:number,zoom:number,alloy:number,charge:number,tick:number) {
-  this.time=tick/60;this.count=this.staticCount;this.emissiveCount=this.staticEmissiveCount;this.selected=null;
+  this.time=tick/60;this.count=this.staticCount;this.emissiveCount=this.staticEmissiveCount;this.selected=null;this.dropped=0;
   for(let id=0;id<n;id++){const o=id*12,k=e[o+4];if(e[o+8]===1)this.selected=id;
    if(k>=10&&k<20)this.building(e,o,id);
    else if(k>=20&&k<=31)this.unit(e,o,id);
@@ -878,7 +880,7 @@ export class Renderer {
   const d=this.device;d.queue.writeBuffer(this.uniform,0,this.camera);d.queue.writeBuffer(this.buffer,0,this.data.buffer,0,this.count*32);d.queue.writeBuffer(this.actorBuffer,0,this.actorData.buffer,0,this.count*16);
   d.queue.writeTexture(this.contourUpload,this.contourData,this.contourLayout,this.contourSize);
   const encoder=d.createCommandEncoder();const pass=encoder.beginRenderPass(this.scenePass);pass.setPipeline(this.pipeline);pass.setBindGroup(0,this.group);pass.setVertexBuffer(0,this.vertex);pass.setVertexBuffer(1,this.buffer);pass.setVertexBuffer(2,this.actorBuffer);pass.draw(36,this.count);pass.end();
-  this.presentPass.colorAttachments[0].view=this.context.getCurrentTexture().createView();const post=encoder.beginRenderPass(this.presentPass);post.setPipeline(this.post);post.setBindGroup(0,this.postGroup);post.draw(3);post.end();d.queue.submit(this.commands(encoder.finish()));this.stats.triangles=this.count*12+1;
+  this.presentPass.colorAttachments[0].view=this.context.getCurrentTexture().createView();const post=encoder.beginRenderPass(this.presentPass);post.setPipeline(this.post);post.setBindGroup(0,this.postGroup);post.draw(3);post.end();d.queue.submit(this.commands(encoder.finish()));this.stats.triangles=this.count*12+1;this.stats.saturated=this.dropped>0;
  }
  private commandList:any[]=[null];
  private commands(command:any) {this.commandList[0]=command;return this.commandList;}
