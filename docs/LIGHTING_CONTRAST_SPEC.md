@@ -77,6 +77,19 @@ Do not expand the terrain ellipse. The next isolated piece is one palette step o
 world-fixed bounce on the south-facing cross-light face of normal faction
 geometry. The east face remains the deepest visible shadow.
 
+## 2.4 Pass 19 component decision
+
+Pass 19 commit `b90631c` adds one south-face bounce step to normal faction
+geometry. Keep it. Mean 87.250, contrast deviation 46.844, and midtone share
+38.488% pass. Runtime, palette, terrain, cliff, and simulation gates pass. Both
+critics judge it material. Highlight share is 4.904%, only 0.096 percentage
+points below the 5.0% floor (approximately 184 judged pixels).
+
+The final correction is not another wall or terrain lift. Promote only small,
+top-facing, actor-owned planes by one family step toward the existing endpoint.
+This makes unit helmets, tools, and weapon faces read at normal zoom without
+adding geometry or making static props interactive.
+
 ## 3. Required visual changes
 
 ### 3.1 World-fixed directional light
@@ -146,6 +159,12 @@ Do not resize or move units in this pass.
 
 - Friendly actors keep teal/ivory/gold/cyan ownership. Raise one small core face
   or shoulder plane by one family step where needed. Keep a complete ink contour.
+- Final actor endpoint rule: only `combat >= 17`, `screen` from -2 through 0,
+  top face ID 0, authored pigment 4–27, and maximum box dimension at most 0.3
+  tile can receive one extra step; cap at its existing family endpoint 9, 14,
+  18, 22, or 27.
+- Static geometry, buildings, terrain, projectiles/effects without actor ownership,
+  emissives, and broad actor planes cannot enter the final endpoint rule.
 - Reavers keep wine/vermilion/orange ownership. Their orange weapon face is the
   focal pixel; broad armor stays darker than Dawnward armor.
 - At the eastern fight, adjacent friendly and enemy silhouettes must not merge
