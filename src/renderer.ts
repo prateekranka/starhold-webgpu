@@ -105,6 +105,11 @@ fn basalt(world:vec2f, province:u32)->u32 {
           (q.x>.49 && q.x<.65 && q.y>.70 && q.y<.79);
  if seam && motif%3u==0u {c=28u;}
  if motif==2u && q.x>.69 && q.x<.82 && q.y>.45 && q.y<.55 {c=30u;}
+ // One world-fixed open-sky pool lifts final violet values in the settled core.
+ let pool=(world-vec2f(16.,17.))/vec2f(11.,9.);
+ if dot(pool,pool)<=1. {
+  if c==28u {c=29u;} else if c==29u {c=30u;}
+ }
  return c;
 }
 @fragment fn fs(i:Out)->Fragment {var f:Fragment;f.color=vec4f(i.color,1.);
