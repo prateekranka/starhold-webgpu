@@ -254,7 +254,17 @@ export class Renderer {
   this.groundMark(x+w/2,y,.09,d+.08,0,.04);
  }
  private cliffBottom=0;private cliffTop=0;
- private terrainBox(x:number,y:number,z:number,w:number,d:number,h:number,color:number) {
+ private terrainBox(x:number,y:number,z:number,w:number,d:number,h:number,color:number,lowerStep=true) {
+  // Only buried outer-rock volume reaches this half-height. Preserve the
+  // original cap/ramp above it; lower bands take one further ink-family step.
+  const span=this.cliffTop-this.cliffBottom,half=this.cliffBottom+span*.5;
+  if(lowerStep&&z<half){
+   const foot=this.cliffBottom+span*.4,end=Math.min(z+h,half);
+   if(z<foot)this.box(x,y,z,w,d,Math.max(0,Math.min(end,foot)-z),1);
+   if(end>foot)this.box(x,y,Math.max(z,foot),w,d,end-Math.max(z,foot),2);
+   if(z+h<=half)return;
+   h=z+h-half;z=half;
+  }
   const index=this.count;
   this.box(x,y,z,w,d,h,color,-1,-5);
   if(this.count>index){this.actorData[index*4]=this.cliffBottom;this.actorData[index*4+1]=this.cliffTop;}
@@ -294,7 +304,9 @@ export class Renderer {
    const bottom=-3.5-(hash%5)*.35;
    this.cliffBottom=bottom;this.cliffTop=h;
    const rim=edge||x<4||y>28||x>28||this.ground(x+1,y)<h||this.ground(x,y+1)<h;
-   this.terrainBox(x+.5,y+.5,bottom,rim?.84:1,rim?.88:1,h-bottom-.16,2);
+   // Full-width interior columns bury their lower faces; do not subdivide
+   // invisible rock. Broken rim columns and their exposed ribs share the ramp.
+   this.terrainBox(x+.5,y+.5,bottom,rim?.84:1,rim?.88:1,h-bottom-.16,2,rim||!present(x-1,y)||!present(x,y-1)||!present(x+1,y)||!present(x,y+1));
    const cap=material(x,y);
    this.terrainBox(x+.5,y+.5,h-.16,rim?.94:1,rim?.96:1,.16,cap);
    if(rim){
@@ -326,6 +338,27 @@ export class Renderer {
     }
    }
   }
+  // Trace actual cell boundaries on all four sides. These thin retaining
+  // skins expose the supplied shelf heights without changing a top surface.
+  // Road slots are paved below; no decorative wall crosses a reserved lane.
+  for(let y=1;y<31;y++)for(let x=1;x<31;x++){
+   if(!present(x,y))continue;
+   const high=this.ground(x,y);
+   for(let side=0;side<4;side++){
+    const dx=side===0?-1:side===1?1:0,dy=side===2?-1:side===3?1:0;
+    if(!present(x+dx,y+dy))continue;
+    const low=this.ground(x+dx,y+dy);
+    if(low>=high)continue;
+    const xx=x+.5+dx*.505,yy=y+.5+dy*.505;
+    let lane=false;
+    for(const r of roads){const rx=r[2]-r[0],ry=r[3]-r[1],t=Math.max(0,Math.min(1,((xx-r[0])*rx+(yy-r[1])*ry)/(rx*rx+ry*ry)));if(Math.hypot(xx-r[0]-t*rx,yy-r[1]-t*ry)<1.05){lane=true;break;}}
+    if(lane)continue;
+    const w=dx?.075:1,d=dy?.075:1,rise=high-low;
+    for(let band=0;band<3;band++)this.box(xx,yy,low+rise*band/3,w,d,rise/3,3+band);
+    this.box(xx,yy,low+.012,w+.015,d+.015,.055,1);
+    if(dx<0||dy<0)this.box(xx-dx*.045,yy-dy*.045,high+.012,dx?.06:1,dy?.06:1,.015,high===1?30:6);
+   }
+  }
   // Each patch has a stepped shoulder and a short connected crack/ore vein.
   // 0.8–1.5 tile lobes span roughly 12–30 raster pixels at default zoom;
   // the paired chips span 2–5 pixels. Clip lobes at height changes and roads.
@@ -341,7 +374,17 @@ export class Renderer {
   }
   for(const r of roads){const length=Math.hypot(r[2]-r[0],r[3]-r[1]),dx=(r[2]-r[0])/length,dy=(r[3]-r[1])/length;
    for(let t=0;t<length;t+=.5){const x=r[0]+dx*t,y=r[1]+dy*t;
-    for(let lane=-1;lane<=1;lane++){const xx=x+lane*.46*dy,yy=y-lane*.46*dx;this.box(xx,yy,this.ground(xx,yy)+.045,.51,.5,.035,(Math.floor(t*10)+lane)%5===0?5:6);}
+    for(let lane=-1;lane<=1;lane++){
+     const xx=x+lane*.46*dy,yy=y-lane*.46*dx,base=this.ground(xx,yy);
+     // Approach a higher cell in three short treads along the SAME road.
+     let tread=base;
+     for(let sign=-1;sign<=1;sign+=2)for(let step=1;step<=3;step++){
+      const ahead=this.ground(xx+dx*sign*step*.25,yy+dy*sign*step*.25);
+      if(ahead>base)tread=Math.max(tread,base+(ahead-base)*(4-step)/4);
+     }
+     this.box(xx,yy,base+.045,.51,.5,tread-base+.035,(Math.floor(t*10)+lane)%5===0?5:6);
+     if(tread>base)this.box(xx,yy,tread+.082,Math.abs(dy)*.46+.055,Math.abs(dx)*.46+.055,.018,7);
+    }
     const step=Math.floor(t*2);
     if(step%7===2){
      const side=step%2===0?1:-1;
@@ -374,6 +417,67 @@ export class Renderer {
   for(let i=0;i<3;i++){const x=20+i*2.8,y=28.1-i*.28,z=this.ground(x,y);this.groundContact(x,y,.45,.42,true);this.groundContact(x+.55,y+.1,.32,.38);this.box(x,y,z,.45,.42,.3,4);this.box(x+.55,y+.1,z,.32,.38,.2,29);this.box(x+.16,y,z+.3,.62,.3,.18,i===1?29:4);}
   this.shard(20.8,25.8,this.ground(20.8,25.8),.28,30);
   this.shard(26.5,27,this.ground(26.5,27),.3,30);
+  // Eight authored work areas. Each item reserves its whole small envelope
+  // against future pads and roads; arrays/closures are static-build only.
+  const prop=(x:number,y:number,kind:number)=>{
+   if(!clear(x,y,.42)||!present(Math.floor(x),Math.floor(y)))return;
+   const z=this.ground(x,y);
+   if(this.ground(x-.38,y-.38)!==z||this.ground(x+.38,y+.38)!==z)return;
+   this.groundContact(x,y,.55,.5,true);
+   if(kind===0){ // Tied cargo: two small boxes with a shared cross strap.
+    this.crate(x-.16,y,z,.28);this.crate(x+.16,y+.06,z,.28);
+    this.crate(x-.12,y,z+.28,.24);
+    this.box(x,y,z+.29,.66,.07,.055,19);
+   }else if(kind===1){ // Handcart/trolley, wheels, tray and parked shafts.
+    this.box(x,y,z+.14,.52,.38,.1,20);
+    for(let a=-1;a<=1;a+=2){this.box(x+a*.29,y,z+.04,.1,.2,.2,1);this.box(x+a*.19,y-.32,z+.16,.055,.42,.045,7);}
+    this.crate(x,y,z+.24,.25);
+   }else if(kind===2){ // Coal/ore bin, dark inset and three connected lumps.
+    this.box(x,y,z,.62,.48,.24,20);this.box(x,y,z+.24,.49,.36,.025,1);
+    for(let j=0;j<3;j++)this.box(x-.16+j*.15,y+(j%2)*.08,z+.265,.15,.16,.09,j===1?4:2);
+   }else if(kind===3){ // Tool table/anvil.
+    this.box(x,y,z,.18,.24,.26,3);this.box(x,y,z+.26,.55,.32,.12,6);this.box(x+.2,y,z+.36,.21,.15,.065,7);
+   }else if(kind===4){ // Short service exhaust stack; soot cap.
+    this.box(x,y,z,.32,.32,.12,4);this.box(x,y,z+.12,.19,.19,.41,6);this.box(x,y,z+.53,.26,.26,.05,1);
+   }else if(kind===5){ // Low road lamp.
+    this.box(x,y,z,.25,.25,.08,20);this.box(x,y,z+.08,.07,.07,.38,7);this.box(x,y,z+.46,.18,.18,.1,21);this.box(x,y,z+.56,.23,.23,.035,7);
+   }else if(kind===6){ // Short fence / scaffold ties.
+    for(let a=-1;a<=1;a+=2)this.box(x+a*.28,y,z,.07,.09,.43,20);
+    for(let j=0;j<2;j++)this.box(x,y,z+.15+j*.18,.65,.06,.055,7);
+   }else if(kind===7){ // Rack, shield and three lances.
+    this.box(x,y,z+.19,.59,.12,.08,20);
+    for(let j=0;j<3;j++){this.box(x-.22+j*.22,y,z,.055,.06,.51,7);this.box(x-.22+j*.22,y,z+.51,.1,.08,.06,21);}
+    this.box(x+.13,y+.08,z+.13,.23,.09,.28,12);
+   }else if(kind===8){ // Pennant: the deliberate tall prop exception.
+    this.box(x,y,z,.2,.2,.08,20);this.box(x,y,z+.08,.065,.065,1.05,7);this.box(x+.2,y,z+.75,.4,.06,.29,12);this.box(x+.12,y+.04,z+.83,.07,.03,.12,21);
+   }else if(kind===9){ // Tool chest beside loose construction beams.
+    this.box(x,y,z,.39,.3,.25,11);this.box(x,y,z+.25,.42,.32,.04,7);this.box(x,y+.16,z+.13,.08,.035,.08,21);
+    for(let j=0;j<2;j++)this.box(x+.03,y-.3-j*.12,z,.64,.09,.09,20);
+   }else if(kind===10){ // Low pulley stand, visible open rope slot.
+    for(let a=-1;a<=1;a+=2)this.box(x+a*.22,y,z,.065,.08,.5,20);
+    this.box(x,y,z+.5,.54,.1,.07,7);this.box(x,y,z+.35,.05,.05,.16,19);this.box(x+.05,y,z+.3,.14,.06,.055,21);
+   }else if(kind===11){ // Garden shrine and dark root socket.
+    this.box(x,y,z,.53,.44,.07,28);this.box(x,y,z+.07,.26,.24,.42,30);this.box(x,y+.13,z+.25,.1,.045,.12,16);
+   }else if(kind===12){ // Low collector collars around a cold cell.
+    this.box(x,y,z,.49,.42,.12,4);this.box(x,y,z+.12,.28,.25,.2,16);
+    for(let a=-1;a<=1;a+=2)this.box(x+a*.2,y,z+.12,.075,.36,.25,7);
+   }else if(kind===13){ // Service stall: open front, awning and counter.
+    for(let a=-1;a<=1;a+=2)this.box(x+a*.27,y-.13,z,.065,.065,.44,7);
+    this.box(x,y,z+.44,.65,.53,.06,12);this.box(x,y+.25,z+.36,.65,.05,.09,13);this.box(x,y+.12,z+.1,.53,.17,.16,20);
+   }else {this.box(x,y,z,.3,.3,.39,11);for(let j=0;j<2;j++)this.box(x,y,z+.08+j*.22,.33,.33,.045,7);this.box(x,y,z+.39,.25,.25,.035,16);}
+  };
+  // Forge fuel court and its exhaust/tool annex.
+  for(const [x,y,k] of [[3.7,21,2],[4.3,21,2],[4.1,21.9,1],[2.3,17.2,3],[2.3,18.1,4],[2.3,19,4],
+   // Freight lay-by and HQ approach stop (two handcarts).
+   [10.4,24.3,1],[10.3,23.4,0],[9.6,24.6,6],[9.7,23.6,5],[11,17,1],[11.8,16.4,0],[11.7,17.3,5],[12.5,16.3,6],
+   // Muster practice yard, outside the east-west defensive lane.
+   [19,10.4,7],[19.8,10.4,6],[20.5,10.4,7],[19,9.4,8],[20.5,9.4,8],
+   // Bastion work yard, behind the approach and fighting screen.
+   [23.2,11.3,9],[23.2,12.1,6],[23.9,11.3,10],
+   // Garden service nook, south of the standing crystal groups.
+   [11,7.8,11],[10.2,7.8,12],[11.8,7.8,12],
+   // Quiet residential service edge, clear of the future southern pod.
+   [16.1,23.8,13],[17.1,23.8,13],[17.7,24.3,14]])prop(x,y,k);
   for(let i=0;i<7;i++){const x=26.8+i%3*1.2,y=3+i*1.25,z=this.ground(x,y);this.groundContact(x,y,.6,.6,true);this.box(x,y,z,.6,.6,1.1+i%3*.45,3);this.box(x,y,z+1.1+i%3*.45,.75,.75,.22,5);}
   // Backdrop props use far depth, so every yaw/zoom can occlude them.
   // Three 5–8 px stepped silhouettes and a sparse, one-pixel haze band.
@@ -474,7 +578,80 @@ export class Renderer {
     for(let j=0;j<8;j++){const a=(j/8+phase)*Math.PI*2;this.box(x+1.48,y+Math.cos(a)*.55,z+1.+Math.sin(a)*.55,.2,.24,.24,21,id);}
     for(let j=0;j<5;j++){const q=(this.time/2+j/5)%1,size=.32+Math.floor(q*3)*.24;this.box(x-.7+q*.95,y-.6+q*.25,z+3.1+q*2.1,size,size,.28+q*.2,q<.65?6:4);}}
   }
+  if(p>=.5)this.facade(x,y,z,k,p,id);
   if(p>=.85&&k!==12&&k!==16){for(let j=0;j<2;j++)this.crate(x+w*.5+.3,y+.6*j,z,.38,id);}
+ }
+ private facade(x:number,y:number,z:number,k:number,p:number,id:number) {
+  // Flush fittings on existing wall planes, all yaws. No new footprint or
+  // roof volume; these small regular accents sit above the ground vocabulary.
+  if(k===12){
+   for(let j=0;j<3;j++)this.box(x-.8,y+.235,z+.85+j*.33,.16,.025,.055,6,id);
+   return;
+  }
+  if(k===15){
+   for(let pod=-1;pod<=1;pod++){
+    const xx=x+pod*.98;
+    this.box(xx-.23,y+.756,z+.57,.2,.026,.5,1,id);
+    this.box(xx-.23,y+.78,z+1.07,.28,.045,.06,8,id);
+    this.box(xx,y-.758,z+1.06,.19,.03,.23,1,id);
+    this.box(xx,y-.78,z+1.11,.08,.03,.13,21,id);
+    this.box(xx+.22,y,z+1.91,.055,.9,.03,7,id);
+   }
+   return;
+  }
+  if(k===17)return;
+  const half=k===10?1.865:k===11?1.445:k===16?.83:1.355;
+  const wallTop=k===10?1.72:k===11?1.58:k===16?.94:1.68;
+  for(let face=0;face<4;face++){
+   const axis=face<2,sign=face%2===0?-1:1;
+   // Freight Court has an open loading mouth; keep its front empty.
+   if(k===11&&!axis&&sign>0)continue;
+   const extent=k===11&&!axis?1.43:half;
+   for(let j=0;j<3;j++){
+    const along=(j-1)*(k===10?.62:k===16?.36:.53);
+    if(k===14&&!axis&&sign>0||k===10&&!axis&&sign>0&&j===1)continue;
+    const xx=x+(axis?sign*extent:along),yy=y+(axis?along:sign*extent);
+    const sill=k===16?.55:.91;
+    this.box(xx,yy,z+sill,axis?.028:.19,axis?.19:.028,.25,1,id);
+    this.box(xx+(axis?sign*.018:0),yy+(axis?0:sign*.018),z+sill+.06,axis?.025:.075,axis?.075:.025,.14,k===14?26:21,id);
+    this.box(xx,yy,z+sill+.26,axis?.045:.24,axis?.24:.045,.055,8,id);
+   }
+   // Short eave trim and one vertical material joint per face.
+   this.box(x+(axis?sign*extent:0),y+(axis?0:sign*extent),z+wallTop,axis?.045:extent*1.75,axis?extent*1.75:.045,.055,7,id);
+   this.box(x+(axis?sign*extent:-extent*.72),y+(axis?-extent*.72:sign*extent),z+.46,axis?.035:.045,axis?.045:.035,.37,6,id);
+  }
+  if(k===10||k===13){
+   this.box(x,y+half+.045,z+1.53,k===10?.82:1.62,.075,.07,8,id);
+   // Hinges and paired handles stay within the existing recessed doors.
+   for(let a=-1;a<=1;a+=2)this.box(x+a*.17,y+half+.065,z+.66,.06,.035,.15,21,id);
+  }
+  if(k===11||k===14){
+   // Maintenance ladder and a bent service pipe on the rear-facing wall.
+   const back=k===11?1.435:1.31;
+   for(let a=-1;a<=1;a+=2)this.box(x+.63+a*.12,y-back-.035,z+.42,.045,.06,.93,7,id);
+   for(let j=0;j<4;j++)this.box(x+.63,y-back-.07,z+.52+j*.21,.27,.045,.045,6,id);
+   this.box(x-.5,y-back-.03,z+.44,.095,.08,.73,6,id);
+   this.box(x-.37,y-back-.03,z+1.12,.34,.08,.08,7,id);
+  }
+  if(k===13){
+   this.box(x+.68,y,z+2.52,.07,.96,.035,7,id);
+   this.box(x+1.38,y-.65,z+.58,.045,.34,.48,12,id);
+   this.box(x+1.41,y-.65,z+.78,.03,.075,.15,21,id);
+  }
+  if(k===16){
+   this.box(x,y+.845,z+.34,.27,.035,.39,1,id);
+   this.box(x,y+.87,z+.73,.36,.04,.06,8,id);
+   if(p<.85){
+    // Open enclosure at 50–85%: thin ribs and gold splice plates expose
+    // the labor already completed without filling the unbuilt upper volume.
+    for(let a=-1;a<=1;a+=2){
+     this.box(x+a*.47,y+.49,z+1.15,.075,.075,.66,7,id);
+     for(let j=0;j<2;j++)this.box(x+a*.47,y+.54,z+1.22+j*.4,.14,.045,.085,21,id);
+    }
+    this.box(x,y+.5,z+1.49,1.02,.065,.065,6,id);
+    this.box(x-.5,y,z+1.48,.065,1.05,.065,6,id);
+   }
+  }
  }
  private crate(x:number,y:number,z:number,size:number,id=-1) {
   this.box(x,y,z,size,size,size,21,id);this.box(x,y,z+size,size*.18,size+.025,.03,22,id);this.box(x+size*.5,y,z+.03,.025,size*.15,size*.9,19,id);
