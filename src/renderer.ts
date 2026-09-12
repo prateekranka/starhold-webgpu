@@ -7,18 +7,11 @@ const geometryWGSL=paletteWGSL+`
 struct Camera { rotation:vec2f, magnification:f32, padding:f32 }
 @group(0) @binding(0) var<uniform> camera:Camera;
 struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @location(1) unit:f32, @location(2) rim:vec2f }
-@vertex fn vs(@location(0) vertex:vec3f,@location(1) shade:f32,@location(2) origin:vec3f,@location(3) size:vec3f,@location(4) color:f32,@location(5) screen:f32)->Out {
+@vertex fn vs(@location(0) vertex:vec3f,@location(1) shade:f32,@location(2) origin:vec3f,@location(3) size:vec3f,@location(4) color:f32,@location(5) screen:f32,@location(6) actor:vec4f)->Out {
  var o:Out;
  let pigment=color%32.;o.unit=floor((color%32768.)/32.);
- // Actor metadata packs faction and eight local facing directions into
- // the existing color word; no extra instances, buffers or per-frame arrays.
- let combat=floor(color/32768.);o.rim=vec2f(0.);
- if combat>0. && combat<=16. {
-  let angle=((combat-1.)%8.)*0.7853981634;
-  let facing=vec2f(cos(angle),sin(angle));
-  let rotated=vec2f(facing.x*camera.rotation.x-facing.y*camera.rotation.y,facing.x*camera.rotation.y+facing.y*camera.rotation.x);
-  o.rim=vec2f(select(13.,26.,combat>8.),select(-1.,1.,rotated.x>=rotated.y));
- }
+ // 18/19 mark combat composites; 17 keeps worker/skiff shading unchanged.
+ let combat=floor(color/32768.);o.rim=vec2f(select(0.,1.,combat>=18.),0.);
  var v=vertex;
  if screen < -0.5 {v=vec3f(vertex.xy*select(1.,select(.55,.08,screen < -1.5),vertex.z>.5),vertex.z);}
  let p=origin+v*size;
@@ -26,7 +19,14 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  else {
  let d=p.xy-vec2f(16.);
  let r=vec2f(d.x*camera.rotation.x-d.y*camera.rotation.y,d.x*camera.rotation.y+d.y*camera.rotation.x);
- let pixel=round(vec2f(240.+6.*(r.x-r.y)*camera.magnification,136.+(3.4641016*(r.x+r.y)-6.9282032*p.z)*camera.magnification));
+ var projected=vec2f(6.*(r.x-r.y),3.4641016*(r.x+r.y)-6.9282032*p.z);
+ if combat>=18. {
+  let a=actor.xy-vec2f(16.);
+  let ar=vec2f(a.x*camera.rotation.x-a.y*camera.rotation.y,a.x*camera.rotation.y+a.y*camera.rotation.x);
+  let anchor=vec2f(6.*(ar.x-ar.y),3.4641016*(ar.x+ar.y)-6.9282032*actor.z);
+  projected=anchor+(projected-anchor)*vec2f(1.4,actor.w);
+ }
+ let pixel=round(vec2f(240.,136.)+projected*camera.magnification);
  o.position=vec4f(pixel.x/240.-1.,1.-pixel.y/135.,0.5-((r.x+r.y)*0.5773503+p.z*0.5773503)/128.,1.);
  // Never shade across palette families (teal feet formerly became ivory,
  // violet soil became orange, and gold cargo became cyan).
@@ -59,24 +59,30 @@ const postWGSL=paletteWGSL+`
  let pixel=vec2i(p.xy);let center=textureLoad(silhouette,pixel,0);
  // Per-entity contours also separate overlapping combatants. Mask 1 belongs
  // to projectiles/rings: preserve their color even beside an enlarged hull.
- // Ink remains outside the bright faction rim, including actor boundaries.
+ // Ink surrounds each composite, including actor boundaries.
  if center.r!=1. {for(var axis=0;axis<4;axis++) {
   let offsets=array<vec2i,4>(vec2i(-1,0),vec2i(1,0),vec2i(0,-1),vec2i(0,1));
   let neighbor=textureLoad(silhouette,clamp(pixel+offsets[axis],vec2i(0),vec2i(479,269)),0);
   let tolerance=select(0.,0.002,center.r==0.);
   if neighbor.r>0.5 && neighbor.r!=center.r && neighbor.g<center.g+tolerance {return vec4f(palette[0],1.);}
  }}
- // One internal pixel along the exposed top and forward screen side. A closer
- // occluder never triggers a rim on the hidden body's cut edge. The existing
- // depth-aware outer contour above keeps adjacent actors separated by ink.
- if center.b>0. {
-  for(var edge=0;edge<2;edge++) {
-   let offset=select(vec2i(0,-1),vec2i(i32(center.a),0),edge==1);
-   let neighbor=textureLoad(silhouette,clamp(pixel+offset,vec2i(0),vec2i(479,269)),0);
-   if neighbor.r!=center.r && neighbor.r!=1. && neighbor.g>=center.g {
-    return vec4f(palette[u32(center.b)],1.);
+ // Dilate the UNION of the actor's visible parts, never individual boxes.
+ // Eight neighbors close diagonal seams into one continuous #10121C backing.
+ // At actor/actor contacts use two pixels on the rear actor and one on the
+ // front actor: a three-pixel ink gutter, with depth and effect masks intact.
+ if center.r!=1. {
+  for(var dy=-2;dy<=2;dy++) {for(var dx=-2;dx<=2;dx++) {
+   if dx==0 && dy==0 {continue;}
+   let distance=max(abs(dx),abs(dy));
+   let neighbor=textureLoad(silhouette,clamp(pixel+vec2i(dx,dy),vec2i(0),vec2i(479,269)),0);
+   if neighbor.b==0. || neighbor.r==center.r {continue;}
+   if distance==1 && neighbor.g<center.g+select(0.,0.002,center.r==0.) {
+    return vec4f(palette[0],1.);
    }
-  }
+   if center.b>0. && (distance==1 || neighbor.g<center.g) {
+    return vec4f(palette[0],1.);
+   }
+  }}
  }
  let c=textureLoad(scene,pixel,0).rgb;var best=palette[0];var distance=100.;
  for(var i=0u;i<32u;i++){let delta=c-palette[i];let d=dot(delta,delta);if d<distance {distance=d;best=palette[i];}}
@@ -85,6 +91,8 @@ const postWGSL=paletteWGSL+`
 export class Renderer {
  readonly data=new Float32Array(MAX*STRIDE);
  readonly owners=new Int32Array(MAX);
+ private actorData=new Float32Array(MAX*4);
+ private actorBuffer:any;
  readonly camera=new Float32Array([1,0,1,0]);
  readonly stats={drawCalls:2,triangles:0};
  time=0;count=0;staticCount=0;worldCount=0;selected:number|null=null;
@@ -109,9 +117,10 @@ export class Renderer {
   face([-.5,.5,0],[.5,.5,0],[.5,-.5,0],[-.5,-.5,0],2);
   this.vertex=d.createBuffer({size:mesh.length*4,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});d.queue.writeBuffer(this.vertex,0,new Float32Array(mesh));
   this.buffer=d.createBuffer({size:this.data.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});
+  this.actorBuffer=d.createBuffer({size:this.actorData.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});
   this.uniform=d.createBuffer({size:16,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
   const module=d.createShaderModule({code:geometryWGSL});
-  this.pipeline=d.createRenderPipeline({layout:'auto',vertex:{module,entryPoint:'vs',buffers:[{arrayStride:16,attributes:[{shaderLocation:0,offset:0,format:'float32x3'},{shaderLocation:1,offset:12,format:'float32'}]},{arrayStride:32,stepMode:'instance',attributes:[{shaderLocation:2,offset:0,format:'float32x3'},{shaderLocation:3,offset:12,format:'float32x3'},{shaderLocation:4,offset:24,format:'float32'},{shaderLocation:5,offset:28,format:'float32'}]}]},fragment:{module,entryPoint:'fs',targets:[{format:'rgba8unorm'},{format:'rgba16float'}]},primitive:{topology:'triangle-list'},depthStencil:{format:'depth24plus',depthWriteEnabled:true,depthCompare:'less-equal'}});
+  this.pipeline=d.createRenderPipeline({layout:'auto',vertex:{module,entryPoint:'vs',buffers:[{arrayStride:16,attributes:[{shaderLocation:0,offset:0,format:'float32x3'},{shaderLocation:1,offset:12,format:'float32'}]},{arrayStride:32,stepMode:'instance',attributes:[{shaderLocation:2,offset:0,format:'float32x3'},{shaderLocation:3,offset:12,format:'float32x3'},{shaderLocation:4,offset:24,format:'float32'},{shaderLocation:5,offset:28,format:'float32'}]},{arrayStride:16,stepMode:'instance',attributes:[{shaderLocation:6,offset:0,format:'float32x4'}]}]},fragment:{module,entryPoint:'fs',targets:[{format:'rgba8unorm'},{format:'rgba16float'}]},primitive:{topology:'triangle-list'},depthStencil:{format:'depth24plus',depthWriteEnabled:true,depthCompare:'less-equal'}});
   this.group=d.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:this.uniform}}]});
   const scene=d.createTexture({size:[480,270],format:'rgba8unorm',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.TEXTURE_BINDING});
   const silhouette=d.createTexture({size:[480,270],format:'rgba16float',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.TEXTURE_BINDING});
@@ -275,26 +284,43 @@ export class Renderer {
  private crane(x:number,y:number,z:number,w:number,h:number,phase:number,id:number,assembly=-1) {
   this.box(x,y,z,.17,.17,h,20,id);this.box(x-w*.5,y,z+h,w+.15,.18,.18,22,id);const lift=assembly<0?.8+Math.floor(phase*6)/6*(h-1.2):assembly+Math.floor(phase*3)*.12;this.box(x-w*.8,y,z+lift,.05,.05,h-lift,19,id);this.box(x-w*.8,y,z+lift-.15,.2,.2,.16,22,id);this.box(x-w*.8,y,z+lift-.55,.42,.42,.4,12,id);this.box(x-w*.8+.12,y,z+lift-.13,.12,.12,.24,22,id);
  }
- private unit(e:Float32Array,o:number,id:number) {
+ private unit(e:Float32Array,o:number,id:number,yaw:number,zoom:number) {
   const start=this.count;
   this.unitParts(e,o,id);
-  // Broader readable silhouettes, rotated as a whole with the simulated facing.
-  // Component centers stay in world space so selection uses submitted geometry.
   const k=e[o+4],friendly=k>=20&&k<=24;
+  const combat=k===21||k===22||k===23||k===30||k===31;
   const scale=k===24?1.12:k===20?1:1.22;
   const growth=k===21||k===22||k===23?1.28:1;
   const c=Math.cos(e[o+3]),sn=Math.sin(e[o+3]);
-  const combat=k===21||k===22||k===23||k===30||k===31;
-  const rim=friendly?17:combat?1+((Math.round(e[o+3]/(Math.PI/4))%8+8)%8)+(k>=30?8:0):0;
+  // Fixed nine-slot world jitter, radius <= sqrt(2)*.24 = .3395 tiles.
+  // The current ABI exposes packed entity indices as renderer IDs.
+  const ox=combat?(id%3-1)*.24:0,oy=combat?(Math.floor(id/3)%3-1)*.24:0;
+  const cx=Math.round(Math.cos(yaw*Math.PI/2)),cy=Math.round(Math.sin(yaw*Math.PI/2));
+  let top=Infinity,bottom=-Infinity;
   for(let i=start;i<this.count;i++){
-   // Only owned body/cargo/weapon geometry grows. Contact shadows and action
-   // sparks keep their dimensions; pose heights and timing remain unchanged.
-   const q=i*8,bodyGrowth=this.owners[i]===id?growth:1;
+   const q=i*8,owned=this.owners[i]===id,bodyGrowth=owned?growth:1;
    const dx=(this.data[q]-e[o])*scale*bodyGrowth,dy=(this.data[q+1]-e[o+1])*scale*bodyGrowth;
-   this.data[q]=e[o]+dx*c-dy*sn;this.data[q+1]=e[o+1]+dx*sn+dy*c;
+   this.data[q]=e[o]+dx*c-dy*sn+(owned?ox:0);this.data[q+1]=e[o+1]+dx*sn+dy*c+(owned?oy:0);
    this.data[q+3]*=scale*bodyGrowth;this.data[q+4]*=scale*bodyGrowth;
    this.data[q+5]*=bodyGrowth;
-   if(this.owners[i]===id)this.data[q+6]+=32*(id+2)+32768*rim;
+   if(owned){
+    this.data[q+6]+=32*(id+2)+32768*(combat?(friendly?18:19):friendly?17:0);
+    if(combat){
+     const y=3.4641016*((cx+cy)*this.data[q]+(cx-cy)*this.data[q+1])-6.9282032*this.data[q+2];
+     const half=1.7320508*(this.data[q+3]+this.data[q+4]);
+     top=Math.min(top,y-half-6.9282032*this.data[q+5]);bottom=Math.max(bottom,y+half);
+    }
+   }
+  }
+  if(combat){
+   // Grow the complete screen silhouette 40%; cap its conservative projected
+   // box height at 16 internal pixels, including at the closest zoom.
+   // Original world depth, action effects and selection rings are untouched.
+   const vertical=Math.min(1.4,16*zoom/(bottom-top));
+   for(let i=start;i<this.count;i++)if(this.owners[i]===id){
+    const q=i*4;this.actorData[q]=e[o]+ox;this.actorData[q+1]=e[o+1]+oy;
+    this.actorData[q+2]=e[o+2];this.actorData[q+3]=vertical;
+   }
   }
  }
  private unitParts(e:Float32Array,o:number,id:number) {
@@ -313,13 +339,16 @@ export class Renderer {
    }
    // Wide planted cloak hem narrows to a high ivory crest.
    this.box(x-.12-recoil,y,z+.28,.72,.84,1.03,13,id,-1);
-   this.box(x-recoil,y,z+.67,.48,.48,.76,14,id);
-   this.box(x-recoil,y,z+1.37,.36,.38,.38,8,id,-2);
-   this.box(x+.19-recoil,y,z+1.42,.16,.3,.14,18,id);
+   this.box(x-recoil,y,z+.67,.5,.5,.76,10,id);
+   this.box(x-recoil,y,z+.7,.53,.53,.27,14,id);
+   this.box(x-recoil,y,z+1.1,.53,.53,.22,14,id);
+   this.box(x-recoil,y,z+1.32,.42,.44,.16,0,id);
+   this.box(x-recoil,y,z+1.48,.36,.38,.27,8,id,-2);
+   this.box(x+.19-recoil,y,z+1.52,.16,.22,.14,18,id);
    for(let side=-1;side<=1;side+=2)this.box(x-recoil,y+side*.3,z+1.02,.46,.27,.26,8,id);
    // Side-mounted barrel has a continuous large fill and a long tip.
-   this.box(x+.38-recoil,y+.32,z+.96,.92,.2,.2,8,id);
-   this.box(x+.95-recoil,y+.32,z+.99,.45,.16,.14,22,id);
+   this.box(x+.38-recoil,y+.32,z+.96,.92,.2,.2,10,id);
+   this.box(x+.95-recoil,y+.32,z+.99,.14,.08,.14,22,id);
    if(k===21&&e[o+10]>0)this.crate(x-.36,y-.24,z+.55,.38,id);
    if(attacking&&e[o+11]>.8)this.box(x+1.23-recoil,y+.32,z+.98,.35,.26,.26,k===23?18:22);
    return;
@@ -330,12 +359,15 @@ export class Renderer {
    for(let side=-1;side<=1;side+=2){
     this.box(x-.12+gait*side,y+side*.4,z,.35,.25,.24,10,id);
     this.box(x-.15-recoil,y+side*(.49+spread),z+.42,.63,.68,.22,14,id);
+    this.box(x-.15-recoil,y+side*(.49+spread),z+.65,.18,.68,.08,10,id);
     this.box(x-.35-recoil,y+side*(.85+spread),z+.44,.4,.3,.16,8,id);
    }
    this.box(x-recoil,y,z+.28,.75,.76,.4,13,id,-1);
-   this.box(x-recoil,y,z+.67,.43,.46,.2,14,id,-1);
+   this.box(x+.12-recoil,y,z+.67,.48,.5,.12,0,id);
+   this.box(x+.22-recoil,y,z+.79,.35,.38,.23,8,id,-1);
    this.box(x-recoil,y,z+.88,.13,.13,.04,17,id);
-   this.box(x+.65-recoil,y,z+.78,.65,.22,.2,8,id);
+   this.box(x+.65-recoil,y,z+.78,.65,.22,.2,10,id);
+   this.box(x+.95-recoil,y,z+.81,.14,.08,.14,22,id);
    if(attacking&&e[o+11]>.8)this.box(x+.98-recoil,y,z+.82,.34,.3,.25,22);
    return;
   }
@@ -351,9 +383,11 @@ export class Renderer {
    }
    this.box(x-.12+lunge,y,z+.48,.98,.67,.48,25,id,-1);
    this.box(x+.19+lunge,y,z+.72,.65,.65,.55,25,id,-2);
-   this.box(x+.48+lunge,y,z+.66,.55,.4,.29,25,id);
-   this.box(x+.75+lunge,y,z+.72,.44,.29,.22,27,id);
-   this.box(x+.94+lunge,y,z+.69,.35,.18,.16,27,id);
+   this.box(x+.44+lunge,y,z+.66,.62,.46,.32,23,id);
+   this.box(x+.62+lunge,y,z+.74,.3,.36,.28,25,id);
+   this.box(x+.75+lunge,y,z+.72,.44,.29,.22,23,id);
+   this.box(x+.99+lunge,y,z+.76,.18,.1,.16,27,id);
+   this.box(x-.19+lunge,y,z+.97,.2,.66,.12,23,id);
    this.box(x-.64,y,z+.66,.45,.23,.2,25,id,-2);
    if(attacking&&e[o+11]>.72)this.box(x+1.1+lunge,y,z+.72,.32,.28,.24,27);
    return;
@@ -367,8 +401,11 @@ export class Renderer {
    }
    this.box(x-.14-recoil,y,z+.46,1.65,1.25,.59,25,id,-1);
    this.box(x-.43-recoil,y,z+.94,.75,.97,.2,25,id,-1);
-   this.box(x+.41-recoil,y,z+.67,.7,.55,.34,27,id);
-   this.box(x+.84-recoil,y,z+.79,.78,.28,.25,27,id);
+   this.box(x+.41-recoil,y,z+.67,.76,.61,.4,23,id);
+   this.box(x+.53-recoil,y,z+.8,.46,.43,.29,26,id);
+   this.box(x+.84-recoil,y,z+.79,.78,.28,.25,23,id);
+   this.box(x+1.2-recoil,y,z+.85,.18,.1,.16,27,id);
+   this.box(x-.2-recoil,y,z+1.06,.2,1.25,.12,23,id);
    this.box(x+.22-recoil,y,z+.98,.47,.5,attacking?.8:.55,25,id,-2);
    if(attacking&&e[o+11]>.88)this.box(x+1.27-recoil,y,z+.8,.4,.35,.3,27);
    return;
@@ -435,7 +472,7 @@ export class Renderer {
   this.time=tick/60;this.count=this.staticCount;this.selected=null;
   for(let id=0;id<n;id++){const o=id*12,k=e[o+4];if(e[o+8]===1)this.selected=id;
    if(k>=10&&k<20)this.building(e,o,id);
-   else if(k>=20&&k<=31)this.unit(e,o,id);
+   else if(k>=20&&k<=31)this.unit(e,o,id,yaw,zoom);
    else if(k===40){const h=e[o+10]>0?1.3+id%3*.35:e[o+11]*1.4;this.shard(e[o],e[o+1],e[o+2],Math.max(.08,h*1.4),31);}
    else if(k===41){this.box(e[o],e[o+1],e[o+2],.38,.36,.23,40);this.box(e[o],e[o+1],e[o+2]-.16,.18,.18,.14,18);}
    else if(k>=50)this.effects(e,o);
@@ -444,8 +481,8 @@ export class Renderer {
   this.ambient(this.time);
   this.worldCount=this.count;this.hud(e,alloy,charge);
   this.camera[0]=Math.round(Math.cos(yaw*Math.PI/2));this.camera[1]=Math.round(Math.sin(yaw*Math.PI/2));this.camera[2]=1/zoom;
-  const d=this.device;d.queue.writeBuffer(this.uniform,0,this.camera);d.queue.writeBuffer(this.buffer,0,this.data.buffer,0,this.count*32);
-  const encoder=d.createCommandEncoder();const pass=encoder.beginRenderPass(this.scenePass);pass.setPipeline(this.pipeline);pass.setBindGroup(0,this.group);pass.setVertexBuffer(0,this.vertex);pass.setVertexBuffer(1,this.buffer);pass.draw(36,this.count);pass.end();
+  const d=this.device;d.queue.writeBuffer(this.uniform,0,this.camera);d.queue.writeBuffer(this.buffer,0,this.data.buffer,0,this.count*32);d.queue.writeBuffer(this.actorBuffer,0,this.actorData.buffer,0,this.count*16);
+  const encoder=d.createCommandEncoder();const pass=encoder.beginRenderPass(this.scenePass);pass.setPipeline(this.pipeline);pass.setBindGroup(0,this.group);pass.setVertexBuffer(0,this.vertex);pass.setVertexBuffer(1,this.buffer);pass.setVertexBuffer(2,this.actorBuffer);pass.draw(36,this.count);pass.end();
   this.presentPass.colorAttachments[0].view=this.context.getCurrentTexture().createView();const post=encoder.beginRenderPass(this.presentPass);post.setPipeline(this.post);post.setBindGroup(0,this.postGroup);post.draw(3);post.end();d.queue.submit(this.commands(encoder.finish()));this.stats.triangles=this.count*12+1;
  }
  private commandList:any[]=[null];
