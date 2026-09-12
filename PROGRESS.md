@@ -3,8 +3,8 @@
 Browser graphics demo: isometric pixel-art space colony, deterministic Rust/WASM
 simulation, and raw WebGPU renderer.
 
-**Two playable civilizations are defined. Passes 18–23 remain the candidate base.
-Pass 24 is the final palette-halo correction. The phone URL remains on verified
+**Two playable civilizations are defined. Pass 24 was rejected and reverted.
+Pass 25 is specified for the next Plus window. The phone URL remains on verified
 pass 15.**
 
 ## Verified state — mobile M1 + pass 15
@@ -92,20 +92,24 @@ playable civilization.
   units, complete economy/combat chains, deterministic starts, and distinct
   normal-zoom silhouettes.
 
-## Active next piece — pass 24 hard palette emissive halos
+## Active next piece — pass 25 enlarge hard emissive cores
 
-Binding spec: `docs/LIGHTING_CONTRAST_SPEC.md`. Final worker brief:
-`tasks/brief-pass24.md`.
+Binding spec: `docs/LIGHTING_CONTRAST_SPEC.md`. Worker brief:
+`tasks/brief-pass25.md`.
 
-Pass 23 (`e01532f`) passes all objective lighting and desktop runtime gates. Its
-DeepSeek and Cursor Auto target critics still fail it and name emissive-to-shadow
-separation as the remaining gap. A focused critic selected a hard one-pixel,
-same-family halo around existing emitters. Evidence is in `evidence-p23/`.
+Pass 24 (`a222ccd`) passed objective gates but both independent critics returned
+REVERT. Its darker halo did not improve emissive punch. Evidence is in
+`evidence-p24/`; commit `570d70a` restores the pass-23 renderer.
 
-Pass 24 changes only `emissive()`: submit one `(w+2,h+2)` opaque `color-1` box,
-then the unchanged `(w,h)` core at equal depth. The 512-emitter cap, core,
-positions, palette, draw count, geometry, shadows, terrain, camera, simulation,
-and controls stay exact. No soft blend or new emitter is permitted.
+Pass 25 changes one expression in `emissive()`: the existing opaque core grows
+from `(w,h)` to `(w+2,h+2)` with its exact colour and one instance. This adds one
+bright raster pixel on each side. No halo, alpha, new emitter, geometry, terrain,
+shadow, camera, simulation, control, or palette change is permitted.
+
+The Plus primary window is 99% used and resets in about 143 minutes as of
+2026-09-13 03:02 IST. Do not launch another coding worker in this window. One
+fresh continuation is scheduled after reset. It must use Plus only and stop on
+any quota error.
 
 The live Tailnet route no longer reads mutable repo `dist/`. It proxies port 5200,
 which serves the frozen pass-15 artifact at
@@ -126,11 +130,11 @@ stronger unit-scale contrast — not another detail pass.
 ## Resume checklist
 
 1. Confirm clean tree and Plus quota: `git status --short`; `python3 tasks/quota-check.py`.
-2. Launch one fresh worker only if Plus remains allowed:
-   `bash tasks/astra-run.sh coder tasks/brief-pass24.md tasks/logs/pass24.log`.
+2. Launch one fresh worker only after the Plus reset:
+   `bash tasks/astra-run.sh coder tasks/brief-pass25.md tasks/logs/pass25.log`.
 3. Worker uses GPT-6 Astra Medium, standard mode, `fast_mode=false`, and edits only
    `src/renderer.ts`.
-4. Orchestrator runs `npm run build`, then desktop capture into `evidence-p24/`.
+4. Orchestrator runs `npm run build`, then desktop capture into `evidence-p25/`.
 5. Orchestrator requires the complete lighting gate: mean 86–94, SD >=44,
    midtones >=38%, highlights 5.0–8.5%, plus all preservation metrics.
 6. Only after desktop metrics pass, run all mobile profiles, four-yaw visual checks,

@@ -147,6 +147,19 @@ encoded effect colours, so `color-1` stays in-family. `less-equal` depth lets th
 later core overwrite the halo at equal depth. Count this as one emitter and keep
 the 512-emitter cap. No alpha, blend, gradient, new colour, or draw pass.
 
+## 2.9 Pass 24 decision
+
+Pass 24 commit `a222ccd` added a darker one-pixel band around existing emitters.
+Both independent critics returned **REVERT**: the band did not improve emissive
+punch or silhouette separation. Evidence is in `evidence-p24/`. Commit
+`570d70a` reverts pass 24 and restores the pass-23 renderer.
+
+Pass 25 must enlarge the existing opaque bright core instead. In `emissive()`,
+keep one box and submit `(w+2,h+2)` with unchanged `color`, position, depth,
+owner, and mode -4. This adds one bright raster pixel on each side. It does not
+add a halo instance, a darker band, alpha, blur, gradient, emitter, colour, or
+draw pass. Keep the 512-emitter cap and one increment.
+
 ## 3. Required visual changes
 
 ### 3.1 World-fixed directional light
@@ -236,8 +249,8 @@ Do not resize or move units in this pass.
 - The selected entity ring uses bright gold segments with an ink separation from
   the ground. It must remain visible at the 844×390 phone layout.
 - Muzzle flashes and energy cores can use family endpoints. Every existing
-  `emissive()` core receives one hard one-pixel border in the next darker family
-  entry. The core overwrites the center. Do not add new emitter positions.
+  `emissive()` core expands by one bright raster pixel on each side: `(w+2,h+2)`
+  with the same core colour. Do not add a second box or new emitter position.
 - Do not brighten all particles or make static props look interactive.
 
 ### 3.5 Cast and contact shadows
