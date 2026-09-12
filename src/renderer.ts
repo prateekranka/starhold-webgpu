@@ -248,7 +248,7 @@ export class Renderer {
  }
  private shadow(x:number,y:number,w:number,d:number,h:number) {
   const z=this.ground(x,y);
-  this.box(x,y,z+.085,w,d,Math.min(1,h),2,-1,-3);
+  this.box(x,y,z+.085,w,d,Math.min(1,h),1,-1,-3);
   // A narrow opaque ink lip, raised over road slabs and under the feet/plinth.
   this.box(x,y,z+.095,w+.12,d+.12,0,0,-1,-3);
  }
