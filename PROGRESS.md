@@ -3,44 +3,33 @@
 Browser graphics demo: isometric pixel-art space colony, deterministic Rust/WASM
 simulation, and raw WebGPU renderer.
 
-**PAUSED — Codex Plus five-hour quota exhausted on 2026-09-12.**
+**IN DREAM LOOP — pass 10 (combat formation spacing) dispatched 2026-09-12.**
 
-## Stop state
+## Verified state (pass 9)
 
-- Codex account used for this exercise: Plus only (`~/.codex-linux`).
-- Plus primary window: **100% used**. Codex reported retry at 19:15 IST.
-- No Codex process or Astra runner remains active.
-- Pass 9 stopped during `src/renderer.ts` edits. The partial edit did not compile:
-  `Property 'STORAGE' does not exist on type ...`.
-- The invalid edit was saved as `tasks/logs/pass9-interrupted.patch`, then reverted.
-- The repository is back at verified pass 8.
-
-## Final verified state
-
-Orchestrator verification after the rollback:
+Implementation `51d2a63` ("art: pass 9 — countable spaced combat actors"), verified by
+orchestrator commit `6ac96b8`. Fresh standard-mode Astra run (`fast=false`, Plus account):
 
 - `npm run build`: PASS.
 - Browser/runtime harness: **7/7 gates PASS**.
-- WebGPU frame rate: **60.3 fps**, p95 **17.0 ms**.
-- Camera rotate button: PASS.
-- Zoom buttons: PASS.
-- Click selection: PASS.
-- Console errors: none.
+- WebGPU frame rate: **60.3 fps**, p95 **17.0 ms**, max 17.5 ms.
+- Camera rotate button: PASS (yaw 0 -> 1). Zoom buttons: PASS (1 -> 0.8 -> 1).
+- Click selection: PASS. Console errors: none.
 - Determinism: two raw WASM replays matched exactly:
   `{"n":55,"alloy":247,"charge":199,"hash":"20b89f84"}`.
-- Final evidence: `evidence-final/`.
+- Evidence: `evidence-p9/`.
 
 ## Visual gate
 
-Latest fresh Cursor Auto critic verdict on pass 8: **FAIL**.
+Latest fresh Cursor Auto critic verdict on pass 9: **FAIL**.
 
-Single biggest gap: combat units remain too small and blob-like in a packed group.
-They need larger whole-body silhouettes, a clear head/front tip, and stable dark
-separation between adjacent actors.
+> The red cluster collapses into one dark blob on purple terrain so you cannot
+> count or silhouette-read individuals at combat density.
 
-Pass 9 was intended to make that correction. Its incomplete patch is preserved but
-must not be applied without review. It contains a broken `GPUBufferUsage.STORAGE`
-reference in a local test shim and did not reach the required type check or commit.
+Passes 7–9 already added brighter hostile colors, dark whole-body contours, larger
+silhouettes, forward tips, and small renderer-only offsets. More outline or size is
+not the root fix — bodies physically overlap. The fix must come from deterministic
+formation spacing in the simulation (`tasks/brief-pass10.md`).
 
 ## Completed passes
 
@@ -52,20 +41,19 @@ reference in a local test shim and did not reach the required type check or comm
 6. Distinct combat-role silhouettes.
 7. Higher faction contrast and unit rims.
 8. Larger, brighter friendly combat tokens.
-9. Interrupted at Plus quota limit; invalid partial edit reverted and archived.
+9. Renderer-side countable spaced combat actors (offsets, scale, contours).
+10. Dispatched: deterministic 1.25-tile Jackal formation slots, 1.1-tile friendly
+    spacing, sim/renderer position parity.
 
-## Resume checklist
+## Loop procedure (orchestrator)
 
-1. Confirm Plus quota: `python3 tasks/quota-check.py`.
-2. Start from verified pass 8, not the interrupted working edit.
-3. Review `tasks/brief-pass9.md` and `tasks/logs/pass9-interrupted.patch`.
-4. Use a fresh coding context. Implement pass 9 cleanly; do not resume the failed run.
-5. Orchestrator runs:
-   `npm run build`
-6. Orchestrator runs:
-   `node scripts/capture.mjs --root dist --out evidence-p9 --min-fps 60 --settle 108`
-7. Run a fresh blind critic on `evidence-p9/shot-main.png`.
-8. Iterate only if the critic still returns FAIL.
+1. `python3 tasks/quota-check.py` — stop at allowed=False / 100%.
+2. Dispatch one fresh coder context:
+   `bash tasks/astra-run.sh coder tasks/brief-passN.md tasks/logs/passN.log`.
+3. `npm run build`.
+4. `node scripts/capture.mjs --root dist --out evidence-pN --min-fps 60 --settle 108`.
+5. Fresh blind screenshot critic (`cursor-agent --trust --print --model Auto`).
+6. Iterate on the single biggest gap; update this file and commit after verified work.
 
 ## Binding files
 
@@ -84,3 +72,5 @@ reference in a local test shim and did not reach the required type check or comm
 - Rust 1.98.1 with `wasm32-unknown-unknown`.
 - WebGPU validation uses Playwright Chromium headless shell with Vulkan/ANGLE.
 - Full Chromium returns no WebGPU adapter on this host.
+- Screenshot critic lane: `cursor-agent` (Auto). Zen DeepSeek vision lane is
+  quota-blocked; named Grok models are unavailable on the current Cursor plan.
