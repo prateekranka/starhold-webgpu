@@ -11,9 +11,9 @@ const resolution=vec2f(${RENDER_WIDTH}.,${RENDER_HEIGHT}.);
 const grid=${GRID}.;
 struct Camera { rotation:vec2f, magnification:f32, padding:f32 }
 @group(0) @binding(0) var<uniform> camera:Camera;
-struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @location(1) unit:f32, @location(2) rim:vec2f, @location(3) cliff:vec2f }
+struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @location(1) unit:f32, @location(2) rim:vec2f, @location(3) cliff:vec2f, @location(4) ground:vec2f, @location(5) @interpolate(flat) material:u32 }
 @vertex fn vs(@location(0) vertex:vec3f,@location(1) shade:f32,@location(2) origin:vec3f,@location(3) size:vec3f,@location(4) color:f32,@location(5) screen:f32,@location(6) actor:vec4f)->Out {
- var o:Out;o.cliff=vec2f(-1.,0.);
+ var o:Out;o.cliff=vec2f(-1.,0.);o.ground=vec2f(0.);o.material=0u;
  let pigment=color%32.;o.unit=floor((color%32768.)/32.);
  // 18/19 mark combat composites; 17 identifies the worker/skiff contour.
  let combat=floor(color/32768.);o.rim=vec2f(select(0.,1.,combat>=18.),0.);
@@ -62,8 +62,11 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  if screen == -5. {
   let level=clamp((p.z-actor.x)/(actor.y-actor.x),0.,1.);
   o.cliff=vec2f(level,select(4.,3.,steps>=2.));
-  if shade==0. && origin.z+size.z>=actor.y-.17 {
-   o.cliff.x=-1.;o.color=palette[u32(select(select(5.,6.,pigment==5. || pigment==6.),pigment,pigment==4. || pigment>=28.))];
+  // Only the actual cap gets material. Buried column tops and every ledge,
+  // rib and vertical cap lip keep their parent's height ramp.
+  if shade==0. && origin.z+size.z>=actor.y-.01 {
+   o.cliff.x=-1.;o.color=palette[u32(pigment)];
+   o.ground=p.xy;o.material=u32(pigment)+1u;
   }
  }
  if screen == -3. || screen == -4. {o.color=palette[u32(pigment)];}
@@ -71,10 +74,41 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  } return o;
 }
 struct Fragment { @location(0) color:vec4f, @location(1) mask:vec4f }
+// Authored plate vocabulary in world space: staggered shoulders, a bent seam,
+// paired chips and a three-step ore fracture. No pixel hash or screen grid.
+fn basalt(world:vec2f, province:u32)->u32 {
+ let rows=array<f32,7>(0.,.43,.17,.68,.29,.81,.52);
+ let widths=array<f32,7>(1.18,1.52,1.31,1.67,1.24,1.43,1.59);
+ let row=floor(world.y/1.16);
+ let r=u32(row)%7u;
+ let shoulder=select(select(0.,.14,fract(world.y/1.16)>.31),-.09,fract(world.y/1.16)>.72);
+ let u=(world.x+rows[r]+shoulder)/widths[r];
+ let col=floor(u);
+ // Jog the cross seam in short isometric steps; adjoining plates stay closed.
+ let v=(world.y+select(.0,.16,fract(u)>.62))/1.16;
+ let q=fract(vec2f(u,v));
+ let motif=(u32(col)*3u+u32(floor(v))*5u)%11u;
+ var c=select(29u,28u,motif<3u || (province==28u && motif<6u));
+ if province==4u && motif<4u {c=4u;}
+ // Narrow stone joints disconnect both purple fills, with clipped corners.
+ if q.x<.065 || q.y<.075 || (q.x<.15 && q.y<.18) {return 4u;}
+ let chip=(q.x>.23 && q.x<.43 && q.y>.29 && q.y<.40) ||
+          (q.x>.38 && q.x<.50 && q.y>.37 && q.y<.56);
+ if chip && motif!=4u && motif!=9u {c=select(28u,29u,c==28u);}
+ let seam=(q.x>.60 && q.x<.69 && q.y>.51 && q.y<.75) ||
+          (q.x>.49 && q.x<.65 && q.y>.70 && q.y<.79);
+ if seam && motif%3u==0u {c=28u;}
+ if motif==2u && q.x>.69 && q.x<.82 && q.y>.45 && q.y<.55 {c=30u;}
+ return c;
+}
 @fragment fn fs(i:Out)->Fragment {var f:Fragment;f.color=vec4f(i.color,1.);
  // Four hard bands, top to bottom: 4/3/2/1 on the lit wall,
  // 3/2/1/0 on the opposing wall. No interpolated RGB or dithering.
- if i.cliff.x>=0. {let band=min(3.,floor((1.-i.cliff.x)*4.));f.color=vec4f(palette[u32(max(0.,i.cliff.y-band))],1.);}f.mask=vec4f(i.unit,i.position.z,i.rim);return f;}
+ // The bright rim occupies 15%, then 20% midstone, 25% shadow, 40% base.
+ // Identical thresholds on ribs prevent bright strips reaching the foot.
+ if i.cliff.x>=0. {let band=select(0.,1.,i.cliff.x<.85)+select(0.,1.,i.cliff.x<.65)+select(0.,1.,i.cliff.x<.40);f.color=vec4f(palette[u32(max(0.,i.cliff.y-band))],1.);}
+ else if i.material!=0u {f.color=vec4f(palette[basalt(i.ground,i.material-1u)],1.);}
+ f.mask=vec4f(i.unit,i.position.z,i.rim);return f;}
 `;
 const postWGSL=paletteWGSL+`
 @group(0) @binding(0) var scene:texture_2d<f32>;
@@ -180,9 +214,30 @@ export class Renderer {
   this.box(x,y,z+.095,w+.12,d+.12,0,0,-1,-3);
  }
  private shard(x:number,y:number,z:number,h:number,c=30,owner=-1) {
+  if(owner===-1)this.groundContact(x,y,.62,.65,true);
   this.box(x,y,z,.62,.65,h,c,owner,-2);
   this.box(x+.25,y+.12,z,.24,.25,h*.56,c-1,owner,-2);
   this.emissive(x,y,z+h,c<19?18:31,owner);
+ }
+ private groundMark(x:number,y:number,w:number,d:number,color:number,lift=.028) {
+  const z=this.ground(x,y);
+  // Flush solid top planes; reject height boundaries rather than draping
+  // a material decal over a cliff. Zero height creates no recoloured walls.
+  if(this.ground(x-w/2,y-d/2)!==z||this.ground(x+w/2,y-d/2)!==z||
+     this.ground(x-w/2,y+d/2)!==z||this.ground(x+w/2,y+d/2)!==z)return;
+  // The existing solid ground-plane mode preserves the exact pigment on
+  // coincident top/bottom triangles; zero height also means zero cast offset.
+  this.box(x,y,z+lift,w,d,0,color,-1,-3);
+ }
+ private groundContact(x:number,y:number,w:number,d:number,wear=false) {
+  if(wear){
+   this.groundMark(x-.16,y+.18,w+.36,d+.24,4);
+   this.groundMark(x+.27,y+.25,.34,.22,5,.032);
+   this.groundMark(x-.33,y-.12,.26,.18,29,.034);
+  }
+  // Two thin solid lips touch the footprint, without a cast offset.
+  this.groundMark(x,y+d/2,w+.08,.09,0,.04);
+  this.groundMark(x+w/2,y,.09,d+.08,0,.04);
  }
  private cliffBottom=0;private cliffTop=0;
  private terrainBox(x:number,y:number,z:number,w:number,d:number,h:number,color:number) {
@@ -270,7 +325,31 @@ export class Renderer {
     if(lobe===1){this.box(xx-.2,yy,z+.025,.3,.12,.008,28);this.box(xx-.05,yy+.1,z+.026,.12,.28,.008,28);this.box(xx+.12,yy+.2,z+.027,.24,.12,.008,c===29?30:29);}
    }
   }
-  for(const r of roads){const length=Math.hypot(r[2]-r[0],r[3]-r[1]);for(let t=0;t<length;t+=.5){const x=r[0]+(r[2]-r[0])*t/length,y=r[1]+(r[3]-r[1])*t/length;for(let lane=-1;lane<=1;lane++){const xx=x+lane*.46*(r[3]-r[1])/length,yy=y-lane*.46*(r[2]-r[0])/length;this.box(xx,yy,this.ground(xx,yy)+.045,.51,.5,.035,(Math.floor(t*10)+lane)%5===0?5:6);}}}
+  for(const r of roads){const length=Math.hypot(r[2]-r[0],r[3]-r[1]),dx=(r[2]-r[0])/length,dy=(r[3]-r[1])/length;
+   for(let t=0;t<length;t+=.5){const x=r[0]+dx*t,y=r[1]+dy*t;
+    for(let lane=-1;lane<=1;lane++){const xx=x+lane*.46*dy,yy=y-lane*.46*dx;this.box(xx,yy,this.ground(xx,yy)+.045,.51,.5,.035,(Math.floor(t*10)+lane)%5===0?5:6);}
+    const step=Math.floor(t*2);
+    if(step%7===2){
+     const side=step%2===0?1:-1;
+     this.groundMark(x+side*.85*dy,y-side*.85*dx,.24,.18,5);
+     this.groundMark(x+side*.94*dy+.2*dx,y-side*.94*dx+.2*dy,.14,.13,4);
+     // Short paired wheel scars sit on top of the continuous pale road.
+     for(let lane=-1;lane<=1;lane+=2)this.groundMark(x+lane*.29*dy,y-lane*.29*dx,Math.abs(dx)*.27+.07,Math.abs(dy)*.27+.07,5,.086);
+    }
+   }
+  }
+  // Doorway and loading-stop aprons use smaller lobes than the 1.5-tile road.
+  // Kept at ground level so roads and unchanged building plinths occlude them.
+  for(const p of pads){const x=p[0],y=p[1]+p[3]/2+.38;
+   this.groundMark(x,y,.98,.64,4);
+   this.groundMark(x-.18,y+.26,.58,.35,5,.032);
+   this.groundMark(x+.32,y+.15,.32,.38,5,.033);
+   this.groundMark(x-.3,y+.36,.25,.10,4,.035);
+  }
+  for(const [x,y] of [[8.8,23.8],[8.4,20.9],[22.2,22.7],[24.5,14.7]]){
+   this.groundMark(x,y,.86,.57,4);
+   this.groundMark(x+.16,y+.19,.44,.25,5,.032);
+  }
   const gardens=[[8,4,1.9],[9,6,2.3],[11,4,1.4],[12,6,1.8],[3,21,1.1],[3.6,26,1.5],[7,28,1.2],[17,5,.95],[28,18,.8]];
   for(let i=0;i<gardens.length;i++){const [x,y,h]=gardens[i];for(let j=0;j<3+i%2;j++){
    const xx=x+(j===1?-.55:j===2?.48:.12),yy=y+(j===1?.3:j===2?.5:-.25);
@@ -278,10 +357,10 @@ export class Renderer {
   }}
   // Three broken low ruin forms: maximum rise .48 tile (<10 raster px
   // including the footprint at default zoom). Two low foreground crystals.
-  for(let i=0;i<3;i++){const x=20+i*2.8,y=28.1-i*.28,z=this.ground(x,y);this.box(x,y,z,.45,.42,.3,4);this.box(x+.55,y+.1,z,.32,.38,.2,29);this.box(x+.16,y,z+.3,.62,.3,.18,i===1?29:4);}
+  for(let i=0;i<3;i++){const x=20+i*2.8,y=28.1-i*.28,z=this.ground(x,y);this.groundContact(x,y,.45,.42,true);this.groundContact(x+.55,y+.1,.32,.38);this.box(x,y,z,.45,.42,.3,4);this.box(x+.55,y+.1,z,.32,.38,.2,29);this.box(x+.16,y,z+.3,.62,.3,.18,i===1?29:4);}
   this.shard(20.8,25.8,this.ground(20.8,25.8),.28,30);
   this.shard(26.5,27,this.ground(26.5,27),.3,30);
-  for(let i=0;i<7;i++){const x=26.8+i%3*1.2,y=3+i*1.25,z=this.ground(x,y);this.box(x,y,z,.6,.6,1.1+i%3*.45,3);this.box(x,y,z+1.1+i%3*.45,.75,.75,.22,5);}
+  for(let i=0;i<7;i++){const x=26.8+i%3*1.2,y=3+i*1.25,z=this.ground(x,y);this.groundContact(x,y,.6,.6,true);this.box(x,y,z,.6,.6,1.1+i%3*.45,3);this.box(x,y,z+1.1+i%3*.45,.75,.75,.22,5);}
   // Backdrop props use far depth, so every yaw/zoom can occlude them.
   // Three 5–8 px stepped silhouettes and a sparse, one-pixel haze band.
   for(const [x,y,w] of [[124,46,3],[193,39,4],[363,51,2.5]]){
