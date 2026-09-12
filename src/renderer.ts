@@ -240,12 +240,11 @@ export class Renderer {
  }
  ground(x:number,y:number) {return this.terrain[Math.max(0,Math.min(31,Math.floor(y)))*32+Math.max(0,Math.min(31,Math.floor(x)))];}
  private emissive(x:number,y:number,z:number,color:number,owner=-1,w=1,h=2) {
-  // Hard one-pixel same-family halo band; the unchanged core overwrites
-  // its center at equal depth. Both boxes are opaque exact-palette quads.
+  // At most 2,048 hot world pixels (<0.4% of 960×540), before occlusion.
+  // HUD glyphs retain their existing size and palette; broad world faces use
+  // the next darker entry. Fixed storage and no extra draw or blend pass.
   if(this.emissiveCount>=512)return;
-  this.emissiveCount++;
-  this.box(x,y,z,w+2,h+2,0,color-1,owner,-4);
-  this.box(x,y,z,w,h,0,color,owner,-4);
+  this.emissiveCount++;this.box(x,y,z,w,h,0,color,owner,-4);
  }
  private shadow(x:number,y:number,w:number,d:number,h:number) {
   const z=this.ground(x,y);
