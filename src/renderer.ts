@@ -30,7 +30,7 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
    -offset.x*camera.rotation.y+offset.y*camera.rotation.x),0.);
  }
  if screen == -4. {p=origin;}
- if screen>0.5 {let hud=p.xy*grid/(resolution*.5);o.position=vec4f(hud.x-1.,1.-hud.y,0.0001,1.);o.color=palette[u32(pigment)];}
+ if screen>0.5 {let hud=p.xy*grid/(resolution*.5);o.position=vec4f(hud.x-1.,1.-hud.y,select(0.0001,.999,screen==2.),1.);o.color=palette[u32(pigment)];}
  else {
  let d=p.xy-vec2f(16.);
  let r=vec2f(d.x*camera.rotation.x-d.y*camera.rotation.y,d.x*camera.rotation.y+d.y*camera.rotation.x);
@@ -63,7 +63,7 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
   let level=clamp((p.z-actor.x)/(actor.y-actor.x),0.,1.);
   o.cliff=vec2f(level,select(4.,3.,steps>=2.));
   if shade==0. && origin.z+size.z>=actor.y-.17 {
-   o.cliff.x=-1.;o.color=palette[select(5u,6u,pigment==5. || pigment==6.)];
+   o.cliff.x=-1.;o.color=palette[u32(select(select(5.,6.,pigment==5. || pigment==6.),pigment,pigment==4. || pigment>=28.))];
   }
  }
  if screen == -3. || screen == -4. {o.color=palette[u32(pigment)];}
@@ -191,6 +191,32 @@ export class Renderer {
   if(this.count>index){this.actorData[index*4]=this.cliffBottom;this.actorData[index*4+1]=this.cliffTop;}
  }
  private makeTerrain() {
+  const roads=[[7,25,5,25],[8.5,23,11,20],[11,20,13,18],[13,18,16,18.6],[8,21.5,8,17],[8,17,6.7,17],[18.5,16,18.5,14],[18.5,14,24,14],[16,13,18.5,14],[18,20,22,22],[24,14,27,12],[19,22,19,25],[30.4,3,29.5,8],[29.5,8,28.5,12]];
+  // Reserve every planned foundation, including later construction, and aprons.
+  // These authoring arrays and closures exist only during static mesh creation.
+  const pads=[[16,16,4,4],[7,23,3,3],[10,12,2,2],[24,8,2,2],[16,11,3,3],[5,18,3,3],[17,21,3,2],[26,12,2,2],[21.5,22,4,3],[13,24,3,2],[7,13,2,2],[26,22,3,3]];
+  const clear=(x:number,y:number,r=.35)=>{
+   for(const p of pads)if(Math.abs(x-p[0])<p[2]/2+.6+r&&Math.abs(y-p[1])<p[3]/2+.6+r)return false;
+   for(const p of roads){const dx=p[2]-p[0],dy=p[3]-p[1],t=Math.max(0,Math.min(1,((x-p[0])*dx+(y-p[1])*dy)/(dx*dx+dy*dy)));if(Math.hypot(x-p[0]-t*dx,y-p[1]-t*dy)<.85+r)return false;}
+   return true;
+  };
+  const present=(x:number,y:number)=>{
+   if(x<0||y<0||x>31||y>31)return false;
+   const hash=((x*374761393+y*668265263)^(x*y*1274126177))>>>0;
+   return !((x<2||x>29||y<2||y>29)&&hash%5<3||x<5&&y<9||x<7&&y<3||x>28&&y>27);
+  };
+  // Seven contiguous material provinces; broad boundaries, never pixel noise:
+  // garden, ore crescent, worn plaza, defense scars, industrial shelf,
+  // foreground dust channel, and the quiet northern/southern basalt field.
+  const material=(x:number,y:number)=>{
+   if(x>=7&&x<=13&&y<=8)return 29;
+   if(x<8&&y>=19)return x+y<27?28:29;
+   if(x>=12&&x<=19&&y>=14&&y<=19)return x+y<31?4:29;
+   if(x>=23&&y<17)return y>x-17&&y<x-13?28:29;
+   if(x<10&&y>=15)return y>20&&x>5?4:28;
+   if(y>=25&&x>=18)return y>27&&x<25?4:29;
+   return x+y<21||x-y>9||y-x>13?28:29;
+  };
   // Broken outer contour and staggered basalt columns avoid the old square plate.
   for(let y=0;y<32;y++)for(let x=0;x<32;x++) {
    const h=this.ground(x,y),hash=((x*374761393+y*668265263)^(x*y*1274126177))>>>0;
@@ -200,15 +226,19 @@ export class Renderer {
    this.cliffBottom=bottom;this.cliffTop=h;
    const rim=edge||x<4||y>28||x>28||this.ground(x+1,y)<h||this.ground(x,y+1)<h;
    this.terrainBox(x+.5,y+.5,bottom,rim?.84:1,rim?.88:1,h-bottom-.16,2);
-   this.terrainBox(x+.5,y+.5,h-.16,rim?.94:1,rim?.96:1,.16,h<0?3:hash%11<3?28:4);
+   const cap=material(x,y);
+   this.terrainBox(x+.5,y+.5,h-.16,rim?.94:1,rim?.96:1,.16,cap);
    if(rim){
-    this.terrainBox(x+.5,y+.5,h-.22,1.04,1.02,.22,hash%4===0?5:4);
+    this.terrainBox(x+.5,y+.5,h-.22,1.04,1.02,.22,cap);
     this.terrainBox(x+.78,y+.84,bottom+.2,.18,.12,h-bottom-.5,3);
     if(hash%2===0)this.terrainBox(x+.5,y+.5,h-1.2,.94,.96,.18,4);
    }
-   if(hash%7===0){this.box(x+.3,y+.42,h+.014,.65,.42,.025,hash%3===0?29:6);this.box(x+.52,y+.51,h+.017,.32,.24,.027,hash%3===0?29:6);}
-   if(hash%29===0)this.box(x+.36,y+.4,h+.045,.54,.06,.025,3);
-   if(hash%31===0)this.terrainBox(x+.64,y+.65,h+.03,.4,.32,.14,3);
+   // Connected one-raster-pixel strips follow selected top-left-lit (-X)
+   // edges. Short darker sections articulate the contour without equal rims.
+   if((!present(x-1,y)||this.ground(x-1,y)<h)&&clear(x,y+.5,.1)){
+    this.box(x+.03,y+.5,h+.012,.06,1,.008,y%4===0?29:30);
+   }
+   if((!present(x,y-1)||this.ground(x,y-1)<h)&&x%5<2&&clear(x+.5,y,.1))this.box(x+.5,y+.03,h+.012,1,.06,.008,29);
    // Exposed vertical seams and projecting shelves use the cliff family only.
    if(y===31||x===31||this.ground(x+1,y)<h||this.ground(x,y+1)<h||edge){
     this.terrainBox(x+.87,y+.83,bottom+.4,.17,.18,h-bottom-.6,hash%2?2:3);
@@ -227,14 +257,39 @@ export class Renderer {
     }
    }
   }
-  const roads=[[7,25,5,25],[8.5,23,11,20],[11,20,13,18],[13,18,16,18.6],[8,21.5,8,17],[8,17,6.7,17],[18.5,16,18.5,14],[18.5,14,24,14],[16,13,18.5,14],[18,20,22,22],[24,14,27,12],[19,22,19,25],[30.4,3,29.5,8],[29.5,8,28.5,12]];
+  // Each patch has a stepped shoulder and a short connected crack/ore vein.
+  // 0.8–1.5 tile lobes span roughly 12–30 raster pixels at default zoom;
+  // the paired chips span 2–5 pixels. Clip lobes at height changes and roads.
+  const patches=[[8,5,28],[10,7,28],[12,4,28],[3,21,29],[4,26,28],[6,27,28],[12,16,28],[19,18,4],[14,20,28],[23,10,28],[24,16,28],[28,10,28],[4,15,29],[9,18,29],[10,23,28],[20,26,28],[23,27,28],[26,26,4],[14,7,28],[18,6,28],[20,9,28],[10,10,28],[11,26,28],[16,28,28],[21,18,28],[28,19,28]];
+  for(const [x,y,c] of patches){
+   const z=this.ground(x,y);
+   for(let lobe=0;lobe<3;lobe++){
+    const xx=x+lobe*.48,yy=y+(lobe===1?-.25:.22),w=lobe===0?1.25:.8;
+    if(!clear(xx,yy,w*.72)||!present(Math.floor(xx),Math.floor(yy))||this.ground(xx-w/2,yy-.35)!==z||this.ground(xx+w/2,yy+.35)!==z)continue;
+    this.box(xx,yy,z+.012,w,.7,.008,c);
+    if(lobe===1){this.box(xx-.2,yy,z+.025,.3,.12,.008,28);this.box(xx-.05,yy+.1,z+.026,.12,.28,.008,28);this.box(xx+.12,yy+.2,z+.027,.24,.12,.008,c===29?30:29);}
+   }
+  }
   for(const r of roads){const length=Math.hypot(r[2]-r[0],r[3]-r[1]);for(let t=0;t<length;t+=.5){const x=r[0]+(r[2]-r[0])*t/length,y=r[1]+(r[3]-r[1])*t/length;for(let lane=-1;lane<=1;lane++){const xx=x+lane*.46*(r[3]-r[1])/length,yy=y-lane*.46*(r[2]-r[0])/length;this.box(xx,yy,this.ground(xx,yy)+.045,.51,.5,.035,(Math.floor(t*10)+lane)%5===0?5:6);}}}
-  for(let i=0;i<34;i++){const x=7+(i*17%59)/10,y=3+(i*7%40)/10;this.shard(x,y,this.ground(x,y),.6+i%5*.37);}
-  for(let i=0;i<20;i++){const x=2.4+(i*19%54)/10,y=20+(i*23%83)/10;if(x>5.1&&y<25)continue;this.shard(x,y,this.ground(x,y),.9+(i%4)*.55,31);}
-  // Low ruined arch feet and scattered masonry frame the foreground route.
-  for(let i=0;i<5;i++){const x=19+i*1.75,y=27.8-i%2*.3,z=this.ground(x,y);this.box(x,y,z,.68,.65,.65+i%2*.2,4);this.box(x+.65,y+.2,z,.42,.5,.3,5);if(i%2===0){this.box(x,y,z+.65,.35,.42,.45,5);this.box(x+.24,y,z+1.05,.65,.45,.15,4);}}
-  for(let i=0;i<18;i++){const x=3+(i*43%263)/10,y=3+(i*71%263)/10;if(x>8&&x<23&&y>9&&y<24)continue;this.box(x,y,this.ground(x,y),.3+i%3*.1,.35,.2+i%3*.15,4);}
+  const gardens=[[8,4,1.9],[9,6,2.3],[11,4,1.4],[12,6,1.8],[3,21,1.1],[3.6,26,1.5],[7,28,1.2],[17,5,.95],[28,18,.8]];
+  for(let i=0;i<gardens.length;i++){const [x,y,h]=gardens[i];for(let j=0;j<3+i%2;j++){
+   const xx=x+(j===1?-.55:j===2?.48:.12),yy=y+(j===1?.3:j===2?.5:-.25);
+   if(clear(xx,yy,.5))this.shard(xx,yy,this.ground(xx,yy),h*(j===0?1:j===1?.62:.4),30);
+  }}
+  // Three broken low ruin forms: maximum rise .48 tile (<10 raster px
+  // including the footprint at default zoom). Two low foreground crystals.
+  for(let i=0;i<3;i++){const x=20+i*2.8,y=28.1-i*.28,z=this.ground(x,y);this.box(x,y,z,.45,.42,.3,4);this.box(x+.55,y+.1,z,.32,.38,.2,29);this.box(x+.16,y,z+.3,.62,.3,.18,i===1?29:4);}
+  this.shard(20.8,25.8,this.ground(20.8,25.8),.28,30);
+  this.shard(26.5,27,this.ground(26.5,27),.3,30);
   for(let i=0;i<7;i++){const x=26.8+i%3*1.2,y=3+i*1.25,z=this.ground(x,y);this.box(x,y,z,.6,.6,1.1+i%3*.45,3);this.box(x,y,z+1.1+i%3*.45,.75,.75,.22,5);}
+  // Backdrop props use far depth, so every yaw/zoom can occlude them.
+  // Three 5–8 px stepped silhouettes and a sparse, one-pixel haze band.
+  for(const [x,y,w] of [[124,46,3],[193,39,4],[363,51,2.5]]){
+   this.box(x,y,0,w,1.5,0,2,-1,2);
+   this.box(x-.5,y-1,0,w-1,1,0,3,-1,2);
+   this.box(x+.5,y+1,0,w-1,1,0,1,-1,2);
+  }
+  for(const [x,y,w] of [[87,48,18],[108,48.5,9],[317,43,21],[334,43.5,8],[386,52,16]])this.box(x,y,0,w,.5,0,28,-1,2);
   this.staticCount=this.count;this.staticEmissiveCount=this.emissiveCount;
  }
  private building(e:Float32Array,o:number,id:number) {
@@ -493,10 +548,10 @@ export class Renderer {
   else if(k===52){this.box(x,y,z,.48,.45,.2,sub>=30?23:4);this.box(x+.28,y+.12,z,.2,.2,.14,sub>=30?24:7);}
  }
  private ambient(t:number) {
-  for(let j=0;j<16;j++){const x=18.8+j*17%81/10,y=25+j*11%37/10,z=this.ground(x,y),sway=Math.floor(t/1.4+j)%2*.18;this.box(x+sway,y,z,.13,.12,.38,21);this.box(x+.2+sway,y+.08,z,.12,.13,.48,20);this.box(x-.18,y,z,.13,.12,.27,21);}
+  for(let j=0;j<16;j++){const x=19+j*17%76/10,y=25.6+j*11%31/10,z=this.ground(x,y),sway=Math.floor(t/1.4+j)%2*.18;this.box(x+sway,y,z,.13,.12,.38,21);this.box(x+.2+sway,y+.08,z,.12,.13,.48,20);this.box(x-.18,y,z,.13,.12,.27,21);}
   for(let j=0;j<3;j++){const q=(t/5+j/3)%1;for(let a=0;a<9;a++)this.box(19+j*2+q*2+a*.24,26+j*.6+(a%3)*.09,this.ground(19+j*2,26+j*.6)+.15,.18,.16,.05,a%3===0?21:20);}
   for(let j=0;j<12;j++){const q=(t/(7+j%3*2)+j*.27)%1,x=7+j*17%58/10+q*.4,y=3+j*7%40/10;this.box(x,y,1.5+q*.6,.07,.07,.08,30);}
-  for(let j=0;j<8;j++){if((Math.floor(t*5)+j*3)%18>5)continue;const x=7+j*17%59/10,y=3+j*7%40/10;this.box(x,y,this.ground(x,y)+.6+j%5*.37,.18,.18,.15,18);}
+  for(let j=0;j<4;j++){if((Math.floor(t*5)+j*3)%18>5)continue;const x=j===0?8:j===1?9:j===2?11:12,y=j%2===0?4:6,h=j===0?1.9:j===1?2.3:j===2?1.4:1.8;this.emissive(x+.12,y-.25,this.ground(x+.12,y-.25)+h,31,-1,1,1);}
   const warning=t>=33&&(t-33)%30<3&&Math.floor(t*2)%2===0;
   for(let j=0;j<3;j++){const x=29+j*.65,y=4+j*.6;this.box(x,y,this.ground(x,y)+.15,.18,.18,.4,warning?22:19);}
   // Freighter and haze remain behind the north rim at every discrete camera yaw.
