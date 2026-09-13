@@ -127,11 +127,11 @@ fn basalt(world:vec2f, province:u32)->u32 {
  return c;
 }
 @fragment fn fs(i:Out)->Fragment {var f:Fragment;f.color=vec4f(i.color,1.);
- // Four hard bands, top to bottom: 4/3/2/1 on the lit wall,
- // 3/2/1/1 on the opposing wall. Solid rock never reaches void index 0.
+ // Every band below the top rim drops one further step so the cliff base reads near-black.
+ // Top to bottom: 4/2/1/1 lit, 3/1/1/1 opposing. Solid rock never reaches void index 0.
  // The bright rim occupies 15%, then 20% midstone, 25% shadow, 40% base.
  // Identical thresholds on ribs prevent bright strips reaching the foot.
- if i.cliff.x>=0. {let band=select(0.,1.,i.cliff.x<.85)+select(0.,1.,i.cliff.x<.65)+select(0.,1.,i.cliff.x<.40);f.color=vec4f(palette[u32(max(1.,i.cliff.y-band))],1.);}
+ if i.cliff.x>=0. {let band=select(0.,1.,i.cliff.x<.85)+select(0.,1.,i.cliff.x<.65)+select(0.,1.,i.cliff.x<.40);f.color=vec4f(palette[u32(max(1.,i.cliff.y-band-select(0.,1.,band>=1.)))],1.);}
  else if i.material!=0u {f.color=vec4f(palette[basalt(i.ground,i.material-1u)],1.);}
  f.mask=vec4f(i.unit,i.position.z,i.rim);return f;}
 `;
