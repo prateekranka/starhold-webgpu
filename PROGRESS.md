@@ -146,20 +146,44 @@ playable civilization. Nothing in the pass 25-30 lighting loop changed this.
 
 All objective work the locked lighting contract allows has landed. The visual
 gate did not flip. The renderer head is pass 30 (`45212d0`); the phone release
-is frozen pass 15. The next attempts need a contract change and are recorded in
-`docs/LIGHTING_CONTRAST_SPEC.md` §2.15.
+is frozen pass 15. Further one-pixel edits under the fixed palette, framing, and
+geometry contract have low expected value.
+
+## Coordinator audit after the scheduled loop
+
+The coordinator independently checked the parked result rather than accepting the cron
+self-report:
+
+- rebuilt pass 30 from source and reran the canonical desktop capture: 8/8, 60.3 fps,
+  p95 16.9 ms, exact hash `20b89f84`, 32 colours, zero outside, and every lighting
+  metric green;
+- parsed all 24 saved viewport reports for passes 25–30: every pass records
+  8/8 + 18/18 + 18/18 + 19/19 = 63/63, with one exact deterministic tuple and four
+  ordered yaw states without errors;
+- confirmed the cumulative implementation diff from parked pass 24 through pass 30 is
+  only `src/renderer.ts`; `sim/`, input, controls, map placement, and civilization
+  contracts did not change;
+- fetched the live Tailnet page and its hashed JavaScript and WASM assets: the route
+  still serves frozen pass 15, and its JavaScript is byte-identical to
+  `/home/bobbyranka/.starhold-live/pass15`;
+- confirmed cron job `9682bd950b42` is completed and disabled;
+- removed the temporary `scripts/yaw-capture.mjs` test-only helper because no approval
+  existed to retain a new test helper. Its recorded screenshots remain as evidence;
+- fixed trailing whitespace in the pass-25 critic record.
 
 ## Resume checklist
 
 1. Confirm clean tree and Plus quota: `git status --short`;
    `python3 tasks/quota-check.py`.
-2. Do not relaunch a blind renderer loop: six rounds (25-30) each passed every
+2. Do not relaunch a blind renderer loop: six rounds (25–30) each passed every
    objective gate and each was preferred by both critics, but the headline gap
    never moved. The residual needs a change outside the locked set.
-3. Candidate next steps, smallest first: (a) add one palette entry between
-   `#624779` and `#8C69A0` and rebalance broad ground one step (map-look lock
-   change, needs bobby); (b) bounded terrain drama / composition work (camera or
-   map change, locked); (c) accept the current look as the shipped bar.
+3. Coordinator decision: preserve map geometry, current civilization art, camera,
+   controls, and the 32-colour cap. Do not change terrain composition or default
+   framing under the lighting task. If the wave resumes, first write a separate,
+   reviewable specification that reassigns one low-use palette role to an authored
+   intermediate ground violet between `#624779` and `#8C69A0`, including every
+   affected material mapping. Do not add a 33rd colour.
 4. Release path stays frozen until a fresh independent critic stops naming
    lighting/contrast or unit readability as the single largest gap.
 5. Never deploy to Cloudflare; never use the Pro account; one worker per pass,
@@ -174,4 +198,6 @@ is frozen pass 15. The next attempts need a contract change and are recorded in
   (`ActionRequiredError: Named models unavailable Free plans can only use Auto.`);
   Cursor Auto is the second opinion.
 - WebGPU capture: Playwright headless shell through Intel gen-9 Vulkan/ANGLE.
-- Four-yaw review: `scripts/yaw-capture.mjs` (one state, four composited shots).
+- Four-yaw review: one-state composited screenshots are preserved in each
+  `evidence-p25/` through `evidence-p30/` directory. The temporary capture helper
+  was removed after use.
