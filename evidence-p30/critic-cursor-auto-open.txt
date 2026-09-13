@@ -1,0 +1,4 @@
+1) Soft directional volume is gone: ivory goes bleached/flat and amethyst basalt goes high-frequency noisy or dead instead of carved midtone stone under one light.
+2) Settlement mass/craft: sparse simplified boxes vs a dense multi-tier ivory fortress with recesses, banners, gold, and warm interior glows.
+3) NO — schematic assets on a purple pad, not a deliberately lit frame.
+4) YES

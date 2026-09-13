@@ -1,0 +1,3 @@
+1) CHOICE: A
+2) WHY: The histogram shows missing true blacks below 25 and excess muddy mid-dark 60-90, and the lower cliff faces are the main mid-dark mass, so dropping those bands while preserving the bright rims should add true black clusters and reduce the muddy range.
+3) RISK: The lower cliffs could lose their stepped facet separation and merge into the void, reading as flat black cutouts instead of layered rock.

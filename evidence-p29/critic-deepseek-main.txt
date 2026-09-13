@@ -1,0 +1,6 @@
+1) YES — builds lack the target's directional NW light and deep shadow/value contrast, so terrain and units read flat and washed.
+2) NO — unit readability is weak, but it is downstream of the missing lighting/contrast and carved value structure, not the root gap.
+3) SINGLE BIGGEST GAP: Directional world lighting and shadow contrast, especially across cliff faces and building volumes.
+4) Q — Q holds stronger top/side value separation and more readable carved cliff steps than P.
+5) YES — amethyst basalt terrain, teal/ivory/gold settlement, and red raiders remain identifiable.
+6) No step is washed out or black; the light stays tied to the world, with shadows consistent to NW/above rather than the camera.

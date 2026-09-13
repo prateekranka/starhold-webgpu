@@ -1,0 +1,5 @@
+1) YES — builds lack the target’s NW directional carve and midtone value range, so the whole frame stays flatter and less dimensional.
+2) NO — units are undersized blobs, but that local hit is smaller than the frame-wide light/value miss.
+3) Wrong carved lighting/value structure: harsh or flat shade steps instead of the target’s directional midtones that define form.
+4) Q — slightly crisper edge and highlight separation on ivory volumes than P, still far from the target.
+5) YES

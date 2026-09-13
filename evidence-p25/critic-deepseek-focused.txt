@@ -1,0 +1,3 @@
+1) CHOICE: B  
+2) WHY: In the x2 crops, the target’s cyan energy cells and muzzle sparks are visibly larger and hotter than the build’s, matching the lower 90+/170+ share and the critics’ “missing emissive punch,” so enlarging the emissive cores is the most direct gap closer.  
+3) RUNNER-UP: A — deepening the east-facing wall step would improve carved-shadow value separation, but it does not add hot emissive pixels and would further darken the already-too-dark lower-right quadrant.

@@ -1,0 +1,11 @@
+1) LIGHTING/CONTRAST: YES — the builds sit in one compressed midtone band with no deep occlusion blacks in the basalt cliffs and no hot specular cores, so terrain and machinery read flat where the target reads chiseled.
+
+2) UNIT READABILITY at normal zoom: NO — friendlies versus red raiders still separate by hue at 960x540; the flat luminance band beneath them is the larger failure, not silhouette legibility.
+
+3) SINGLE BIGGEST GAP: The lighting/contrast hierarchy — builds lack the target's deep shadowed cliff faces and bright emissive hot spots, collapsing the frame into a narrow value range.
+
+4) BUILD P vs BUILD Q: P — its core crop keeps saturated cyan beam, white weld spark, and orange muzzle pixels sitting hot against dark ground, while Q's equivalent cores read paler and inert.
+
+5) IDENTITY: YES.
+
+6) YAW STRIP: No step washes out or crushes to black, and the light stays world-locked — shadows and lit faces keep the same north-west/above direction across all four rotations.

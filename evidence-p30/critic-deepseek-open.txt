@@ -1,0 +1,4 @@
+1) SINGLE LARGEST GAP: The newest build removes the reference’s amethyst basalt cliff structures and floating-island depth, so the settlement reads as a flat purple plane.
+2) SECOND LARGEST GAP: It also loses the reference’s directional lighting and shadow contrast, leaving buildings, crystals, and units flatly lit with little material separation.
+3) Does the newest build read as a coherent, deliberately-lit game frame on its own terms? NO. It is coherent as a pixel-art blockout, but not deliberately lit because the flat shading kills depth and focus.
+4) Identity match (amethyst basalt, teal/ivory/gold settlement, red raiders): YES.

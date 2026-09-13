@@ -1,0 +1,7 @@
+image      evidence-p25/shot-main.png 960x540
+grid       median_run=2px  identical_h_pairs=0.9087  (1px grid)
+colours    32
+contrast   lum_sd=47.9  lum_mean=50.4
+lighting    coverage=42.694%  mean=88.706  sd=49.885  >=90=38.711%  >=170=7.221%  outside=0  -> PASS
+texture    transition_density=0.2256  #624779_max=1689  #3C3057_max=1070  -> PASS
+terrain    top_lum=88.4  cliff_upper=75.3  cliff_lower=62.6  lower/upper=0.831  slope=-0.177/row  (want <=0.85 and slope<0)  -> PASS

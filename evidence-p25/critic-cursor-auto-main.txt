@@ -1,0 +1,5 @@
+1) YES — builds read flat cardboard sprites; target has directional light, deep cast shadows, and full value range that sculpts form.
+2) NO — units blob and lose silhouette, but that is secondary to the whole-scene lighting collapse at 960x540.
+3) Lighting/contrast: missing directional light, hard shadows, and highlight–shadow separation so buildings/terrain lack volume.
+4) B — muzzle flashes, cells, and weld cores sit slightly hotter/whiter than A’s dull cyan/orange dots.
+5) YES

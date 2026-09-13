@@ -1,0 +1,5 @@
+1) YES — builds stay mid-tone and flat while the target uses hard NW directionals, bright ivorys, and near-black cliff/cast shadow to carve form.
+2) NO — units are blob-weak, but that is secondary to the missing value range that also kills their pop.
+3) Missing carved directional value structure (flat lighting/contrast vs target depth).
+4) Q — slightly stronger cliff shadow and brighter ivory faces than P, still far from target.
+5) YES

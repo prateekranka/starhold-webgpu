@@ -1,0 +1,7 @@
+image      evidence-p30/shot-main.png 960x540
+grid       median_run=2px  identical_h_pairs=0.9136  (1px grid)
+colours    32
+contrast   lum_sd=48.3  lum_mean=50.2
+lighting    coverage=42.644%  mean=88.397  sd=51.347  >=90=41.953%  >=170=7.626%  outside=0  -> PASS
+texture    transition_density=0.2157  #624779_max=1689  #3C3057_max=1070  -> PASS
+terrain    top_lum=87.6  cliff_upper=74.6  cliff_lower=62.0  lower/upper=0.831  slope=-0.159/row  (want <=0.85 and slope<0)  -> PASS

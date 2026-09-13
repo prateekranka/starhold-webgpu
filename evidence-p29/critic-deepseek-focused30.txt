@@ -1,0 +1,3 @@
+CHOICE: C
+WHY: The x2 rim crop shows terrace tops and risers collapsed into the same muddy mid-purple, so lifting the ledge/rib top bands one step restores the bright-top/dark-face carve, pushes those mid pixels past 90, and adds SD while leaving the already-matching mean (88.2 vs 88.0) essentially untouched.
+RISK: Thin brightened bands can read as a stuck-on halo/outline tracing every rim rather than carved form, and if the muddy 60-90 bulge is mostly building wall faces this won't recover the building value structure.

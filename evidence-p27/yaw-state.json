@@ -1,0 +1,55 @@
+{
+  "url": "http://127.0.0.1:35365",
+  "width": 960,
+  "height": 540,
+  "settle": 108,
+  "shots": [
+    "yaw-0.png",
+    "yaw-1.png",
+    "yaw-2.png",
+    "yaw-3.png"
+  ],
+  "states": [
+    {
+      "yawSteps": 0,
+      "frameStats": {
+        "drawCalls": 2,
+        "triangles": 115849,
+        "saturated": false
+      },
+      "selected": 7,
+      "entityCount": 55
+    },
+    {
+      "yawSteps": 1,
+      "frameStats": {
+        "drawCalls": 2,
+        "triangles": 115777,
+        "saturated": false
+      },
+      "selected": 7,
+      "entityCount": 52
+    },
+    {
+      "yawSteps": 2,
+      "frameStats": {
+        "drawCalls": 2,
+        "triangles": 116185,
+        "saturated": false
+      },
+      "selected": 7,
+      "entityCount": 57
+    },
+    {
+      "yawSteps": 3,
+      "frameStats": {
+        "drawCalls": 2,
+        "triangles": 116305,
+        "saturated": false
+      },
+      "selected": 7,
+      "entityCount": 57
+    }
+  ],
+  "errors": []
+}

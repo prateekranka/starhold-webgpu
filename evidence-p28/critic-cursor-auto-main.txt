@@ -1,0 +1,5 @@
+1) YES — builds sit in a crushed, muddy midtone range and lack the target’s hard NW highlight/shadow steps that carve terrain and buildings.
+2) NO — units are undersized blobs and hard to pick, but that is secondary to the whole-frame value collapse.
+3) Missing carved directional value: underlit flats instead of the target’s bright rims and deep face shadows.
+4) Q — slightly clearer cool roof/teal highlights than P; terrain carve still nearly the same.
+5) YES

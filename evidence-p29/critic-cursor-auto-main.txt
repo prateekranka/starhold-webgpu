@@ -1,0 +1,5 @@
+1) YES — builds stay mid-tone and muddy while the target’s NW light carves bright rims and deep faces across cliffs and roofs.
+2) NO — units are weak silhouettes/blobs, but that loss sits under the broader value/depth collapse.
+3) Missing directional carved value structure (bright NW tops, deep purple faces) that makes terrain and buildings read solid.
+4) Q — cliff rims pick up harder edge highlights so steps read a bit clearer than P’s flatter slabs.
+5) YES

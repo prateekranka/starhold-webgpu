@@ -1,0 +1,5 @@
+1) YES — builds sit in flat dark midtones while the target runs NW sun, deep SE shade, and near-white ivory faces.
+2) NO — units are mushy, but that is downstream of the same collapsed value range that flattens buildings and ground.
+3) Value range / directional lighting: target uses full black→white-hot punch; P/Q stay muddy low-key.
+4) Q — flashes, cells, and weld cores are a notch hotter/more saturated than P’s dim orange dots.
+5) YES

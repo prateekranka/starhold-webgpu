@@ -1,0 +1,11 @@
+1) LIGHTING/CONTRAST: YES — the target holds a full range (black shadow, bright lit faces, orange/teal light spill, cast shadows) while P and Q sit in a narrow flat mid-purple band.
+
+2) UNIT READABILITY: NO — units fail because they inherit the same flat value structure and lack the rim/outline separation the target gives them; it is a symptom of the lighting gap, not an independent one.
+
+3) SINGLE BIGGEST GAP: Missing deep occlusion shadow and high-dynamic-range lighting, so cliffs, walls and units read flat with no carved depth.
+
+4) P vs Q: Q — slightly deeper crevice darks and clearer lit-face vs shaded-side separation give it marginally better value structure and depth.
+
+5) IDENTITY: YES — amethyst basalt plateau, teal/ivory/gold settlement blocks and red raider units are all still present and legible.
+
+6) YAW STRIP: No step is washed out or black; values stay even across all four and the shaded sides shift consistently with the world orientation, so the light reads as world-locked, not camera-locked.

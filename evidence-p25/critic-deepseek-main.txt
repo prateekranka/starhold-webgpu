@@ -1,0 +1,5 @@
+1) LIGHTING/CONTRAST: YES — the builds render the terrain as one flat mid-tone purple with no dark cliff faces, no cast/contact shadows, and no emissive highlights, so every layer collapses together while the target separates black basalt cliffs from lit ground and glowing structures.
+2) UNIT READABILITY: NO — team colours and silhouettes still register at full-frame; the units only fail to pop because of the flat global lighting, so it is a symptom rather than the distinct gap.
+3) SINGLE BIGGEST GAP: Absent lighting model — no directional shading, ambient occlusion, or emissive core glow, so terrain plateau edges, building volumes, and VFX all read as flat cut-outs versus the target's carved, lamp-lit scene.
+4) BUILD A vs BUILD B: Equal — both drop the target's bright-core punch (blue beam, orange muzzle flash, white weld spark, lit energy cells) to the same dull mid-tone, and the two panels are pixel-indistinguishable in the core and defense crops.
+5) IDENTITY: YES — amethyst basalt terrain, teal/ivory/gold settlement architecture, and red raider creatures are all retained.
