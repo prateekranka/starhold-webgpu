@@ -1,13 +1,66 @@
 # Starhold — progress
 
 Browser graphics demo: isometric pixel-art space colony, deterministic Rust/WASM
-simulation, and raw WebGPU renderer.
+simulation, and a raw WebGPU renderer.
 
-**Two playable civilizations are defined. Pass 24 was rejected and reverted.
-Pass 25 is specified for the next Plus window. The phone URL remains on verified
-pass 15.**
+**Lighting loop parked at pass 30 (`45212d0`). Every pass 25-30 passed all
+objective gates; the independent visual gate is still open — each fresh critic
+round preferred the newest build but kept naming carved lighting/depth as the
+single largest gap. The Tailnet phone release remains verified pass 15.**
 
-## Verified state — mobile M1 + pass 15
+## Pass 25-30 lighting loop — 2026-09-13 Plus window
+
+Six isolated renderer-only passes, each a fresh GPT-6 Astra Medium worker
+(standard mode, `fast_mode=false`, `~/.codex-linux`), each committed with its own
+evidence directory. No pass was reverted: both critics preferred the newest
+build every round.
+
+| Pass | Commit | One change | Objective result |
+|---|---|---|---|
+| 25 | `c23b0b6` | emissive cores `(w+2,h+2)` | 63/63; all lighting gates |
+| 26 | `8a4e45f` | emissive cores `(w+4,h+4)` | 63/63; highlights 7.24% |
+| 27 | `044fcf4` | lower cliff bands one step deeper | 63/63; SD 51.3; cliff ratio 0.810 |
+| 28 | `b41b3ef` | east wall step 2→3 | 63/63; mean 86.38 (floor 86.0) |
+| 29 | `f6dd663` | cliff top rim +1 | 63/63; midtones 41.96% |
+| 30 | `45212d0` | large building tops up to +2 | 63/63; mean 88.40; SD 51.35; highlights 7.63% |
+
+Every pass: 8/8 desktop, 18/18 phone (844x390 dsf 2), 18/18 tablet (1024x768
+dsf 2), 19/19 portrait (390x844→844x390 dsf 2); determinism
+`{"n":55,"alloy":247,"charge":199,"hash":"20b89f84"}`; >=59 fps with p95 <=20 ms;
+exact 32-colour palette, 0 outside; texture and cliff gates green; no console
+errors; no instance saturation; four-yaw fixed-light review clean. Evidence:
+`evidence-p25/` … `evidence-p30/`.
+
+### Canonical frame, pass 30 vs the dream target (960x540)
+
+| Metric | Build | Target |
+|---|---|---|
+| non-void coverage | 42.6% | fills the frame |
+| luminance mean | 88.40 | 88.00 |
+| luminance SD | 51.35 | 53.78 |
+| share >= 90 | 41.95% | 49.53% |
+| share >= 170 | 7.63% | 7.90% |
+| share >= 215 | ~3.6% | 3.10% |
+
+### Why the visual gate is still open (measured, not opinion)
+
+Both independent critics (DeepSeek vision API; Cursor Auto after the named-model
+plan block) preferred the newest build in every round yet kept naming carved
+value structure — deep occlusion, bright rims, material separation — as the
+single largest gap. The residual is structural and locked by contract:
+
+1. **Composition:** the build's world covers 42.6% of the judged frame; the
+   target fills 100%. Map look, camera, and bounds are user-locked.
+2. **Ground palette step gap:** the authored violet ground uses luma 53/80/116.
+   Its mid mass sits just below the luminance-90 line and no intermediate
+   palette entry exists, so mid-tone share cannot rise without jumping ~20% of
+   the frame to 116 — which would flatten the terrain this pass protects.
+3. **No true black on solids:** palette index 0 is the void colour and is banned
+   on solid geometry, so the target's 3% sub-25 black clusters cannot be built.
+4. **Raster policy:** the target is a smooth-gradient dream render (165k
+   colours); the build is locked to 32 flat colours, 1 px edges, no AA/bloom.
+
+## Verified state — mobile M1 + pass 15 (release still live)
 
 | Piece | Commit | Result |
 |---|---|---|
@@ -33,9 +86,6 @@ Final-build verification (same build as the live URL):
   the palette**. The portrait rotate notice is DOM text and is palette-exempt.
 - Grid: 1 px grid (`identical_h_pairs=0.9102`). Canvas backing store 960x540 at
   every viewport; nearest-neighbour upscale only.
-- Pass-15 gates: texture density `0.2222` (0.20-0.28 OK), largest `#624779`
-  region `2,188 px` (<8,000), largest `#3C3057` region `1,101 px` (<6,000),
-  cliff ramp `lower/upper=0.848` (<=0.85 OK), slope `-0.165/row` (negative OK).
 - Instance budget: 9,642 instances of 16,000, `saturated=false`.
 - Evidence: `evidence-mobile/` (mobile pass) and `evidence-p15/` (pass 15 +
   phone/tablet/portrait on the final build).
@@ -78,7 +128,7 @@ Final-build verification (same build as the live URL):
 
 `docs/CIVILIZATIONS.md` is now binding. It preserves the Vesper March map and
 current Dawnward art while standardizing eight buildings and seven units for each
-playable civilization.
+playable civilization. Nothing in the pass 25-30 lighting loop changed this.
 
 - **Dawnward start:** Charter Keep, Freight Court, Heliowell; 6 Riveters,
   1 Pack Beetle, 2 Ward Sentinels, 1 Harbor Skiff.
@@ -92,62 +142,36 @@ playable civilization.
   units, complete economy/combat chains, deterministic starts, and distinct
   normal-zoom silhouettes.
 
-## Active next piece — pass 25 enlarge hard emissive cores
+## Active next piece — lighting L1 (open; loop parked at pass 30)
 
-Binding spec: `docs/LIGHTING_CONTRAST_SPEC.md`. Worker brief:
-`tasks/brief-pass25.md`.
-
-Pass 24 (`a222ccd`) passed objective gates but both independent critics returned
-REVERT. Its darker halo did not improve emissive punch. Evidence is in
-`evidence-p24/`; commit `570d70a` restores the pass-23 renderer.
-
-Pass 25 changes one expression in `emissive()`: the existing opaque core grows
-from `(w,h)` to `(w+2,h+2)` with its exact colour and one instance. This adds one
-bright raster pixel on each side. No halo, alpha, new emitter, geometry, terrain,
-shadow, camera, simulation, control, or palette change is permitted.
-
-The Plus primary window is 99% used and resets in about 143 minutes as of
-2026-09-13 03:02 IST. Do not launch another coding worker in this window. Job
-`9682bd950b42` is scheduled once at 2026-09-13 05:37:14 IST, nine minutes after
-the reported reset, using `deepseek-v4-flash` at max reasoning. It must use Plus
-only and stop on any quota error.
-
-The live Tailnet route no longer reads mutable repo `dist/`. It proxies port 5200,
-which serves the frozen pass-15 artifact at
-`/home/bobbyranka/.starhold-live/pass15`. The exact live JavaScript and WASM
-hashes match that directory, WASM is `application/wasm`, and a fresh phone run
-through the route passed 18/18 gates.
-
-## Remaining gap (name it exactly)
-
-The shipping functional, mobile, palette, texture, cliff, and performance gates pass,
-but the new lighting gate and a fresh blind critic both **FAIL**. Against
-`.dream-loop/target.png`, the settlement reads flat and uniformly top-lit, the
-amethyst terrain lacks value hierarchy, and units are hard to read at 960x540.
-The next wave is the locked **lighting and contrast pass** — world-fixed
-north-west light, darker south-east faces, clearer building hierarchy, and
-stronger unit-scale contrast — not another detail pass.
+All objective work the locked lighting contract allows has landed. The visual
+gate did not flip. The renderer head is pass 30 (`45212d0`); the phone release
+is frozen pass 15. The next attempts need a contract change and are recorded in
+`docs/LIGHTING_CONTRAST_SPEC.md` §2.15.
 
 ## Resume checklist
 
-1. Confirm clean tree and Plus quota: `git status --short`; `python3 tasks/quota-check.py`.
-2. Launch one fresh worker only after the Plus reset:
-   `bash tasks/astra-run.sh coder tasks/brief-pass25.md tasks/logs/pass25.log`.
-3. Worker uses GPT-6 Astra Medium, standard mode, `fast_mode=false`, and edits only
-   `src/renderer.ts`.
-4. Orchestrator runs `npm run build`, then desktop capture into `evidence-p25/`.
-5. Orchestrator requires the complete lighting gate: mean 86–94, SD >=44,
-   midtones >=38%, highlights 5.0–8.5%, plus all preservation metrics.
-6. Only after desktop metrics pass, run all mobile profiles, four-yaw visual checks,
-   and a fresh target-vs-build blind critic.
-7. On a loss, keep the frozen pass-15 phone release and name one root gap. Never
-   use the Pro account. Do not start civilization implementation until lighting
-   L1 is judged.
+1. Confirm clean tree and Plus quota: `git status --short`;
+   `python3 tasks/quota-check.py`.
+2. Do not relaunch a blind renderer loop: six rounds (25-30) each passed every
+   objective gate and each was preferred by both critics, but the headline gap
+   never moved. The residual needs a change outside the locked set.
+3. Candidate next steps, smallest first: (a) add one palette entry between
+   `#624779` and `#8C69A0` and rebalance broad ground one step (map-look lock
+   change, needs bobby); (b) bounded terrain drama / composition work (camera or
+   map change, locked); (c) accept the current look as the shipped bar.
+4. Release path stays frozen until a fresh independent critic stops naming
+   lighting/contrast or unit readability as the single largest gap.
+5. Never deploy to Cloudflare; never use the Pro account; one worker per pass,
+   orchestrator validation only.
 
 ## Agent settings
 
 - Coding worker: GPT-6 Astra, reasoning `medium`, `fast_mode=false`.
 - Astra CLI: `~/.local/codex-154/node_modules/.bin/codex`, home `~/.codex-linux`.
 - Vision critic: `tasks/vision-critic.py` (raw DeepSeek; `VISION_MAX_TOKENS` for
-  long answers). Cursor named models are plan-gated and unavailable.
+  long answers). Cursor named models stay plan-blocked
+  (`ActionRequiredError: Named models unavailable Free plans can only use Auto.`);
+  Cursor Auto is the second opinion.
 - WebGPU capture: Playwright headless shell through Intel gen-9 Vulkan/ANGLE.
+- Four-yaw review: `scripts/yaw-capture.mjs` (one state, four composited shots).
