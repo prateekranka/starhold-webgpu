@@ -40,9 +40,9 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  // Legacy stone shades through ink; normal structural stone gets a floor below.
  let family=select(select(select(select(select(0.,10.,pigment>=10.),15.,pigment>=15.),19.,pigment>=19.),23.,pigment>=23.),28.,pigment>=28.);
  // World face IDs: top, north, south, west, east, underside. West receives
- // the key; north loses one step, south is cross-light, east loses two.
+ // the key; north loses one step, south is cross-light, east loses three steps.
  // Camera yaw changes visibility only, never this hard-light table.
- let faceSteps=array<f32,6>(0.,1.,1.,0.,2.,32.);
+ let faceSteps=array<f32,6>(0.,1.,1.,0.,3.,32.);
  let steps=faceSteps[u32(shade)];
  // Endpoints belong to small authored glints/cores. Broad slabs retain the
  // penultimate family entry; no RGB multiplication or camera-facing bias.
