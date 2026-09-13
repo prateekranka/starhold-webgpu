@@ -72,10 +72,10 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
   let endpoint=select(select(select(select(9.,14.,pigment>=10.),18.,pigment>=15.),22.,pigment>=19.),27.,pigment>=23.);
   shaded=min(endpoint,shaded+1.);
  }
- // Larger non-actor top planes gain one step toward their material endpoint.
+ // Larger non-actor top planes gain up to two steps toward their material endpoint.
  if combat<17. && screen==0. && pigment>=4. && pigment<28. && shade==0. && max(size.x,max(size.y,size.z)) > .4 {
   let endpoint=select(select(select(select(9.,14.,pigment>=10.),18.,pigment>=15.),22.,pigment>=19.),27.,pigment>=23.);
-  shaded=min(endpoint,shaded+1.);
+  shaded=min(endpoint,shaded+2.);
  }
  o.color=palette[u32(shaded)];
  // Terrain caps, ledges and ribs share the parent column's height bands.
