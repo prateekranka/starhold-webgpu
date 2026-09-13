@@ -240,11 +240,11 @@ export class Renderer {
  }
  ground(x:number,y:number) {return this.terrain[Math.max(0,Math.min(31,Math.floor(y)))*32+Math.max(0,Math.min(31,Math.floor(x)))];}
  private emissive(x:number,y:number,z:number,color:number,owner=-1,w=1,h=2) {
-  // Each opaque core gets a hard one-pixel expansion on every side.
+  // Each opaque core gets a hard two-pixel expansion on every side.
   // HUD glyphs retain their existing size and palette; broad world faces use
   // the next darker entry. Fixed storage and no extra draw or blend pass.
   if(this.emissiveCount>=512)return;
-  this.emissiveCount++;this.box(x,y,z,w+2,h+2,0,color,owner,-4);
+  this.emissiveCount++;this.box(x,y,z,w+4,h+4,0,color,owner,-4);
  }
  private shadow(x:number,y:number,w:number,d:number,h:number) {
   const z=this.ground(x,y);
