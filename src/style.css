@@ -1,28 +1,85 @@
-:root { --safe-t:env(safe-area-inset-top, 0px); --safe-r:env(safe-area-inset-right, 0px); --safe-b:env(safe-area-inset-bottom, 0px); --safe-l:env(safe-area-inset-left, 0px); color-scheme:dark; background:#10121C; color:#F3F0D7; }
+:root { --safe-t:env(safe-area-inset-top, 0px); --safe-r:env(safe-area-inset-right, 0px); --safe-b:env(safe-area-inset-bottom, 0px); --safe-l:env(safe-area-inset-left, 0px); --hud-h:64px; color-scheme:dark; background:#10121C; color:#F3F0D7; }
 * { box-sizing:border-box; }
 html, body { height:100%; }
 html { overflow:hidden; overscroll-behavior:none; }
+/* The bar reserves its own strip at the bottom, so the canvas always fits above
+   it and the page never scrolls (docs/MATCH_SPEC.md §7-§8). */
 body { margin:0; overflow:hidden; overscroll-behavior:none; width:100%; height:100vh; height:100dvh;
- display:grid; place-items:center; padding:var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l);
+ display:grid; place-items:center; padding:var(--safe-t) var(--safe-r) calc(var(--safe-b) + var(--hud-h)) var(--safe-l);
  -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none;
  user-select:none; -webkit-user-select:none; touch-action:manipulation; }
 #viewport { position:relative; width:960px; height:540px; }
 canvas { display:block; width:100%; height:100%; image-rendering:pixelated; }
 #world { touch-action:none; }
 nav { position:absolute; inset:0; pointer-events:none; }
-button { position:absolute; top:90.37037%; width:4.583333%; height:7.407407%; border:0; background:transparent; cursor:pointer; pointer-events:auto; padding:0; }
-button:focus-visible { outline:2px solid #F1CE72; outline-offset:0; }
+#viewport nav button { position:absolute; top:90.37037%; width:4.583333%; height:7.407407%; border:0; background:transparent; cursor:pointer; pointer-events:auto; padding:0; }
+#viewport nav button:focus-visible { outline:2px solid #F1CE72; outline-offset:0; }
 #rotate-left { left:77.083333%; } #rotate-right { left:82.291667%; } #zoom-out { left:87.5%; } #zoom-in { left:92.708333%; }
 #selection { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
-#error { position:fixed; inset:20%; padding:24px; background:#1B1E30; border:2px solid #BC4A45; font:16px monospace; }
+#error { position:fixed; inset:20%; padding:24px; z-index:20; background:#1B1E30; border:2px solid #BC4A45; font:16px monospace; }
 [hidden] { display:none !important; }
-body.touch nav { position:fixed; inset:auto; right:calc(var(--safe-r) + 10px); bottom:calc(var(--safe-b) + 10px);
+body.touch nav { position:fixed; inset:auto;
+ right:calc(var(--safe-r) + 10px); bottom:calc(var(--safe-b) + var(--hud-h) + 10px);
  display:flex; gap:8px; pointer-events:none; }
-body.touch button { position:static; width:48px; height:48px; min-width:44px; min-height:44px;
+body.touch #viewport nav button { position:static; width:48px; height:48px; min-width:44px; min-height:44px;
  border:2px solid #747C91; background:#1B1E30; padding:0; display:grid; place-items:center; pointer-events:auto; }
-body.touch button:focus-visible { outline-color:#F3F0D7; }
-body.touch button canvas.glyph { display:block; width:36px; height:36px; image-rendering:pixelated; }
-body.mouse canvas.glyph { display:none; }
-#rotate-notice { display:none; position:fixed; inset:0; z-index:10; background:#10121C; color:#F3F0D7;
- font:18px/1.6 monospace; letter-spacing:2px; align-items:center; justify-content:center; text-align:center; }
-@media (orientation:portrait) { body.touch #rotate-notice { display:flex; } }
+body.touch #viewport nav button:focus-visible { outline-color:#F3F0D7; }
+body.touch #viewport button canvas.glyph { display:block; width:36px; height:36px; image-rendering:pixelated; }
+body.mouse #viewport canvas.glyph { display:none; }
+
+/* --- HUD bar (wave 2). DOM only; palette-only; every target >=44x44 CSS px --- */
+#hud-bar { position:fixed; left:var(--safe-l); right:var(--safe-r); bottom:var(--safe-b);
+ height:var(--hud-h); z-index:5; overflow:hidden;
+ display:flex; flex-direction:row; align-items:stretch; gap:8px; padding:8px;
+ background:#1B1E30; border-top:2px solid #747C91; color:#F3F0D7;
+ font:10px/1.15 monospace; letter-spacing:.06em; text-transform:uppercase; }
+#hud-bar button { position:static; display:flex; flex-direction:column; align-items:center; justify-content:center;
+ flex:0 0 auto; width:auto; height:auto; min-width:44px; min-height:44px; top:auto; left:auto;
+ border:2px solid #747C91; background:#2B2D46; color:#F3F0D7; padding:0 6px; margin:0;
+ font:inherit; letter-spacing:inherit; text-transform:inherit; cursor:pointer; pointer-events:auto;
+ touch-action:manipulation; overflow:hidden; }
+#hud-bar button .n { font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+#hud-bar button .c { font-size:9px; color:#98A4AE; white-space:nowrap; }
+#hud-bar button:disabled { border-color:#41435E; background:#1B1E30; color:#565B73; cursor:default; }
+#hud-bar button:disabled .c { color:#565B73; }
+#hud-bar button:focus-visible { outline:2px solid #F1CE72; outline-offset:0; }
+#hud-bar button[data-action="match"] { border-color:#B7C8C6; }
+#hud-bar button[data-action="advance"] { border-color:#F1CE72; }
+#hud-bar button[data-action="train"] { border-color:#4FB7AA; }
+#hud-bar button[data-action="build"] { border-color:#D5A64B; }
+#hud-bar button[data-action="reset"] { border-color:#98A4AE; }
+#hud-bar button[data-page] { flex:0 0 44px; min-width:44px; padding:0; font-size:14px; letter-spacing:0; }
+#hud-resources { display:flex; align-items:center; gap:10px; min-width:0; flex:0 0 auto; }
+#hud-resources .m { display:flex; align-items:baseline; gap:4px; font-size:10px; color:#98A4AE; white-space:nowrap; }
+#hud-resources .m .v { color:#F3F0D7; }
+#hud-alloy .v { color:#F1CE72; }
+#hud-charge .v { color:#58BED4; }
+#hud-pop .v { color:#8BD7BE; }
+#hud-middle { display:flex; align-items:center; gap:8px; min-width:0; flex:1 1 auto; }
+#hud-skirmish { display:flex; align-items:center; gap:6px; min-width:0; }
+#hud-skirmish .l { font-size:9px; color:#98A4AE; }
+#hud-faction { font-size:9px; color:#B7C8C6; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+#hud-age { display:flex; align-items:center; gap:6px; min-width:0; }
+#hud-age-name { font-size:11px; color:#F1CE72; white-space:nowrap; }
+#hud-age-progress { flex:0 1 56px; width:56px; min-width:40px; height:8px; border:2px solid #747C91; background:#10121C; }
+#hud-age-fill { display:block; height:4px; width:0%; background:#F1CE72; }
+#hud-age-cost { font-size:9px; color:#98A4AE; white-space:nowrap; }
+#hud-actions { display:flex; align-items:center; gap:6px; min-width:0; flex:1 1 auto; justify-content:flex-end; }
+#hud-action-list { display:flex; align-items:center; gap:6px; min-width:0; flex:1 1 auto; justify-content:flex-end; }
+#hud-action-list button { flex:1 1 46px; min-width:46px; max-width:120px; }
+#hud-status { font-size:9px; color:#98A4AE; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+/* Inactive clusters keep their boxes (so every button stays >=44x44 and the bar
+   height never moves) but drop out of sight, parked over the read-only resource
+   row where they cannot overlap another button. */
+#hud-skirmish.off, #hud-age.off, #hud-reset.off { position:absolute; left:8px; top:8px; visibility:hidden; pointer-events:none; }
+#hud-faction.off, #hud-age-progress.off, #hud-age-cost.off, #hud-status.off, #hud-prev.off, #hud-next.off { visibility:hidden; }
+
+/* Portrait: the bar becomes three rows so every cluster keeps its full size and
+   the canvas still fits the width above it (docs/MATCH_SPEC.md §8). */
+@media (orientation:portrait) {
+ :root { --hud-h:160px; }
+ #hud-bar { flex-direction:column; align-items:stretch; gap:6px; padding:6px; }
+ #hud-resources { flex:1 1 0; min-height:44px; gap:12px; }
+ #hud-middle { flex:1 1 0; min-height:44px; }
+ #hud-actions { flex:1 1 0; min-height:44px; }
+}

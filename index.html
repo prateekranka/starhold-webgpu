@@ -1,3 +1,28 @@
 <!doctype html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"><meta name="theme-color" content="#10121C"><link rel="icon" href="data:,"><title>Starhold — The Vesper March</title></head>
-<body><main id="viewport"><canvas id="world" width="960" height="540" aria-label="Starhold colony. Click a building or unit to inspect it."></canvas><nav aria-label="Camera controls"><button id="rotate-left" aria-label="Rotate left 90 degrees" title="Rotate left"><canvas class="glyph" width="12" height="12" aria-hidden="true"></canvas></button><button id="rotate-right" aria-label="Rotate right 90 degrees" title="Rotate right"><canvas class="glyph" width="12" height="12" aria-hidden="true"></canvas></button><button id="zoom-out" aria-label="Zoom out" title="Zoom out"><canvas class="glyph" width="12" height="12" aria-hidden="true"></canvas></button><button id="zoom-in" aria-label="Zoom in" title="Zoom in"><canvas class="glyph" width="12" height="12" aria-hidden="true"></canvas></button></nav><output id="selection" aria-live="polite" hidden></output></main><div id="rotate-notice" role="status" aria-label="Rotate device to landscape"><p>ROTATE TO LANDSCAPE</p></div><div id="error" role="alert" hidden></div><script type="module" src="/src/main.ts"></script></body></html>
+<body><main id="viewport"><canvas id="world" width="960" height="540" aria-label="Starhold colony. Click a building or unit to inspect it."></canvas><nav aria-label="Camera controls"><button id="rotate-left" aria-label="Rotate left 90 degrees" title="Rotate left"><canvas class="glyph" width="12" height="12" aria-hidden="true"></canvas></button><button id="rotate-right" aria-label="Rotate right 90 degrees" title="Rotate right"><canvas class="glyph" width="12" height="12" aria-hidden="true"></canvas></button><button id="zoom-out" aria-label="Zoom out" title="Zoom out"><canvas class="glyph" width="12" height="12" aria-hidden="true"></canvas></button><button id="zoom-in" aria-label="Zoom in" title="Zoom in"><canvas class="glyph" width="12" height="12" aria-hidden="true"></canvas></button></nav><output id="selection" aria-live="polite" hidden></output></main>
+<div id="hud-bar" role="region" aria-label="Starhold command bar">
+<div id="hud-resources" role="group" aria-label="Resources">
+<span class="m" id="hud-alloy">ALLOY <span class="v" id="hud-alloy-value">0</span></span>
+<span class="m" id="hud-charge">CHARGE <span class="v" id="hud-charge-value">0</span></span>
+<span class="m" id="hud-pop">POP <span class="v" id="hud-pop-value">0/0</span></span>
+</div>
+<div id="hud-middle" role="group" aria-label="Match status">
+<div id="hud-skirmish"><span class="l">SKIRMISH</span><button id="hud-start-0" type="button" data-action="match" data-kind="0" aria-label="Start a skirmish as Dawnward Compact" title="Start a skirmish as Dawnward Compact"><span class="n">DAWNWARD</span></button><button id="hud-start-1" type="button" data-action="match" data-kind="1" aria-label="Start a skirmish as Cinderwake Reavers" title="Start a skirmish as Cinderwake Reavers"><span class="n">CINDERWAKE</span></button></div>
+<span id="hud-faction" class="off">—</span>
+<div id="hud-age" class="off" role="group" aria-label="Age">
+<span id="hud-age-name">FOUNDING</span>
+<div id="hud-age-progress" class="off" role="progressbar" aria-label="Age advance progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="hud-age-fill"></i></div>
+<span id="hud-age-cost" class="off">—</span>
+<button id="hud-advance" type="button" data-action="advance" data-kind="0" aria-label="Advance to the next age" title="Advance to the next age" disabled><span class="n">ADVANCE</span></button>
+</div>
+<button id="hud-reset" type="button" class="off" data-action="reset" data-kind="0" aria-label="Reset to the showcase scenario" title="Reset to the showcase scenario" disabled><span class="n">RESET</span></button>
+</div>
+<div id="hud-actions" role="toolbar" aria-label="Context actions">
+<button id="hud-prev" type="button" class="off" data-page="-1" aria-label="Previous actions" title="Previous actions" disabled>◀</button>
+<div id="hud-action-list"></div>
+<span id="hud-status">MATCH UNAVAILABLE</span>
+<button id="hud-next" type="button" class="off" data-page="1" aria-label="Next actions" title="Next actions" disabled>▶</button>
+</div>
+</div>
+<div id="error" role="alert" hidden></div><script type="module" src="/src/main.ts"></script></body></html>
