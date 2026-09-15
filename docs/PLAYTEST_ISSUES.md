@@ -121,6 +121,34 @@ Two things worth keeping from it:
    not build a Fang Yard at all. The same class of mistake produced the earlier
    action-bar entry (A4) in this file, which was also withdrawn on measurement.
 
+### Placement round — played on the live build, 0 findings
+
+A scripted touch playtest against the tailnet URL (844x390, dsf 2, real touch),
+driving the interface the way a player does: select a worker, tap a build card,
+drag the ghost with a finger, tap the world to commit, press Escape to back out,
+then let the match run 480 s.
+
+```
+DAWNWARD:   mode entered kind 11, ghost followed the drag (202,349 -> 208,335),
+            tap on a valid tile spent 24a and left the mode
+CINDERWAKE: mode entered kind 61, ghost followed the drag,
+            tap spent 22a and left the mode
+after 480s: alloy ~1100, charge 524, entities 68 -> 82, age 0
+findings: 0   page errors: 0
+```
+
+Both costs match the bar labels exactly (Freight Court 24a, Scrap Maw 22a), so the
+placement path spends what the old automatic path spent. No ghost survived its
+action, no entry charged anything, no actor stood below ground, and Escape left the
+mode unpaid.
+
+One observation for the balance work (A6): the player economy reaches roughly 1,100
+alloy after eight minutes with an idle player, where an earlier round measured a few
+hundred. The composition pass gave both bases four ore clusters where they had one,
+and the harvest is correspondingly richer. That is a deliberate consequence of the
+composition, but the raid difficulty was never retuned against it — if raids are
+meant to pressure a player, they now pressure a much wealthier one.
+
 ## Open — needs design or deeper work
 
 ### A1 — a defeated player is never told the match ended — needs design
