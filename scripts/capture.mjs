@@ -311,7 +311,7 @@ const AGE_NAMES = ['Founding', 'March', 'Starhold'];
 const AGE_COSTS = [[60, 30], [100, 60]];
 // Expansive-world and minimap gates (LARGEMAP_SPEC §7).
 const WORLD_GATE_NAMES = [
-  'world-scale', 'world-terrain', 'camera-pan', 'lod-budget', 'cancel-order',
+  'world-scale', 'world-terrain', 'camera-pan', 'lod-budget', 'cancel-order', 'worker-tap',
   'minimap-present', 'minimap-move', 'minimap-close', 'minimap-reopen', 'minimap-jump',
 ];
 const MATCH_GATE_NAMES = [
@@ -1244,6 +1244,31 @@ function gate(name, pass, detail) {
         return {
           pass: moved >= 40 && !!nearTarget,
           detail: `camera ${before ? `${before.x.toFixed(0)},${before.y.toFixed(0)}` : '-'} -> ${after ? `${after.x.toFixed(0)},${after.y.toFixed(0)}` : '-'} moved=${moved.toFixed(0)} tiles`,
+        };
+      });
+
+      // worker-tap: after the settlement has been gathering for a while, one tap
+      // on the point the app reports for a worker must still select a worker. A
+      // worker standing inside a building's silhouette cannot be tapped, because
+      // that building's art is nearer to the camera along the pick ray; this gate
+      // exists because that defect shipped twice and only showed up as a flaky
+      // build-site failure.
+      await guarded('worker-tap', async () => {
+        await freshMatch(0);
+        await page.evaluate(() => window.__APP.fastForward(75));
+        await page.waitForTimeout(400);
+        const point = await page.evaluate(() => {
+          const probe = window.__APP.entityScreen;
+          return typeof probe === 'function' ? probe(20, 0) : null;
+        });
+        if (!point) return { pass: false, detail: 'entityScreen(20,0) returned null' };
+        await clickPoint(page, point.x, point.y);
+        await page.waitForTimeout(250);
+        const g = await state(page);
+        const workers = await page.evaluate(() => window.__APP.entityProbe().filter((e) => e.kind === 20).length);
+        return {
+          pass: g.selectedKind === 20,
+          detail: `tap @${point.x.toFixed(0)},${point.y.toFixed(0)} selectedKind=${g.selectedKind} (workers alive=${workers})`,
         };
       });
 
