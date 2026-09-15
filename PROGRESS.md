@@ -152,6 +152,22 @@ Final-build verification (same build as the live URL):
 4. Bottom-right: rotate left, rotate right, zoom out, zoom in (48x48 CSS px each).
 5. Pinch with two fingers to zoom: one level per pinch step, never selects.
 
+### Serving chain (durable)
+
+```
+/home/bobbyranka/.starhold-live/current -> pass15   (symlink; retarget to promote)
+python3 -m http.server 5200 --bind 127.0.0.1 --directory ~/.starhold-live/current
+tailscale serve  https://bobby.taile5de76.ts.net:8446  ->  http://127.0.0.1:5200
+```
+
+- Keeper: `~/.hermes/scripts/starhold-keep-serve.sh`, registered as the Hermes
+  cron job `starhold-keep-serve` (every 5 minutes, `no_agent`, silent). It starts
+  the static server only when port 5200 is closed, so the phone build recovers
+  without a session. The server process died once between sessions; this job
+  prevents a repeat.
+- Promotion is a symlink retarget plus a cache-busting reload on the device.
+  Never point `current` at an unverified build.
+
 ## Civilization lock — first two
 
 `docs/CIVILIZATIONS.md` is now binding. It preserves the Vesper March map and
