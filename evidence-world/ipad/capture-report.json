@@ -3,12 +3,12 @@
     {
       "name": "boots-ready",
       "pass": true,
-      "detail": "entities=54"
+      "detail": "entities=55"
     },
     {
       "name": "instance-budget",
       "pass": true,
-      "detail": "triangles=116221 saturated=false"
+      "detail": "triangles=116245 saturated=false"
     },
     {
       "name": "portrait-playable",
@@ -88,7 +88,7 @@
     {
       "name": "fps>=59-vsync-locked",
       "pass": true,
-      "detail": "fps=60.3 p95=16.9ms max=17.2ms"
+      "detail": "fps=60.3 p95=16.9ms max=17.1ms"
     },
     {
       "name": "hud-skirmish-entry",
@@ -113,7 +113,7 @@
     {
       "name": "hud-age",
       "pass": true,
-      "detail": "label=\"FOUNDING 60A 30C ADVANCE\" state.age=0(Founding) otherAges=none ageProgress=1 progress=hidden ratio=0.93"
+      "detail": "label=\"FOUNDING 60A 30C ADVANCE\" state.age=0(Founding) otherAges=none ageProgress=1 progress=hidden ratio=0.91"
     },
     {
       "name": "world-scale",
@@ -166,9 +166,14 @@
       "detail": "tap @388,174 selectedKind=20 (workers alive=6)"
     },
     {
+      "name": "bar-hit-test",
+      "pass": true,
+      "detail": "visible controls=9 mis-hits=0 advanceCentre->hud-advance"
+    },
+    {
       "name": "cancel-order",
       "pass": true,
-      "detail": "FREIGHT COURT24A site k11 refund=24a alloy 56->80 control=46x44 siteGone=true"
+      "detail": "FREIGHT COURT24A site k11 refund=24a alloy 56->80 control=76x44 siteGone=true"
     },
     {
       "name": "age-advance",
@@ -227,10 +232,10 @@
   "fps": {
     "fps": 60.25,
     "frames": 241,
-    "mean_ms": 16.638174273661065,
-    "p50_ms": 16.699999809265137,
+    "mean_ms": 16.61410788381743,
+    "p50_ms": 16.700000047683716,
     "p95_ms": 16.90000009536743,
-    "max_ms": 17.199999809265137
+    "max_ms": 17.100000143051147
   },
   "matchErrors": []
 }

@@ -3,12 +3,12 @@
     {
       "name": "boots-ready",
       "pass": true,
-      "detail": "entities=54"
+      "detail": "entities=55"
     },
     {
       "name": "instance-budget",
       "pass": true,
-      "detail": "triangles=116233 saturated=false"
+      "detail": "triangles=116281 saturated=false"
     },
     {
       "name": "touch-layout",
@@ -78,7 +78,7 @@
     {
       "name": "fps>=59-vsync-locked",
       "pass": true,
-      "detail": "fps=60.3 p95=16.9ms max=17.6ms"
+      "detail": "fps=60.3 p95=16.9ms max=17.3ms"
     },
     {
       "name": "hud-skirmish-entry",
@@ -156,9 +156,14 @@
       "detail": "tap @456,370 selectedKind=20 (workers alive=6)"
     },
     {
+      "name": "bar-hit-test",
+      "pass": true,
+      "detail": "visible controls=9 mis-hits=0 advanceCentre->hud-advance"
+    },
+    {
       "name": "cancel-order",
       "pass": true,
-      "detail": "FREIGHT COURT24A site k11 refund=24a alloy 56->80 control=101x44 siteGone=true"
+      "detail": "FREIGHT COURT24A site k11 refund=24a alloy 56->80 control=120x44 siteGone=true"
     },
     {
       "name": "age-advance",
@@ -215,10 +220,10 @@
   "fps": {
     "fps": 60.25,
     "frames": 241,
-    "mean_ms": 16.62489626615374,
+    "mean_ms": 16.652697095237826,
     "p50_ms": 16.699999809265137,
     "p95_ms": 16.90000009536743,
-    "max_ms": 17.59999990463257
+    "max_ms": 17.299999952316284
   },
   "matchErrors": []
 }

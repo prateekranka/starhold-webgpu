@@ -1272,6 +1272,47 @@ function gate(name, pass, detail) {
         };
       });
 
+      // bar-hit-test — crowding guard. A HUD cluster that is squeezed below its own
+      // content draws its children outside its box, and the control that comes next
+      // then wins the hit test at their centres. On a landscape phone this made the
+      // ADVANCE button unreachable and sent the tap to RESET, which exits the
+      // match, so the age could never be advanced on a phone. Select a worker,
+      // because a worker's build page is the most crowded the bar ever gets.
+      await guarded('bar-hit-test', async () => {
+        await freshMatch(0);
+        await page.evaluate(() => window.__APP.selectKind(20));
+        await page.waitForTimeout(250);
+        const report = await page.evaluate(() => {
+          const out = { misHits: [], controls: 0, advanceCentre: 'absent' };
+          for (const b of document.querySelectorAll('#hud-bar button')) {
+            const cs = getComputedStyle(b);
+            if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+            out.controls += 1;
+            const r = b.getBoundingClientRect();
+            const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+            const owner = hit ? hit.closest('button') : null;
+            if (owner !== b) {
+              const label = (b.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 14) || b.id;
+              const to = owner ? ((owner.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 14) || owner.id) : 'none';
+              out.misHits.push(`${label} -> ${to}`);
+            }
+          }
+          const b = document.getElementById('hud-advance');
+          if (b) {
+            const r = b.getBoundingClientRect();
+            const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+            const owner = hit ? hit.closest('button') : null;
+            out.advanceCentre = owner ? (owner.id || 'unnamed') : 'none';
+          }
+          return out;
+        });
+        return {
+          pass: report.misHits.length === 0 && (report.advanceCentre === 'hud-advance' || report.advanceCentre === 'absent'),
+          detail: `visible controls=${report.controls} mis-hits=${report.misHits.length}` +
+            `${report.misHits.length ? ' :: ' + report.misHits.join(' | ') : ''} advanceCentre->${report.advanceCentre}`,
+        };
+      });
+
       // cancel-order: a selected construction site offers CANCEL, and the sim
       // refunds the full cost (MATCH_SPEC §5, command op 3). Until this pass no
       // control sent op 3 at all.

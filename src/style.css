@@ -59,20 +59,21 @@ body.mouse #viewport canvas.glyph { display:none; }
 #hud-skirmish { display:flex; align-items:center; gap:6px; min-width:0; }
 #hud-skirmish .l { font-size:9px; color:#98A4AE; }
 #hud-faction { font-size:9px; color:#B7C8C6; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
-#hud-age { display:flex; align-items:center; gap:6px; min-width:0; }
+#hud-age { display:flex; align-items:center; gap:6px; flex:0 0 auto; min-width:0; }
 #hud-age-name { font-size:11px; color:#F1CE72; white-space:nowrap; }
 #hud-age-progress { flex:0 1 56px; width:56px; min-width:40px; height:8px; border:2px solid #747C91; background:#10121C; }
 #hud-age-fill { display:block; height:4px; width:0%; background:#F1CE72; }
 #hud-age-cost { font-size:9px; color:#98A4AE; white-space:nowrap; }
 #hud-actions { display:flex; align-items:center; gap:6px; min-width:0; flex:1 1 auto; justify-content:flex-end; }
 #hud-action-list { display:flex; align-items:center; gap:6px; min-width:0; flex:1 1 auto; justify-content:flex-end; }
-#hud-action-list button { flex:1 1 46px; min-width:46px; max-width:120px; }
+#hud-action-list button { flex:1 1 44px; min-width:44px; max-width:120px; }
 #hud-status { font-size:9px; color:#98A4AE; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 /* Inactive clusters keep their boxes (so every button stays >=44x44 and the bar
    height never moves) but drop out of sight, parked over the read-only resource
    row where they cannot overlap another button. */
 #hud-skirmish.off, #hud-age.off, #hud-reset.off { position:absolute; left:8px; top:8px; visibility:hidden; pointer-events:none; }
-#hud-faction.off, #hud-age-progress.off, #hud-age-cost.off, #hud-status.off, #hud-prev.off, #hud-next.off { visibility:hidden; }
+#hud-faction.off, #hud-age-progress.off, #hud-age-cost.off, #hud-status.off { visibility:hidden; }
+#hud-prev.off, #hud-next.off { display:none; }
 
 /* Portrait: the bar becomes three rows so every cluster keeps its full size and
    the canvas still fits the width above it (docs/MATCH_SPEC.md §8). */
@@ -93,6 +94,22 @@ body.mouse #viewport canvas.glyph { display:none; }
  touch-action:none; cursor:move; }
 body.touch #minimap { width:120px; height:120px; bottom:calc(var(--safe-b) + var(--hud-h) + 66px); }
 #minimap.off { display:none; }
+
+/* Narrow landscape phones: the bar has to hold five meters, the age cluster with
+ * its ADVANCE button, the map control, the page chevrons and a page of action
+ * buttons in about 840 px. Trim the spacing tiers and the age progress bar before
+ * any cluster is squeezed, because a squeezed cluster draws its children outside
+ * its own box and the next control then wins the hit test at their centres. */
+@media (max-width: 900px) {
+  #hud-bar { gap:8px; }
+  #hud-resources { gap:6px; }
+  #hud-middle { gap:6px; }
+  #hud-actions { gap:5px; }
+  #hud-action-list { gap:4px; }
+  #hud-age { gap:5px; }
+  #hud-age-progress { flex:0 1 44px; width:44px; min-width:32px; }
+  #hud-action-list button { max-width:96px; }
+}
 #minimap canvas { display:block; width:100%; height:100%; image-rendering:pixelated; }
 #minimap-close { position:absolute; top:-2px; right:-2px; width:24px; height:24px; min-width:0; min-height:0;
  display:grid; place-items:center; border:2px solid #F3F0D7; background:#10121C; color:#F3F0D7;

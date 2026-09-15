@@ -8,12 +8,12 @@
     {
       "name": "instance-budget",
       "pass": true,
-      "detail": "triangles=117949 saturated=false"
+      "detail": "triangles=117937 saturated=false"
     },
     {
       "name": "fps>=59-vsync-locked",
       "pass": true,
-      "detail": "fps=60.3 p95=17.3ms max=23.9ms"
+      "detail": "fps=60.3 p95=17.2ms max=18.0ms"
     },
     {
       "name": "rotate-button",
@@ -73,7 +73,7 @@
     {
       "name": "lod-budget",
       "pass": true,
-      "detail": "instances per zoom 0.67:4731 0.80:5941 1.00:8372 1.33:13548"
+      "detail": "instances per zoom 0.67:4732 0.80:5941 1.00:8372 1.33:13548"
     },
     {
       "name": "minimap-present",
@@ -106,9 +106,14 @@
       "detail": "tap @431,253 selectedKind=20 (workers alive=6)"
     },
     {
+      "name": "bar-hit-test",
+      "pass": true,
+      "detail": "visible controls=9 mis-hits=0 advanceCentre->hud-advance"
+    },
+    {
       "name": "cancel-order",
       "pass": true,
-      "detail": "FREIGHT COURT24A site k11 refund=24a alloy 56->80 control=69x44 siteGone=true"
+      "detail": "FREIGHT COURT24A site k11 refund=24a alloy 56->80 control=119x44 siteGone=true"
     },
     {
       "name": "age-advance",
@@ -165,10 +170,10 @@
   "fps": {
     "fps": 60.25,
     "frames": 241,
-    "mean_ms": 16.642323651254426,
+    "mean_ms": 16.621161825924,
     "p50_ms": 16.699999809265137,
-    "p95_ms": 17.299999952316284,
-    "max_ms": 23.90000009536743
+    "p95_ms": 17.199999809265137,
+    "max_ms": 18
   },
   "matchErrors": []
 }

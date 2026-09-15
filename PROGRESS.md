@@ -54,9 +54,20 @@ Effect measured: the AI opponent went from a frozen 13 entities for 20 minutes t
 levelled in about 12 minutes. The showcase determinism tuple is unchanged
 (`{"n":55,"alloy":247,"charge":199,"hash":"20b89f84"}`).
 
-Gates after the round, on the final build: desktop **29/29**, phone **39/39**,
-tablet **39/39**, portrait **40/40**, iPad **41/41** — 188/188, no console errors,
-60.0-60.3 fps.
+Gates after the round, on the final build: desktop **30/30**, phone **40/40**,
+tablet **40/40**, portrait **41/41**, iPad **42/42** — 193/193, no console errors,
+60.3 fps mean (p95 16.9-17.0 ms).
+
+The touch playtest's own crowding check failed on the phone, and reproducing it
+found a blocker of its own: with a worker selected, the age cluster was squeezed
+below its content, so the ADVANCE button was drawn outside its box **under
+RESET**, and `elementFromPoint` at its centre returned RESET. A tap meant to
+advance the age reset the match instead — the age could not be advanced on a
+phone at all. Fixed in `src/style.css` (hidden chevrons release their space, the
+age cluster never shrinks, action buttons pack to 44 px, and a narrow-bar
+spacing tier) and guarded by the new `bar-hit-test` gate, which reads
+`visible controls=9 mis-hits=0 advanceCentre->hud-advance` on all four touch
+viewports. Full entry: docs/PLAYTEST_ISSUES.md P9.
 
 Two follow-ups from that round are also in:
 
@@ -72,7 +83,8 @@ Two follow-ups from that round are also in:
   refund and the removal).
 
 Evidence: `evidence-world/{desktop,phone,tablet,portrait,ipad}/`, each with its
-gate log and capture report.
+gate log and capture report, plus the probe and stress scripts (world probe,
+tap stress, bar hit test, minimap rotate).
 
 ## Expansive world and floating minimap — 2026-09-15
 

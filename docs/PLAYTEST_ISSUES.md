@@ -59,6 +59,46 @@ and the status line reads UNDER CONSTRUCTION.
 
 ---
 
+### P9 — on a landscape phone the ADVANCE button was unreachable — fixed
+
+Found by the touch playtest, then reproduced and measured here. With a worker
+selected, the bar has to hold five meters, the age cluster (which contains
+ADVANCE), the map control, the two page chevrons and a page of four build
+buttons in 844 px — about 33 px more than the bar has. `#hud-age` had
+`min-width: 0`, so the age cluster was squeezed to 144 px while its content
+needed 220 px, and the ADVANCE button was drawn *outside* its own cluster, under
+RESET. RESET comes later in the DOM, so it won the hit test: `elementFromPoint`
+at the centre of ADVANCE returned RESET. A tap meant to advance the age reset
+the match instead, so the age could not be advanced on a phone at all.
+
+Fixed in `src/style.css`: a hidden page chevron now releases its space
+(`display: none`, not `visibility: hidden`), the age cluster never shrinks
+(`flex: 0 0 auto`), action buttons pack to the 44 px touch minimum, and a
+narrow-bar tier trims the spacing and the age progress bar below 900 px.
+
+Guarded by the `bar-hit-test` gate: with a worker selected, every visible bar
+control's centre must hit that control, and the centre of ADVANCE must resolve to
+ADVANCE. It reads `visible controls=9 mis-hits=0 advanceCentre->hud-advance` on
+all four touch viewports.
+
+### Touch playtest evidence (phone 844x390 dsf 2, tablet 1024x768 dsf 2)
+
+Touch input is trustworthy end to end: every pointer event the audit captured is
+`trusted: true` with `pointerType: touch`, the page never scrolls, and pinch,
+short tap, tap-after-pinch, camera drag, minimap drag/close/reopen and
+minimap tap-to-centre all pass. Frame rate holds on a phone in the world:
+**60.0 fps minimum across all eight samples** (both bases, four zoom levels,
+p50 16.7 ms), with no console errors. The AI grows from 13 to 26 entities with 8
+raiders away from home, and the closest raider reaches **3.1 tiles** from the
+player's base at t = 690 s. Economy for an untouched match: alloy 80 -> 340,
+charge 40 -> 160 in 120 s.
+
+Two of that report's failing checks are its own criteria, not defects: "economy
+120s" wanted the *player's* entity count to rise (it does not unless the player
+taps), and "enemy worker touch selection" expects an enemy worker to be
+selectable (enemy entities are not selectable by design). "producer 12 actions"
+is A2 below, and "44px targets containment overlap scroll" is P9 above.
+
 ## Open — needs design or deeper work
 
 ### A1 — a defeated player is never told the match ended — needs design
