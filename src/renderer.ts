@@ -109,7 +109,11 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  }
  if screen == -11. {o.color=palette[array<u32,6>(22u,21u,21u,22u,20u,19u)[u32(shade)]];}
  // Match surface roles use -7..-9; the frozen island never uses these modes.
- if screen<=-7. && screen>=-9. && shade==0. {o.ground=p.xy;o.material=u32(pigment)+33u+u32(-screen-7.)*32u;}
+ if screen<=-7. && screen>=-9. && shade==0. {
+  o.ground=p.xy;o.material=u32(pigment)+33u+u32(-screen-7.)*32u;
+  if screen == -9. {o.material+=u32(actor.z)*128u;}
+  if screen == -8. {o.material+=u32(actor.w)*128u;}
+ }
  if screen == -3. || screen == -4. {o.color=palette[u32(pigment)];}
  if screen == -4. {o.unit=1.;o.rim=vec2f(0.);}
  } return o;
@@ -120,12 +124,21 @@ struct Fragment { @location(0) color:vec4f, @location(1) mask:vec4f }
 fn basalt(world:vec2f, province:u32)->u32 {
  // Match-only surface roles turn detail up on rock and down in the clearing.
  // The old showcase branch below stays unchanged, including its sky pool.
- if province>=96u {
-  // Worn flagstone along the route: pale continuous fill, sparse dark joints.
-  let p=fract(vec2f(world.x+floor(world.y/2.)*.7,world.y)/2.);
-  return select(6u,5u,p.y<.035 || (p.x<.035 && p.y<.45));
+ let role=province%128u;
+ if role>=96u {
+  // Dark travelled bed, continuous kerbs and a stone threshold at the base.
+  // Edge bits come from adjoining route tiles, so corners stay connected.
+  let edge=province/128u;let q=fract(world);
+  if ((edge&1u)!=0u && q.x<.18) || ((edge&2u)!=0u && q.x>.82) ||
+     ((edge&4u)!=0u && q.y<.18) || ((edge&8u)!=0u && q.y>.82) {return 5u;}
+  if (edge&16u)!=0u {return select(5u,3u,q.x<.08 || q.y<.08);}
+  return select(2u,3u,fract((world.x+world.y)/3.)<.07);
  }
- if province>=64u {
+ if role>=64u {
+  // Quiet, open construction grid. Only live, vacant 2x2-compatible sites
+  // carry this flag; terrain steps, occupied sites and routes never do.
+  let grid=fract(world/2.);
+  if province>=128u && (grid.x<.035 || grid.y<.035) {return 5u;}
   // Matte cleared soil: occasional shallow scuffs, never the dark repeated
   // debris marks of the rough country. One close-value step, no ink chips.
   let cell=floor(world/7.3);let q=fract(world/7.3);
@@ -249,6 +262,7 @@ export class Renderer {
   private worldStarts:number[][]=[];
   private worldRoutes:number[][]=[];
   private worldOutcrops:number[][]=[];
+ private worldBuildCaps:number[]=[];
  private contourData=new Uint8Array(256*CONTOUR_ROWS);
  private contourUpload:any;
  private contourLayout={bytesPerRow:256,rowsPerImage:CONTOUR_ROWS};
@@ -314,6 +328,15 @@ export class Renderer {
   this.box(x,y,z+.095,w+.12,d+.12,0,0,-1,-3);
  }
  private shard(x:number,y:number,z:number,h:number,c=30,owner=-1) {
+  // The match Heliowell's cyan core must clear its cage and the Keep behind
+  // which it projects. Keep the frozen island and amber ore cluster untouched.
+  if(this.terrainSide>32&&c===17&&owner>=0){
+   h*=1.4;
+   this.box(x,y,z,1.12,1.16,h,c,owner,-2);
+   this.box(x-.52,y+.2,z,.52,.58,h*.76,c-1,owner,-2);
+   this.emissive(x,y,z+h,18,owner);
+   return;
+  }
   if(owner===-1)this.groundContact(x,y,.62,.65,true);
   this.box(x,y,z,.62,.65,h,c,owner,-2);
   this.box(x+.25,y+.12,z,.24,.25,h*.56,c-1,owner,-2);
@@ -649,7 +672,7 @@ export class Renderer {
   }
   /** Bake the visible window in three detail tiers, nearest first. */
   private bakeWorld(yaw:number,zoom:number) {
-   this.count=0;this.emissiveCount=0;this.degraded=false;
+   this.count=0;this.emissiveCount=0;this.degraded=false;this.worldBuildCaps.length=0;
    const side=this.terrainSide;
    const c=Math.round(Math.cos(yaw*Math.PI/2)),s=Math.round(Math.sin(yaw*Math.PI/2));
    const m=1/zoom,hx=6*GRID*m,hy=3.4641016*GRID*m,hz=6.9282032*GRID*m;
@@ -701,7 +724,24 @@ export class Renderer {
    const low=Math.min(west,north,east,south),rim=low<h;
    // One full-width cap prevents little dark fissures in otherwise quiet land.
    // Mode -6 is the pre-existing exact-palette hard face table, no new shader.
+   const surface=this.count;
    this.box(x+.5,y+.5,h-.12,1,1,.12,cap,-1,h===1?-7:cap===29?-8:cap===6?-9:-6);
+   this.actorData[surface*4+2]=0;this.actorData[surface*4+3]=0;
+   if(cap===6){
+    let edge=0;
+    if(west!==h||this.worldMaterial(x-1,y,west)!==6)edge|=1;
+    if(east!==h||this.worldMaterial(x+1,y,east)!==6)edge|=2;
+    if(north!==h||this.worldMaterial(x,y-1,north)!==6)edge|=4;
+    if(south!==h||this.worldMaterial(x,y+1,south)!==6)edge|=8;
+    for(const [bx,by] of this.worldStarts)if(Math.hypot(x-bx,y-by)<5.5)edge|=16;
+    this.actorData[surface*4+2]=edge;
+   }
+   if(cap===29&&x>=3&&y>=3&&x<this.terrainSide-3&&y<this.terrainSide-3){
+    let flat=true;
+    // Same cells as placeable() for the smallest construction footprint.
+    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)if(this.ground(x+dx,y+dy)!==h)flat=false;
+    if(flat)this.worldBuildCaps.push(surface);
+   }
    if(!rim)return;
    this.cliffBottom=low;this.cliffTop=h;
    const column=this.count;
@@ -727,6 +767,22 @@ export class Renderer {
     this.box(x+.65,y+.48,h+.38,.32,.36,.18,5,-1,-6);
    }
   }
+ private markBuildable(e:Float32Array,n:number) {
+  // Recheck live occupancy without rebaking terrain or adding grid instances.
+  // These are terrain/site cues, not a promise of affordability or a free worker.
+  for(const index of this.worldBuildCaps){
+   const x=this.data[index*8],y=this.data[index*8+1];let vacant=true;
+   for(let id=0;id<n;id++){
+    const o=id*12,k=e[o+4];
+    if(k===24||k===35)continue;
+    const footprint=buildingFootprints[k],ore=k===40;
+    if(!footprint&&!ore&&!dawnUnits.has(k)&&!cinderUnits.has(k))continue;
+    const w=footprint?footprint[0]:ore?1:.6,d=footprint?footprint[1]:ore?1:.6;
+    if(Math.abs(e[o]-x)<(w+2)/2&&Math.abs(e[o+1]-y)<(d+2)/2){vacant=false;break;}
+   }
+   this.actorData[index*4+3]=vacant?1:0;
+  }
+ }
  private worldOre(x:number,y:number,z:number,amount:number,phase:number,id:number) {
   const scale=amount>0?1:Math.max(.12,phase),h=(.9+id%3*.08)*scale;
   // Leave the near half of the mining tile open for the worker's silhouette.
@@ -1485,6 +1541,7 @@ export class Renderer {
  }
  render(e:Float32Array,n:number,yaw:number,zoom:number,alloy:number,charge:number,tick:number) {
   this.time=tick/60;this.maybeBake(yaw,zoom);this.count=this.staticCount;this.emissiveCount=this.staticEmissiveCount;this.selected=null;this.dropped=0;
+  if(this.terrainSide>32)this.markBuildable(e,n);
   for(let id=0;id<n;id++){const o=id*12,k=e[o+4];if(e[o+8]===1)this.selected=id;
    if(buildingFootprints[k])this.building(e,o,id);
    else if(dawnUnits.has(k)||cinderUnits.has(k))this.unit(e,o,id);
