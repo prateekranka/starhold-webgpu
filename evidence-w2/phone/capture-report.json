@@ -1,0 +1,169 @@
+{
+  "gates": [
+    {
+      "name": "boots-ready",
+      "pass": true,
+      "detail": "entities=55"
+    },
+    {
+      "name": "instance-budget",
+      "pass": true,
+      "detail": "triangles=116257 saturated=false"
+    },
+    {
+      "name": "touch-layout",
+      "pass": true,
+      "detail": "body=\"touch\" touch=true"
+    },
+    {
+      "name": "no-scroll",
+      "pass": true,
+      "detail": "doc=844x390 client=844x390 scroll=0,0"
+    },
+    {
+      "name": "canvas-fits",
+      "pass": true,
+      "detail": "rect=579.5x326.0@132.2,0.0 aspect=1.778 backing=960x540"
+    },
+    {
+      "name": "hud-unclipped",
+      "pass": true,
+      "detail": "buttons=4 outside=none"
+    },
+    {
+      "name": "touch-targets-44",
+      "pass": true,
+      "detail": "sizes=48x48 48x48 48x48 48x48 overlap=none"
+    },
+    {
+      "name": "safe-area-respected",
+      "pass": true,
+      "detail": "canvas=132.2..711.8 firstBtn=574.0 lastBtn=790.0"
+    },
+    {
+      "name": "rotate-touch",
+      "pass": true,
+      "detail": "0 -> 1"
+    },
+    {
+      "name": "zoom-touch",
+      "pass": true,
+      "detail": "zoom 1 -> 0.8 -> 1"
+    },
+    {
+      "name": "tap-clears",
+      "pass": true,
+      "detail": "boot=7 afterClear=null"
+    },
+    {
+      "name": "tap-select",
+      "pass": true,
+      "detail": "selected=0"
+    },
+    {
+      "name": "pinch-zoom",
+      "pass": true,
+      "detail": "zoom 1 -> 0.8 (idx 1 -> 2)"
+    },
+    {
+      "name": "pinch-keeps-selection",
+      "pass": true,
+      "detail": "0 -> 0"
+    },
+    {
+      "name": "tap-after-pinch",
+      "pass": true,
+      "detail": "clear=null select=0"
+    },
+    {
+      "name": "fps>=59-vsync-locked",
+      "pass": true,
+      "detail": "fps=60.3 p95=17.0ms max=17.7ms"
+    },
+    {
+      "name": "hud-skirmish-entry",
+      "pass": true,
+      "detail": "showcaseMode=0 skirmishLabel=true dawnward=69x44 cinderwake=82x44 dawnwardClick=mode 1 player 0 reset->mode 0 cinderwakeClick=mode 1 player 1"
+    },
+    {
+      "name": "match-boot",
+      "pass": true,
+      "detail": "mode=1 player=0 age=0 alloy=80 charge=40 pop=11/15 entities=38 (standard start 80/40, 11/15, 3 buildings + 10 units) factionLabel=true resetControl=\"Reset to the showcase scenar\" resetShowcase->mode 0"
+    },
+    {
+      "name": "hud-bar",
+      "pass": true,
+      "detail": "bar=844x64@0,326 visible=true tall>=44=true covers=none insets44=44..800 of 844, h=64"
+    },
+    {
+      "name": "hud-resources",
+      "pass": true,
+      "detail": "bar alloy=80 charge=41 pop=11/15 | state alloy=80 charge=41 pop=11/15"
+    },
+    {
+      "name": "hud-age",
+      "pass": true,
+      "detail": "label=\"FOUNDING 60A 30C ADVANCE\" state.age=0(Founding) otherAges=none ageProgress=1 progress=hidden ratio=0.93"
+    },
+    {
+      "name": "age-advance",
+      "pass": true,
+      "detail": "cost=60a/30c drop=60a/29c drift=0/0 age 0->1 label=March labelShown=true"
+    },
+    {
+      "name": "train-unit",
+      "pass": true,
+      "detail": "action=\"Train PACK BEETLE, 8 alloy, 2 charge, 1 population PACK BEET\" kind=21 roster=8a/2c pop 1 drop=8a/2c drift=0/1 pop 11->12 entities 38->40"
+    },
+    {
+      "name": "build-site",
+      "pass": true,
+      "detail": "action=\"Build FREIGHT COURT, 24 alloy FREIGHT COURT24A\" kind=11 roster=24a/0c sitePlaced=true entities 38->39 alloy 80->56 charge 40->41 costSpent=true"
+    },
+    {
+      "name": "no-console-errors",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "determinism",
+      "pass": true,
+      "detail": "{\"n\":55,\"alloy\":247,\"charge\":199,\"hash\":\"20b89f84\"} vs {\"n\":55,\"alloy\":247,\"charge\":199,\"hash\":\"20b89f84\"}"
+    },
+    {
+      "name": "match-determinism",
+      "pass": true,
+      "detail": "a7b9e906 vs a7b9e906 entities=39/39 age=1/1"
+    },
+    {
+      "name": "no-webgpu-error-path",
+      "pass": true,
+      "detail": "ready=false error=\"WebGPU is unavailable. Starhold requires a WebGPU-capable browser with hardware accelerati\" overlays=error:\"WebGPU is unavailable. Starhold requires a WebGPU-capable br\""
+    }
+  ],
+  "shots": [
+    "shot-selected.png",
+    "shot-pinch.png",
+    "shot-main.png",
+    "shot-rotated.png",
+    "shot-match-hud.png"
+  ],
+  "errors": [],
+  "viewport": {
+    "width": 844,
+    "height": 390,
+    "dsf": 2,
+    "touch": true,
+    "portrait": false,
+    "ipad": false
+  },
+  "fps": {
+    "fps": 60.25,
+    "frames": 241,
+    "mean_ms": 16.631535269907403,
+    "p50_ms": 16.699999809265137,
+    "p95_ms": 17,
+    "max_ms": 17.699999809265137
+  },
+  "matchErrors": []
+}

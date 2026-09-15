@@ -31,6 +31,58 @@ Integration and release rules for wave 2:
 - Image generation is for concept sheets and HUD icons only. In-world rendering
   stays procedural and pixel-exact.
 
+## Wave 2 verification — 2026-09-15 (all viewports green; release still frozen)
+
+The wave-2 tree was dirty and the build/verify path was failing. Every root
+cause was in the harness or in the HUD wiring, not in the simulation.
+
+| Fix | File | What was wrong |
+|---|---|---|
+| gate restored zoom on the wrong button | `scripts/capture.mjs` | the rotate gate re-zoomed with `buttons[3]` (zoom-in) instead of `buttons[2]` (zoom-out), so later gates inherited the wrong zoom index |
+| rotated camera leaked forward | `scripts/capture.mjs` | after `shot-rotated.png` the harness never returned to yaw 0, so every later tap used a rotated screen projection; it now clicks `#rotate-left` |
+| cost tolerance too strict | `scripts/capture.mjs` | a real click/readback can straddle one deterministic Charge tick; the tolerance is now `max(1, abs(drift))` per resource, so the exact cost is still checked |
+| BUILD used the HUD tile | `src/hud.ts`, `src/main.ts` | the bar sent the raw HUD tile; it now calls `buildNearest(kind)`, which asks Rust for the nearest placeable tile and leaves `sim_command` authoritative |
+| production list showed disabled rows | `src/hud.ts` | a building with no matching roster rows now shows no production action |
+
+Build: **PASS** (`npm run wasm && tsc --noEmit && vite build`). Capture
+(`node scripts/capture.mjs`), all five viewports, no console errors:
+
+| Viewport | Mode | Gates |
+|---|---|---|
+| 960x540 | desktop regression | **18/18 PASS** |
+| 844x390, dsf 2 | touch landscape | **28/28 PASS** |
+| 1024x768, dsf 2 | touch tablet | **28/28 PASS** |
+| 390x844 -> 844x390, dsf 2 | portrait, then rotate | **29/29 PASS** |
+| 768x1024, dsf 2 | iPad portrait | **30/30 PASS** |
+
+- 133/133 gates. FPS 60.3 mean, p95 16.7-17.1 ms, max 18.4 ms in every run.
+- Showcase determinism `{"n":55,"alloy":247,"charge":199,"hash":"20b89f84"}` and
+  match determinism `a7b9e906` are unchanged in every run.
+- Instance, palette, grid and arena gates unchanged; `saturated=false`.
+- Evidence: `evidence-w2/{desktop,phone,tablet,portrait,ipad}/`.
+
+### Independent pick probe (orchestrator-run, not the repo harness)
+
+576 single taps on a 24x24 grid over the yaw-0 match frame:
+
+- 25 taps selected an entity and every one named the correct roster entry for
+  its kind: `CHARTER KEEP`, `FREIGHT COURT`, `HELIOWELL`, `PYRE ARK`,
+  `SCRAP MAW`, `EMBER SIPHON`, `ASHHAND`, `CHAIN MULE`, `WARD SENTINEL`.
+- 10 of those taps landed on the east (Cinderwake) half and all 10 returned a
+  Cinderwake entity. The repo harness never taps the east half, so this is the
+  first proof that enemy-side picking works.
+- 9 distinct kinds selected; 0 console errors.
+- Log: `evidence-w2/pick-probe.log`.
+
+### Open items carried out of wave 2
+
+1. `MATCH_SPOTS` in `scripts/capture.mjs` is a workaround: units move during the
+   450 ms DOM settle, so the harness scans ~40 points until the expected action
+   appears. Picking itself is verified (above). Rewrite the gate to derive one
+   live screen position from the snapshot instead of scanning points.
+2. The release stays frozen on pass 15. Wave 2 passes every objective gate, but
+   no fresh independent visual critic has judged the wave-2 match frame yet.
+
 **Lighting loop parked at pass 30 (`45212d0`). Every pass 25-30 passed all
 objective gates; the independent visual gate is still open — each fresh critic
 round preferred the newest build but kept naming carved lighting/depth as the

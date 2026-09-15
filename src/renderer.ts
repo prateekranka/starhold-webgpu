@@ -1,6 +1,14 @@
 import {palette, names, jobs} from './kinds';
 import {glyphs} from './font';
 const MAX=16000, STRIDE=8;
+const buildingFootprints:Readonly<Record<number,readonly [number,number]>>={10:[4,4],11:[3,3],12:[2,2],13:[3,3],14:[3,3],15:[3,2],16:[2,2],17:[4,3],60:[4,4],61:[3,3],62:[2,2],65:[3,2],63:[3,3],64:[3,3],66:[2,2],67:[4,3]};
+const cinderBuildings=new Set([60,61,62,65,63,64,66,67]);
+const dawnUnits=new Set([20,21,22,23,24,25,26]);
+const cinderUnits=new Set([30,31,32,33,34,35,36]);
+const wave2Units=new Set([25,26,30,32,33,34,35,36]);
+const combatUnits=new Set([21,22,23,25,26,30,31,34,36]);
+const effectKinds=new Set([50,51,52]);
+const maxHealth:Readonly<Record<number,number>>={10:1500,11:600,12:600,13:600,14:600,15:600,16:900,17:600,20:70,21:180,22:180,23:110,24:150,25:100,26:360,30:80,31:240,32:60,33:150,34:150,35:120,36:90,60:1350,61:525,62:500,65:450,63:525,64:650,66:750,67:550};
 export const RENDER_WIDTH=960, RENDER_HEIGHT=540;
 const GRID=2;
 const CONTOUR_TILE=16, CONTOUR_COLUMNS=Math.ceil(RENDER_WIDTH/CONTOUR_TILE), CONTOUR_ROWS=Math.ceil(RENDER_HEIGHT/CONTOUR_TILE);
@@ -173,7 +181,7 @@ const buttonPatterns=Array.from({length:4},(_,kind)=>{
  const pixels=new Uint8Array(100);
  for(let row=0;row<10;row++)for(let col=0;col<10;col++){
   const c=kind===1?9-col:col;
-  const filled=kind>=2
+  const filled=kind===2||kind===3
    ? (row===4||row===5)||(kind===3&&(col===4||col===5))
    : (row<6&&c>=3-row&&c<=3)||(row>=3&&row<=5&&c>=3&&c<=7)||(row>=5&&row<=8&&c>=7&&c<=8);
   if(filled)pixels[row*10+col]=1;
@@ -521,6 +529,17 @@ export class Renderer {
   this.staticCount=this.count;this.staticEmissiveCount=this.emissiveCount;
  }
  private building(e:Float32Array,o:number,id:number) {
+  if(cinderBuildings.has(e[o+4])){
+   const start=this.count;
+   this.cinderBuilding(e,o,id);
+   // Existing mode -6 keeps ordinary box geometry and hard family shading,
+   // without the civic top-face lift turning broad wine plates into heat.
+   for(let i=start;i<this.count;i++){
+    const q=i*8,pigment=this.data[q+6]%32;
+    if(this.data[q+7]===0&&(pigment===23||pigment===24||pigment===25))this.data[q+7]=-6;
+   }
+   return;
+  }
   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],p=e[o+10],phase=e[o+6];
   const w=k===10||k===17?4:k===12||k===16?2:3,depth=k===15?2:k===17?3:w;
   const height=k===10?5:k===12||k===16?4:k===13||k===14?3:2.5;
@@ -614,6 +633,168 @@ export class Renderer {
   if(p>=.5)this.facade(x,y,z,k,p,id);
   if(p>=.85&&k!==12&&k!==16){for(let j=0;j<2;j++)this.crate(x+w*.5+.3,y+.6*j,z,.38,id);}
  }
+ // Short overlapping prisms make raked struts, elbows and bow limbs using
+ // the existing mesh. Keep subdivision bounded even on long building beams.
+ private strut(x:number,y:number,z:number,dx:number,dy:number,dz:number,width:number,color:number,id:number,steps=3) {
+  for(let j=0;j<steps;j++){
+   const t=(j+.5)/steps;
+   this.box(x+dx*t,y+dy*t,z+dz*t-Math.abs(dz)/steps/2,Math.abs(dx)/steps+width,Math.abs(dy)/steps+width,Math.abs(dz)/steps+width,color,id);
+  }
+ }
+ private hook(x:number,y:number,z:number,size:number,color:number,id:number) {
+  this.box(x,y,z,.13*size,.14*size,.65*size,color,id);
+  this.box(x+.2*size,y,z+.55*size,.5*size,.15*size,.13*size,color,id);
+  this.box(x+.4*size,y,z+.36*size,.13*size,.15*size,.27*size,color,id);
+ }
+ private cinderBuilding(e:Float32Array,o:number,id:number) {
+  const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],p=Math.max(0,Math.min(1,e[o+10]));
+  const [w,d]=buildingFootprints[k],cycle=(this.time/1.2+e[o+6])%1,sway=Math.sin(cycle*Math.PI*2)*.1;
+  const frame=p>=.2,panels=p>=.5,rigged=p>=.85,lit=p>=1;
+  this.shadow(x,y,w,d,frame?1:.3);
+  // Open, unequal runners and anchor shoes, never a square civic plinth.
+  for(let side=-1;side<=1;side+=2){
+   this.box(x-.12,y+side*d*.31,z,w*.83,.17,.16,23,id);
+   for(let end=-1;end<=1;end+=2){
+    this.box(x+end*w*.4,y+side*d*.37,z,.26,.3,.22,24,id,-1);
+    if(!lit)this.strut(x+end*w*.4,y+side*d*.37,z+.18,-end*.24,-side*.2,.17,.05,6,id,2);
+   }
+  }
+  if(!lit){
+   // Modules lock at fixed heights at 20 / 50 / 85%; progress never scales
+   // a finished building. The last stage ignites its heat and moving rig.
+   this.box(x-w*.28,y+d*.14,z+.15,.52,.38,.23,24,id,-1);
+   if(frame){
+    this.strut(x-w*.32,y-d*.28,z+.18,-.12,.05,1.24,.1,6,id);
+    this.strut(x+w*.27,y+d*.23,z+.18,-.2,0,.83,.1,24,id);
+    this.box(x-w*.28,y-d*.23,z+1.45,.48,.07,.08,25,id);
+   }
+   if(frame&&cycle<.16)this.emissive(x+w*.2,y+d*.23,z+.75,27,id,1,1);
+  }
+  if(!frame)return;
+  if(k===60){ // Pyre Ark: pointed barge sides around an exposed ember cage.
+   for(let j=0;j<4;j++){
+    const xx=x-1.35+j*.82,span=2.6-j*.65;
+    this.box(xx,y,z+.2,.86,span,.28,23,id);
+    if(panels)for(let side=-1;side<=1;side+=2)this.box(xx-.08,y+side*span*.44,z+.48,.88,.24,.65-j*.1,24,id,-1);
+   }
+   if(panels){
+    this.box(x-.1,y,z+.5,1.12,1.05,.18,6,id);
+    this.box(x-.1,y,z+.68,.72,.7,.91,lit?26:23,id,-2);
+    for(let side=-1;side<=1;side+=2)for(let end=-1;end<=1;end+=2)this.strut(x-.1+end*.5,y+side*.48,z+.58,-end*.13,-side*.12,1.35,.09,23,id,2);
+    this.box(x-.1,y,z+1.9,.83,.8,.12,24,id);
+   }
+   if(rigged){
+    this.strut(x-1.35,y-.7,z+.4,-.3,0,2.35,.15,24,id);
+    this.hook(x-1.67,y-.7,z+2.65,.7,25,id);
+    for(let j=0;j<4;j++)this.box(x-1.37+(lit?sway:0),y-.7,z+1.3+j*.29,.1,.12,.2,6,id);
+   }
+   if(lit)this.emissive(x-.1,y,z+1.28+sway,27,id,cycle<.5?2:1,2);
+  }else if(k===61){ // Scrap Maw: separated jaw, teeth and climbing chute.
+   this.box(x+.25,y,z+.2,1.7,2.4,.28,23,id,-1);
+   for(let side=-1;side<=1;side+=2)this.box(x+.45,y+side*.95,z+.42,1.5,.28,.67,24,id,-1);
+   if(panels){
+    const bite=lit?.16*(1+Math.sin(cycle*Math.PI*2)):0;
+    this.box(x+.65,y,z+1.27-bite,.55,2.05,.27,24,id);
+    for(let j=0;j<5;j++){
+     this.box(x+.9,y-.8+j*.4,z+.42,.38,.17,.32,6,id,-2);
+     this.box(x+.72,y-.8+j*.4,z+.98-bite,.32,.17,.3,25,id);
+    }
+    this.strut(x+.35,y,z+.62,-1.46,0,1.05,.21,24,id,4);
+    for(let side=-1;side<=1;side+=2)this.strut(x+.35,y+side*.35,z+.71,-1.46,0,1.05,.11,6,id,3);
+   }
+   if(rigged)this.box(x-1.12,y,z+1.76,.57,1.12,.2,25,id,-1);
+   if(lit&&cycle>.45&&cycle<.59)this.emissive(x+.97,y,z+.68,27,id,1,1);
+  }else if(k===62){ // Siphon: cage ribs surround heat; a jointed arm pivots.
+   this.box(x,y,z+.22,1.2,1.14,.24,23,id,-1);
+   for(let j=0;j<4;j++){
+    const a=j*Math.PI/2;
+    this.strut(x+Math.cos(a)*.62,y+Math.sin(a)*.62,z+.3,-Math.cos(a)*.16,-Math.sin(a)*.16,1.37,.1,24,id,2);
+   }
+   if(panels)this.box(x,y,z+.53,.59,.57,1.04,lit?26:23,id,-2);
+   if(rigged){
+    const a=lit?cycle*Math.PI*2:0,dx=Math.cos(a)*.68,dy=Math.sin(a)*.68;
+    this.box(x,y,z+1.67,.5,.5,.18,25,id);
+    this.strut(x,y,z+1.8,dx,dy,.24,.12,6,id);
+    this.box(x+dx,y+dy,z+1.34,.15,.15,.74,24,id);
+   }
+   if(lit){this.emissive(x,y,z+1.1+sway,27,id);this.box(x+sway,y,z+2+cycle*.4,.12,.12,.14,26,id);}
+  }else if(k===65){ // Soot Nests: offset shelters, exposed stilts, patched tarps.
+   for(let level=0;level<2;level++){
+    const xx=x-.5+level*.85,yy=y+level*.16,base=.62+level*.87;
+    for(let side=-1;side<=1;side+=2)this.box(xx+side*.48,yy-.49,z+.16,.12,.12,base+.47,24,id);
+    this.box(xx,yy,z+base,1.36,1.25,.12,23,id);
+    if(panels){
+     this.box(xx-.5,yy,z+base+.12,.2,1.08,.6,24,id);
+     this.box(xx,yy-.5,z+base+.12,1.08,.14,.57,23,id);
+     for(let j=0;j<3;j++)this.box(xx-.46+j*.41,yy+(lit?sway*j*.25:0),z+base+.81-j*.11,.49,1.38,.12,25,id);
+     this.box(xx+.35,yy+.3,z+base+.59,.3,.36,.035,24,id);
+    }
+   }
+   if(rigged){this.box(x+.85,y+.68,z+1.67,.07,.07,.45,6,id);this.box(x+.85+(lit?sway:0),y+.68,z+1.4,.22,.22,.28,26,id);}
+   if(lit)this.emissive(x+.85+sway,y+.68,z+1.55,27,id,1,1);
+  }else if(k===63){ // Fang Yard: empty fighting pit and perimeter weapon racks.
+   for(let j=0;j<8;j++){
+    const a=j*Math.PI/4,xx=x+Math.cos(a)*1.15,yy=y+Math.sin(a)*1.15;
+    this.box(xx,yy,z+.18,.52,.52,.27,23,id,-1);
+    if(panels&&j%2===0){
+     this.box(xx,yy,z+.43,.62,.13,.13,24,id);
+     this.hook(xx-.16+(lit?sway*.5:0),yy,z+.56,.68,6,id);
+    }
+   }
+   if(rigged){
+    this.box(x-.75,y-.7,z+.35,.46,.46,.4,24,id,-1);
+    this.box(x-.75,y-.7,z+.75,.32,.32,.25,lit?26:23,id,-2);
+   }
+   if(lit){this.emissive(x-.75,y-.7,z+.95,27,id,1,1);this.box(x-.75+sway,y-.7,z+1.05+cycle*.6,.2,.2,.18,4,id);}
+  }else if(k===64){ // Chainworks: unequal gantry, suspended lift, toothed press.
+   this.box(x+.63,y,z+.22,1.12,1.73,.27,23,id);
+   this.strut(x-1.12,y-.85,z+.2,-.1,0,2.35,.17,24,id);
+   this.strut(x+.99,y-.85,z+.2,-.21,0,1.97,.17,24,id);
+   if(panels){
+    this.strut(x-1.22,y-.85,z+2.55,2,0,-.38,.19,25,id);
+    this.box(x+.63,y,z+.5,1.03,1.48,.22,6,id);
+    const press=lit?Math.max(0,Math.sin(cycle*Math.PI*2))*.32:0;
+    this.box(x+.63,y,z+1.25-press,1.08,1.4,.35,24,id);
+    for(let j=0;j<4;j++)this.box(x+.35+j*.2,y+.57,z+1.04-press,.12,.27,.23,25,id);
+   }
+   if(rigged){
+    const lift=lit?cycle*.54:0;
+    for(let j=0;j<5;j++)this.box(x-.83,y-.5,z+.73+lift+j*.28,.12,.13,.19,6,id);
+    this.hook(x-.83,y-.5,z+.33+lift,.7,25,id);
+    this.box(x-.55,y-.49,z+.35+lift,.6,.46,.25,23,id,-1);
+   }
+   if(lit&&cycle>.18&&cycle<.32)this.emissive(x+.8,y+.65,z+.83,27,id,2,1);
+  }else if(k===66){ // Hook Spire: leaning harpoon, exposed coiled recovery line.
+   this.box(x-.12,y,z+.18,1.32,1.23,.3,23,id,-1);
+   this.strut(x-.35,y,z+.4,-.2,0,1.92,.3,24,id);
+   if(panels){
+    this.strut(x+.5,y-.3,z+.37,-.77,0,1.38,.12,6,id);
+    for(let j=0;j<5;j++)this.box(x-.32,y,z+.56+j*.2,.65,.63,.07,6,id);
+   }
+   if(rigged){
+    const kick=lit?sway*.4:0;
+    this.strut(x-.6,y,z+2.24,1.15+kick,0,.28,.19,24,id);
+    this.hook(x+.46+kick,y,z+2.23,.66,25,id);
+    this.box(x+.34,y+.17,z+2.39,.66,.07,.08,6,id);
+   }
+   if(lit)this.box(x-.32,y+.33,z+.76+cycle*.6,.2,.04,.07,26,id);
+  }else if(k===67){ // Rift Mooring: open slip, rising launch rail and side clamps.
+   for(let side=-1;side<=1;side+=2){
+    this.box(x,y+side*1.05,z+.19,3.8,.25,.31,23,id);
+    if(panels){
+     this.strut(x-1.65,y+side*.44,z+.45,3.18,0,.65,.16,24,id,4);
+     this.box(x-1.4,y+side*.9,z+.5,.29,.27,1.25,24,id);
+    }
+    if(rigged){
+     const close=lit?.14*(1+Math.sin(cycle*Math.PI*2)):0;
+     this.box(x-.5,y+side*(.94-close),z+.88,.55,.62,.19,25,id);
+     this.box(x-.5,y+side*(.68-close),z+.6,.2,.15,.4,6,id);
+    }
+   }
+   if(panels){this.box(x-1.65,y,z+.5,.28,2.35,.18,24,id);this.box(x+1.57,y,z+1.05,.3,1.27,.23,25,id);}
+   if(lit)for(let j=0;j<4;j++)this.box(x-1.3+j*.83,y-.44,z+.61+j*.17,.3,.08,.06,j===Math.floor(cycle*4)?27:26,id);
+  }
+ }
  private facade(x:number,y:number,z:number,k:number,p:number,id:number) {
   // Flush fittings on existing wall planes, all yaws. No new footprint or
   // roof volume; these small regular accents sit above the ground vocabulary.
@@ -697,15 +878,16 @@ export class Renderer {
   this.box(x,y,z,.17,.17,h,20,id);this.box(x-w*.5,y,z+h,w+.15,.18,.18,22,id);const lift=assembly<0?.8+Math.floor(phase*6)/6*(h-1.2):assembly+Math.floor(phase*3)*.12;this.box(x-w*.8,y,z+lift,.05,.05,h-lift,19,id);this.box(x-w*.8,y,z+lift-.15,.2,.2,.16,22,id);this.box(x-w*.8,y,z+lift-.55,.42,.42,.4,12,id);this.box(x-w*.8+.12,y,z+lift-.13,.12,.12,.24,22,id);
  }
  private unit(e:Float32Array,o:number,id:number) {
-  const k=e[o+4],friendly=k>=20&&k<=24;
-  const combat=k===21||k===22||k===23||k===30||k===31;
+  const k=e[o+4],friendly=dawnUnits.has(k);
+  if(wave2Units.has(k)&&e[o+5]===4){this.wreck(e[o],e[o+1],this.ground(e[o],e[o+1]),k);return;}
+  const combat=combatUnits.has(k);
   const ox=combat?(id%3-1)*.24:0,oy=combat?(Math.floor(id/3)%3-1)*.24:0;
   const start=this.count;
   this.unitParts(e,o,id);
   const c=Math.cos(e[o+3]),sn=Math.sin(e[o+3]);
   // World geometry, picking and contours now use one common scale. These
   // role sizes target ~7 px workers and 8–14 px line silhouettes at zoom 1.
-  let scale=k===20?.42:k===21||k===23?.46:k===22?.52:k===24?.55:k===30?.48:.46;
+  let scale=wave2Units.has(k)?(k===26||k===30||k===33?.6:k===35?.55:.5):k===20?.42:k===21||k===23?.46:k===22?.52:k===24?.55:.46;
   let minX=Infinity,minY=Infinity,minZ=Infinity,maxX=-Infinity,maxY=-Infinity,maxZ=-Infinity;
   for(let i=start;i<this.count;i++)if(this.owners[i]===id&&this.data[i*8+7]!==-4){
    const q=i*8,dx=this.data[q]-e[o],dy=this.data[q+1]-e[o+1];
@@ -716,7 +898,9 @@ export class Renderer {
   }
   // Leave room for the one-pixel contour within the ~1.5 tile envelope,
   // including yaw, recoil, carried cargo and the lowered aircraft sling.
-  scale=Math.min(scale,1.3/Math.max(maxX-minX,maxY-minY,maxZ-minZ));
+  // New rigs have authored, fixed scales: raising a tool or emitting a ring
+  // must not shrink the entire unit. Legacy showcase scaling stays intact.
+  if(!wave2Units.has(k))scale=Math.min(scale,1.3/Math.max(maxX-minX,maxY-minY,maxZ-minZ));
   for(let i=start;i<this.count;i++){
    const q=i*8,owned=this.owners[i]===id,core=this.data[q+7]===-4;
    const dx=(this.data[q]-e[o])*scale,dy=(this.data[q+1]-e[o+1])*scale;
@@ -731,9 +915,216 @@ export class Renderer {
    }
   }
   const w=(maxX-minX)*scale,d=(maxY-minY)*scale;
-  this.shadow(e[o]+ox+(minX+maxX)*scale/2,e[o+1]+oy+(minY+maxY)*scale/2,w,d,k===24?1:.45);
+  this.shadow(e[o]+ox+(minX+maxX)*scale/2,e[o+1]+oy+(minY+maxY)*scale/2,w,d,k===24||k===35?1:.45);
+ }
+ private wardRing(x:number,y:number,z:number,radius:number,color:number) {
+  for(let j=0;j<8;j++){
+   const a=j*Math.PI/4;
+   // Effect mask 1: rings/tracers never contribute to actor bounds or scale.
+   this.box(x+Math.cos(a)*radius,y+Math.sin(a)*radius,z,.16,.16,.05,32+color);
+  }
+ }
+ private wave2Unit(e:Float32Array,o:number,id:number) {
+  const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],state=e[o+5];
+  const tick=Math.round(this.time*60),moving=state===1||state===6,attacking=state===2;
+  const worker=k===32,working=worker&&(state===3||state===5||state===8);
+  const loading=k===33&&(attacking||state===7),active=attacking||working||loading;
+  // Idle: 72 ticks; gait/hover: 36 ticks. Snapshot phase owns action poses;
+  // a zero/unset phase still animates deterministically from the 48-tick clock.
+  const period=moving?36:72;
+  const idle=Math.sin((tick%period)*Math.PI*2/period),walk=Math.sin((tick%36)*Math.PI*2/36);
+  const phase=Number.isFinite(e[o+6])?Math.max(0,Math.min(1,e[o+6])):0;
+  const q=phase>0&&phase<1?phase:(tick%48)/48;
+  const windup=active&&q<.36?q/.36:0;
+  const strike=active&&q>=.5&&q<.68,recover=active&&q>=.68?(1-q)/.32:0;
+  const raise=active?(q<.36?windup:q<.68?1:recover):0;
+  const stroke=active?(q<.36?-.15*windup:q<.5?-.15:q<.68?.23:.23*recover):0;
+  const bob=active?0:(moving?.1*Math.abs(walk):.14*idle),gait=moving?.17*walk:0;
+  // Infantry: <=3 px, walkers: <=4 px, aircraft: <=2 px at zoom 1.
+  // These local excursions include the fixed role scale in unit(). Effects
+  // may travel beyond the rig; body, tool and wing motion remain bounded.
+  if(k===25){ // Prism Cantor: upright bearer, clear tall pole and lantern.
+   for(let side=-1;side<=1;side+=2){
+    this.box(x+gait*side,y+side*.2,z,.28,.23,.23,10,id);
+    this.box(x-.04,y+side*.19,z+.2,.21,.21,.27,7,id);
+   }
+   this.box(x-.09,y,z+.35+bob,.52,.54,.54,13,id,-1);
+   this.box(x,y,z+.74+bob,.36,.4,.27,8,id);
+   this.box(x+.03,y,z+1.01+bob,.35,.37,.26,8,id,-1);
+   this.box(x+.21,y,z+1.06+bob,.07,.2,.1,17,id);
+   const lift=raise*.28,hand=z+.61+bob+lift;
+   this.box(x+.24,y+.25,hand,.4,.16,.16,8,id);
+   this.box(x+.48,y+.29,z+.24+bob+lift,.07,.07,1.48,21,id);
+   const sway=active?.06:idle*.14;
+   this.box(x+.15,y+.29+sway,z+1.3+bob+lift,.61,.11,.36,13,id);
+   this.box(x-.22,y+.29+sway,z+1.28+bob+lift,.23,.12,.27,12,id,-1);
+   this.box(x+.05,y+.36+sway,z+1.36+bob+lift,.09,.035,.15,22,id);
+   this.box(x+.48,y+.29,z+1.61+bob+lift,.24,.24,.3,17,id,-2);
+   this.emissive(x+.48,y+.29,z+1.77+bob+lift,18,id,!active&&idle>0?2:1,1);
+   if(strike)this.wardRing(x,y,z+.16,.7+(q-.5)*2.2,18);
+   return;
+  }
+  if(k===26){ // Star Ram: paired tracks, ribs, square ram sliding on rails.
+   const settle=active?0:(moving?.12*Math.abs(walk):idle*.18);
+   for(let side=-1;side<=1;side+=2){
+    this.box(x-.1,y+side*.53,z,1.85,.34,.31,4,id);
+    for(let j=0;j<4;j++)this.box(x-.74+j*.42+(moving?walk*.14:0),y+side*.71,z+.05,.17,.06,.22,6,id);
+    this.box(x-.12,y+side*.48,z+.29+settle,1.57,.29,.26,13,id,-1);
+    this.box(x+.44,y+side*.3,z+.62+settle,1.36,.11,.12,7,id);
+   }
+   this.box(x-.25,y,z+.34+settle,1.47,.88,.54,13,id);
+   for(let j=0;j<3;j++)this.box(x-.73+j*.39,y,z+.86+settle,.12,.91,.16,8,id);
+   const ram=stroke*1.3;
+   this.box(x+.58+ram,y,z+.65+settle,1.02,.25,.21,6,id);
+   this.box(x+1.01+ram,y,z+.49+settle,.39,.92,.67,8,id);
+   this.box(x+1.22+ram,y,z+.61+settle,.045,.56,.4,21,id);
+   this.box(x-.8,y-.28,z+.93+settle,.17,.18,.5,4,id);
+   this.box(x-.8,y-.28,z+1.42+settle+(active?0:idle*.06),.19,.2,.08,7,id);
+   if(strike){this.emissive(x+1.28+ram,y,z+.87,22,-1,2,2);this.wardRing(x+1.34+ram,y,z+.59,.32+(q-.5),22);}
+   return;
+  }
+  if(k===32){ // Ashhand: low hood, bent knees, hand hook and levered pry bar.
+   for(let side=-1;side<=1;side+=2){
+    this.box(x+.08+gait*side,y+side*.22,z,.35,.22,.18,23,id);
+    this.box(x-.13,y+side*.2,z+.17,.27,.2,.3,24,id,-1);
+   }
+   this.box(x-.13,y,z+.31+bob,.61,.51,.36,24,id,-1);
+   this.box(x+.1,y,z+.61+bob,.5,.46,.33,23,id,-1);
+   this.box(x+.32,y+(active?0:idle*.1),z+.65+bob,.09,.28,.13,25,id);
+   this.box(x-.38,y-.13,z+.4+bob,.26,.29,.33,24,id);
+   this.box(x+.25,y-.27,z+.4+bob,.3,.16,.15,25,id);
+   this.hook(x+.4,y-.29,z+.35+bob,.46,6,id);
+   const tap=active?stroke:idle*.12,site=state===5?.12:0;
+   this.box(x+.24,y+.27,z+.41+bob+site,.3,.15,.17,24,id);
+   this.strut(x+.4,y+.28,z+.45+site,.18+tap,0,-.3+raise*.22,.075,6,id,2);
+   this.box(x+.58+tap,y+.28,z+.14+site+raise*.22,.24,.13,.08,6,id);
+   if(strike){
+    this.box(x+.69,y+.29,z+.19+site,.21,.23,.18,32+4);
+    this.box(x+.8,y+.35,z+.32+site,.14,.13,.13,32+6);
+    if(working)this.emissive(x+.63,y+.28,z+.27+site,27,-1,1,1);
+   }
+   return;
+  }
+  if(k===33){ // Chain Mule: elongated four-legged pack frame, hanging hooks.
+   const settle=loading?-.22*raise:(moving?.1*Math.abs(walk):.18*idle);
+   for(let end=-1;end<=1;end+=2)for(let side=-1;side<=1;side+=2){
+    const step=moving?gait*side*end:idle*.08*end;
+    this.box(x+end*.66+step,y+side*.36,z,.29,.2,.18,23,id);
+    this.strut(x+end*.66+step,y+side*.36,z+.16,-end*.16,0,.44,.12,24,id,2);
+   }
+   this.box(x-.12,y,z+.6+settle,1.75,.58,.39,24,id,-1);
+   this.box(x+.88,y,z+.7+settle,.4,.42,.34,23,id,-1);
+   this.box(x+1.05,y,z+.79+settle,.1,.2,.1,26,id);
+   this.box(x-.28,y,z+1.01+settle,1.42,.86,.1,6,id);
+   for(let side=-1;side<=1;side+=2){
+    const close=loading?raise*.18:idle*.1;
+    this.box(x-.32,y+side*.49,z+.49+settle,.87,.32,.47,23,id,-1);
+    this.box(x-.32,y+side*.66,z+.64+settle,.1,.055,.39,6,id);
+    this.hook(x+.12,y+side*(.62-close),z+.27+settle,.68,6,id);
+   }
+   this.box(x-.42,y,z+1.12+settle,.7,.55,.38,24,id,-1);
+   this.box(x-.42,y,z+1.51+settle,.11,.58,.06,6,id);
+   return;
+  }
+  if(k===34){ // Hookguard: crouched boarder; plank shield opposite the hook.
+   for(let side=-1;side<=1;side+=2){
+    this.box(x+.05+gait*side,y+side*.25,z,.35,.22,.2,23,id);
+    this.box(x-.12,y+side*.22,z+.18,.27,.2,.3,24,id,-1);
+   }
+   this.box(x-.12+stroke*.25,y,z+.34+bob,.6,.55,.45,24,id,-1);
+   this.box(x+.1+stroke*.25,y,z+.77+bob,.4,.4,.3,23,id,-1);
+   this.box(x+.29,y,z+.83+bob,.08,.22,.11,25,id);
+   for(let j=0;j<3;j++)this.box(x+.23,y-.4+j*.12,z+.22+bob,.13,.105,.72,24,id);
+   this.box(x+.31,y-.28,z+.43+bob,.06,.41,.09,6,id);
+   const hookStroke=active?stroke:idle*.1;
+   this.box(x+.32+hookStroke,y+.32,z+.58+bob,.39,.18,.17,25,id);
+   const chop=strike?-.08:raise*.12;
+   this.strut(x+.45+hookStroke,y+.34,z+.62+bob,.17,0,.23+chop,.075,6,id,2);
+   this.hook(x+.62+hookStroke,y+.34,z+.83+bob+chop,.53,6,id);
+   if(strike)this.box(x+.98,y+.34,z+.59,.18,.18,.14,32+26);
+   return;
+  }
+  if(k===30){ // Ash Jackal: jointed centaur chassis fused to a bow-bearing torso.
+   const settle=active?0:(moving?.1*Math.abs(walk):.17*idle);
+   for(let end=-1;end<=1;end+=2)for(let side=-1;side<=1;side+=2){
+    const step=moving?gait*end*side:idle*.12*end*side;
+    this.box(x+end*.65+step,y+side*.42,z,.28,.22,.16,23,id);
+    this.strut(x+end*.65+step,y+side*.42,z+.14,-end*.2,0,.33,.12,24,id,2);
+    this.strut(x+end*.45,y+side*.42,z+.47,end*.12,0,.26,.13,25,id,2);
+   }
+   this.box(x-.16,y,z+.59+settle,1.48,.64,.34,24,id,-1);
+   this.box(x-.54,y,z+.9+settle,.48,.7,.13,25,id,-1);
+   const recoil=strike?-.15:0,torso=x+.36+recoil;
+   this.box(torso,y,z+.86+settle,.43,.46,.46,24,id,-1);
+   this.box(torso+.06,y,z+1.32+settle,.35,.36,.27,23,id,-1);
+   this.box(torso+.23,y,z+1.37+settle,.08,.2,.09,26,id);
+   // Quiver behind the fused waist, with three distinct arrow nocks.
+   this.box(x-.19,y-.37,z+.88+settle,.32,.22,.53,23,id);
+   for(let j=0;j<3;j++)this.box(x-.28+j*.1,y-.37,z+1.3+settle,.045,.07,.29,25,id);
+   this.box(x-.98,y+(active?0:idle*.12),z+.68+settle,.4,.14,.24,25,id,-1);
+   const draw=active?(q<.36?windup:q<.5?1:q<.68?0:recover*.3):.4+idle*.12;
+   const bow=x+.97+recoil,hand=x+.65-draw*.2+recoil;
+   this.box(torso+.24,y+.22,z+1.09+settle,.45,.15,.14,25,id);
+   this.strut(torso,y-.25,z+1.11+settle,hand-torso,.42,0,.1,24,id,2);
+   // Vertical recurved bow, taut V string, and nocked ember arrow. Its
+   // open gap and high archer head remain legible at all four camera yaws.
+   for(let side=-1;side<=1;side+=2){
+    this.strut(bow,y+.24,z+1.13+settle,-.13,0,side*.26,.075,26,id,2);
+    this.strut(bow-.13,y+.24,z+1.13+side*.26+settle,-.16,0,side*.14,.065,25,id,2);
+    this.strut(bow-.29,y+.24,z+1.13+side*.4+settle,hand-(bow-.29),0,-side*.4,.032,27,id,2);
+   }
+   if(!strike)this.box((hand+bow)/2,y+.24,z+1.14+settle,bow-hand+.18,.045,.045,26,id);
+   if(strike){
+    const flight=(q-.5)/.18;
+    this.box(x+1.2+flight*.65,y+.24,z+1.14,.42,.055,.055,32+26);
+    this.box(x+1.44+flight*.65,y+.24,z+1.14,.1,.09,.08,32+27);
+   }
+   return;
+  }
+  if(k===35){ // Sootwing: soot-black swept wings and two ember dart pods.
+   const hover=active?0:(moving?walk*.1:idle*.12),recoil=strike?-.16:0;
+   this.box(x+recoil,y,z+hover,1.14,.36,.24,2,id,-1);
+   this.box(x+.3+recoil,y,z+.2+hover,.39,.31,.17,23,id,-1);
+   for(let side=-1;side<=1;side+=2){
+    const sweep=active?-.1*raise:(moving?walk*.04:idle*.02);
+    this.box(x-.17+recoil,y+side*.43,z+.02+hover,.74,.66,.12,2,id,-1);
+    this.box(x-.49+sweep+recoil,y+side*.85,z+.03+hover,.49,.39,.1,1,id,-1);
+    this.box(x+.21+recoil,y+side*.43,z-.08+hover,.4,.18,.2,23,id);
+    this.box(x+.42+recoil,y+side*.43,z-.02+hover,.08,.12,.08,26,id);
+   }
+   this.box(x-.61+recoil,y,z+.17+hover,.32,.14,.29,23,id,-1);
+   if(strike)for(let side=-1;side<=1;side+=2){
+    this.box(x+.65+(q-.5)*2,y+side*.43,z+.01,.27,.055,.055,32+26);
+    this.box(x+.5,y+side*.43,z+.01,.09,.1,.08,32+27);
+   }
+   return;
+  }
+  if(k===36){ // Brandcaller: raised torch silhouette and open off-hand glyph.
+   for(let side=-1;side<=1;side+=2){
+    this.box(x+gait*side,y+side*.2,z,.29,.22,.21,23,id);
+    this.box(x-.08,y+side*.17,z+.2,.22,.22,.26,24,id);
+   }
+   this.box(x-.11,y,z+.35+bob,.5,.53,.48,24,id,-1);
+   this.box(x+.04,y,z+.83+bob,.36,.38,.3,23,id,-1);
+   this.box(x+.21,y,z+.89+bob,.08,.24,.11,25,id);
+   const lift=raise*.28;
+   this.strut(x+.06,y+.23,z+.65+bob,.25,.05,.2+lift,.11,25,id,2);
+   this.box(x+.32,y+.29,z+.77+bob+lift,.075,.075,.68,6,id);
+   this.box(x+.32,y+.29,z+1.4+bob+lift,.24,.23,.29,26,id,-2);
+   this.box(x+.32+(active?0:idle*.09),y+.29,z+1.6+bob+lift,.12,.13,.18+(active?0:idle*.03),27,id,-2);
+   this.box(x+.22,y-.29,z+.69+bob,.37,.16,.15,25,id);
+   this.box(x+.42,y-.32,z+.77+bob,.07,.35,.065,26,id);
+   this.box(x+.42,y-.32,z+.67+bob,.07,.065,.28,26,id);
+   if(strike){
+    this.wardRing(x+1.22,y,z+.15,.48+(q-.5)*1.4,26);
+    this.box(x+1.22,y,z+.41,.09,.09,.42,32+27);
+    this.box(x+1.22,y,z+.62,.11,.42,.08,32+27);
+    this.emissive(x+.32,y+.29,z+1.64+lift,27,-1,1,1);
+   }
+  }
  }
  private unitParts(e:Float32Array,o:number,id:number) {
+  if(wave2Units.has(e[o+4])){this.wave2Unit(e,o,id);return;}
   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],phase=e[o+6],state=e[o+5],moving=state===1||state===6;
   const gait=moving?(phase<.5?-.16:.16):0;
   if(k===24){this.box(x,y,z,1.8,.8,.25,13,id);this.box(x,y,z+.25,1.25,.6,.25,14,id);for(let a=-1;a<=1;a+=2){this.box(x+a*.85,y,z,.25,1.25,.3,8,id);this.box(x+a*.75,y-.55,z+.1,.22,.4,.2,7,id);this.box(x+a*.6,y-.5,z-.05,.16,.25,.1,phase<.5?17:18,id);}this.box(x,y+.4,z+.15,1.4,.18,.15,8,id);this.box(x-.4,y,z+.5,.35,.4,.15,3,id);if(e[o+10]>0)this.crate(x+.2,y,z+.5,.45,id);if(state===7){this.box(x,y,z-1.,.04,.04,1.,21,id);this.crate(x,y,z-1.3,.35,id);}return;}
@@ -751,7 +1142,7 @@ export class Renderer {
    this.box(x-recoil,y,z+.67,.5,.5,.76,10,id);
    this.box(x-recoil,y,z+.7,.53,.53,.27,14,id);
    this.box(x-recoil,y,z+1.1,.53,.53,.22,14,id);
-   this.box(x-recoil,y,z+1.32,.42,.44,.16,0,id);
+   this.box(x-recoil,y,z+1.32,.42,.44,.16,1,id);
    this.box(x-recoil,y,z+1.48,.36,.38,.27,8,id,-2);
    this.box(x+.19-recoil,y,z+1.52,.16,.22,.14,18,id);
    // One shoulder carries an ivory glint inside the unchanged actor contour.
@@ -773,7 +1164,7 @@ export class Renderer {
     this.box(x-.35-recoil,y+side*(.85+spread),z+.44,.4,.3,.16,8,id);
    }
    this.box(x-recoil,y,z+.28,.75,.76,.4,13,id,-1);
-   this.box(x+.12-recoil,y,z+.67,.48,.5,.12,0,id);
+   this.box(x+.12-recoil,y,z+.67,.48,.5,.12,1,id);
    this.box(x+.22-recoil,y,z+.79,.35,.38,.23,9,id,-1);
    this.box(x-recoil,y,z+.88,.13,.13,.04,17,id);
    this.box(x+.65-recoil,y,z+.78,.65,.22,.2,10,id);
@@ -781,32 +1172,11 @@ export class Renderer {
    if(attacking&&e[o+11]>.8)this.emissive(x+.98-recoil,y,z+.95,22,id,2,2);
    return;
   }
-  if(k===30){
-   // Four feet, two separated rear hocks, red wedge and long heat muzzle.
-   // The body stays low; the raised red shoulder makes a forward-leaning arch.
-   const lunge=attacking?(phase<.18?-.18:.12):0;
-   for(let side=-1;side<=1;side+=2){
-    this.box(x-.52+gait*side,y+side*.38,z,.29,.23,.23,0,id);
-    this.box(x-.56+gait*side,y+side*.38,z+.19,.19,.22,.43,25,id);
-    this.box(x-.38,y+side*.36,z+.51,.42,.23,.23,25,id);
-    this.box(x+.35+lunge-gait*side,y+side*.33,z,.23,.22,.51,25,id);
-   }
-   this.box(x-.12+lunge,y,z+.48,.98,.67,.48,25,id,-1);
-   this.box(x+.19+lunge,y,z+.72,.65,.65,.55,25,id,-2);
-   this.box(x+.44+lunge,y,z+.66,.62,.46,.32,23,id);
-   this.box(x+.62+lunge,y,z+.74,.3,.36,.28,25,id);
-   this.box(x+.75+lunge,y,z+.72,.44,.29,.22,23,id);
-   this.box(x+.99+lunge,y,z+.76,.18,.1,.16,27,id);
-   this.box(x-.19+lunge,y,z+.97,.2,.66,.12,23,id);
-   this.box(x-.64,y,z+.66,.45,.23,.2,25,id,-2);
-   if(attacking&&e[o+11]>.72)this.emissive(x+1.1+lunge,y,z+.84,27,id,2,2);
-   return;
-  }
   if(k===31){
    // Heavy low chassis: broad armored rails and a stepped siege gun.
    const brace=attacking?.12:0;
    for(let side=-1;side<=1;side+=2){
-    this.box(x,y+side*(.62+brace),z,1.54,.36,.32,0,id);
+    this.box(x,y+side*(.62+brace),z,1.54,.36,.32,1,id);
     this.box(x-.1,y+side*(.6+brace),z+.3,1.5,.34,.38,25,id,-1);
    }
    this.box(x-.14-recoil,y,z+.46,1.65,1.25,.59,25,id,-1);
@@ -836,6 +1206,11 @@ export class Renderer {
   if(strike){this.box(x+.6,y,z+.4,.15,.15,.15,18);this.box(x+.8,y,z+.58,.1,.1,.1,22);}
  }
 
+ private wreck(x:number,y:number,z:number,kind:number) {
+  const cinder=cinderUnits.has(kind)||cinderBuildings.has(kind);
+  this.box(x,y,z,.48,.45,.2,cinder?23:4);
+  this.box(x+.28,y+.12,z,.2,.2,.14,cinder?24:7);
+ }
  private effects(e:Float32Array,o:number) {
   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],sub=e[o+10],age=e[o+11],dx=Math.cos(e[o+3]),dy=Math.sin(e[o+3]);
   if(k===50){const color=sub===30||sub===31?26:sub===22?22:17;
@@ -849,7 +1224,7 @@ export class Renderer {
    for(let j=0;j<6;j++){const a=j*Math.PI/3;this.box(x+Math.cos(a)*r,y+Math.sin(a)*r,z+.08+(j%2)*.16,.24,.24,.23,32+(age<.25?(sub===30||blast?26:18):20));}
    if(blast&&age>.2)for(let j=0;j<5;j++)this.box(x+(j-2)*r*.45,y+(j%2)*.4,this.ground(x,y)+.1,.3,.35,.12,age<.5?5:4);
   }
-  else if(k===52){this.box(x,y,z,.48,.45,.2,sub>=30?23:4);this.box(x+.28,y+.12,z,.2,.2,.14,sub>=30?24:7);}
+  else if(k===52)this.wreck(x,y,z,sub);
  }
  private ambient(t:number) {
   for(let j=0;j<16;j++){const x=19+j*17%76/10,y=25.6+j*11%31/10,z=this.ground(x,y),sway=Math.floor(t/1.4+j)%2*.18;this.box(x+sway,y,z,.13,.12,.38,21);this.box(x+.2+sway,y+.08,z,.12,.13,.48,20);this.box(x-.18,y,z,.13,.12,.27,21);}
@@ -872,9 +1247,9 @@ export class Renderer {
   const kind=o<0?-1:e[o+4],hp=o<0?-1:Math.round(e[o+7]*100),job=o<0?-1:e[o+5],progress=o<0?-1:Math.floor(e[o+10]*100);
   if(alloy!==this.hudAlloy||charge!==this.hudCharge||o!==this.hudSelection||kind!==this.hudKind||hp!==this.hudHealth||job!==this.hudJob||progress!==this.hudProgress){const start=this.count;this.rect(8,6,464,14,0);this.rect(8,19,464,1,5);this.text('STARHOLD',11,9);this.rect(287,12,4,5,20);this.rect(292,12,4,5,21);this.rect(290,8,4,4,22);this.text('ALLOY '+alloy,300,9,22);this.rect(379,9,5,8,16);this.rect(381,7,2,11,18);this.text('CHARGE '+charge,389,9,18);
    if(this.hudButtons)for(let j=0;j<4;j++){this.rect(370+j*25,244,22,20,5);this.rect(371+j*25,245,20,18,1);this.buttonGlyph(j,376+j*25,249);}
-   if(o>=0){this.rect(8,242,134,23,5);this.rect(9,243,132,21,0);this.text(names[e[o+4]]||'COLONY',12,244);this.rect(12,252,125,3,3);this.rect(12,252,Math.floor(125*e[o+7]),3,13);const max=e[o+4]===10?1500:e[o+4]===16?900:e[o+4]<20?600:e[o+4]===20?70:e[o+4]===23?110:e[o+4]===24?150:e[o+4]===30?80:e[o+4]===31?240:180;this.text('HP '+Math.round(e[o+7]*max)+' '+(jobs[e[o+5]]||'IDLE')+(e[o+5]===5?' '+Math.floor(e[o+10]*100)+'%':''),12,257,7);}
+   if(o>=0){this.rect(8,242,134,23,5);this.rect(9,243,132,21,0);this.text(names[e[o+4]]||'COLONY',12,244);this.rect(12,252,125,3,3);this.rect(12,252,Math.floor(125*e[o+7]),3,13);const max=maxHealth[e[o+4]]??180;this.text('HP '+Math.round(e[o+7]*max)+' '+(jobs[e[o+5]]||'IDLE')+(e[o+5]===5?' '+Math.floor(e[o+10]*100)+'%':''),12,257,7);}
    this.hudCount=this.count-start;for(let i=0;i<this.hudCount*8;i++)this.hudData[i]=this.data[start*8+i];this.hudAlloy=alloy;this.hudCharge=charge;this.hudSelection=o;this.hudKind=kind;this.hudHealth=hp;this.hudJob=job;this.hudProgress=progress;
-  }else{for(let i=0;i<this.hudCount*8;i++)this.data[this.count*8+i]=this.hudData[i];this.count+=this.hudCount;}
+  }else{const available=Math.min(this.hudCount,MAX-this.count);for(let i=0;i<available*8;i++)this.data[this.count*8+i]=this.hudData[i];this.count+=available;this.dropped+=this.hudCount-available;}
  }
  private markContours(yaw:number,zoom:number) {
   this.contourData.fill(0);
@@ -898,15 +1273,15 @@ export class Renderer {
  render(e:Float32Array,n:number,yaw:number,zoom:number,alloy:number,charge:number,tick:number) {
   this.time=tick/60;this.count=this.staticCount;this.emissiveCount=this.staticEmissiveCount;this.selected=null;this.dropped=0;
   for(let id=0;id<n;id++){const o=id*12,k=e[o+4];if(e[o+8]===1)this.selected=id;
-   if(k>=10&&k<20)this.building(e,o,id);
-   else if(k>=20&&k<=31)this.unit(e,o,id);
+   if(buildingFootprints[k])this.building(e,o,id);
+   else if(dawnUnits.has(k)||cinderUnits.has(k))this.unit(e,o,id);
    else if(k===40){const h=e[o+10]>0?1.3+id%3*.35:e[o+11]*1.4;this.shard(e[o],e[o+1],e[o+2],Math.max(.08,h*1.4),31);}
    else if(k===41){this.box(e[o],e[o+1],e[o+2],.38,.36,.23,40);this.box(e[o],e[o+1],e[o+2]-.16,.18,.18,.14,18);}
-   else if(k>=50)this.effects(e,o);
+   else if(effectKinds.has(k))this.effects(e,o);
   }
   // Mask 1 protects the gold segment fill; the existing neighbor contour
   // supplies its one-pixel ink gap. Small segments now retain endpoint 22.
-  if(this.selected!==null){const o=this.selected*12,r=e[o+4]<20?(e[o+4]===10?2.5:e[o+4]===16?1.5:1.8):e[o+4]===20?.65:e[o+4]===31?1.65:1.35;for(let j=0;j<24;j++){if(j%3===Math.floor(this.time/.6)%2)continue;const a=j*Math.PI/12;this.box(e[o]+Math.cos(a)*r,e[o+1]+Math.sin(a)*r,this.ground(e[o],e[o+1])+.08,.2,.2,.035,54);}}
+  if(this.selected!==null){const o=this.selected*12,r=buildingFootprints[e[o+4]]?(cinderBuildings.has(e[o+4])?Math.max(...buildingFootprints[e[o+4]])/2+.3:e[o+4]===10?2.5:e[o+4]===16?1.5:1.8):e[o+4]===20?.65:e[o+4]===31?1.65:1.35;for(let j=0;j<24;j++){if(j%3===Math.floor(this.time/.6)%2)continue;const a=j*Math.PI/12;this.box(e[o]+Math.cos(a)*r,e[o+1]+Math.sin(a)*r,this.ground(e[o],e[o+1])+.08,.2,.2,.035,54);}}
   this.ambient(this.time);
   this.worldCount=this.count;this.hud(e,alloy,charge);
   this.markContours(yaw,zoom);

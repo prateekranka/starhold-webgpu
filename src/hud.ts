@@ -76,6 +76,7 @@ export interface HudView {
 
 export interface HudWiring {
   command: (op: number, a: number, b: number) => number;
+  build: (kind: number) => number;
   startMatch: (faction: 0 | 1) => void;
   resetShowcase: () => void;
 }
@@ -152,13 +153,12 @@ function candidates(sim: SimAbi | undefined, view: HudView): readonly RosterRow[
   const player = view.player;
   if (isBuildingKind(view.selectedKind)) {
     if (view.selectedState === State.Construct || view.selectedState === State.Death) return EMPTY;
-    const units = rows.filter((row) => row.faction === player && row.klass === 1);
-    const produced = units.filter((row) => row.producer === view.selectedKind);
-    // Producer kind is authoritative; if a roster leaves it unset, fall back to
-    // every unit of this faction and let sim_can_train decide.
-    return (produced.length > 0 ? produced : units).slice();
+    // The roster producer field is authoritative. A building with no matching
+    // rows has no production action; do not fill its HUD with disabled units.
+    return rows.filter((row) => row.faction === player && row.klass === 1
+      && row.producer === view.selectedKind).slice();
   }
-  if (isUnitKind(view.selectedKind)) {
+  if (view.selectedKind === Kind.Riveter || view.selectedKind === Kind.Ashhand) {
     if (view.selectedState === State.Death) return EMPTY;
     return rows.filter((row) => row.faction === player && row.klass === 0).slice();
   }
@@ -386,7 +386,7 @@ export class Hud {
     else if (action === 'reset') this.wiring.resetShowcase();
     else if (action === 'advance') this.wiring.command(2, 0, 0);
     else if (action === 'train') this.wiring.command(0, kind, this.view.selected ?? 0);
-    else if (action === 'build') this.wiring.command(1, kind, this.view.tile);
+    else if (action === 'build') this.wiring.build(kind);
   }
 
   private setText(element: HTMLElement, value: string): void {

@@ -18,15 +18,18 @@ struct Entity { data: [f32; STRIDE], x: i32, y: i32, target: usize, timer: u32, 
 impl Entity {
     const EMPTY: Self = Self { data: [0.; STRIDE], x: 0, y: 0, target: 0, timer: 0, route: 0, origin: [0.;3], destination: [0.;3], active: false };
 }
-struct Sim { entities: [Entity; CAP], snapshot: [f32; CAP*STRIDE], ids: [usize; CAP], terrain: [f32;1024], count: usize, tick: u32, accumulator: f64, rng: u32, selected: usize, alloy: u32, charge: u32 }
-thread_local! { static SIM: RefCell<Sim> = RefCell::new(Sim { entities:[Entity::EMPTY;CAP], snapshot:[0.;CAP*STRIDE], ids:[0;CAP], terrain:[0.;1024], count:0,tick:0,accumulator:0.,rng:1,selected:CAP,alloy:160,charge:120 }); }
+struct Sim { entities: [Entity; CAP], snapshot: [f32; CAP*STRIDE], ids: [usize; CAP], terrain: [f32;1024], count: usize, tick: u32, accumulator: f64, rng: u32, selected: usize, alloy: u32, charge: u32, mode: u32, game: Match }
+thread_local! { static SIM: RefCell<Sim> = RefCell::new(Sim { entities:[Entity::EMPTY;CAP], snapshot:[0.;CAP*STRIDE], ids:[0;CAP], terrain:[0.;1024], count:0,tick:0,accumulator:0.,rng:1,selected:CAP,alloy:160,charge:120,mode:0,game:Match::EMPTY }); }
 fn height(x:f32,y:f32)->f32 {
     if (7. ..25.).contains(&x) && (9. ..26.).contains(&y) || (23. ..29.).contains(&x) && (7. ..26.).contains(&y) || (3. ..10.).contains(&x) && (15. ..26.).contains(&y) || x>=24. && y<=14. {0.5}
     else if (7. ..14.).contains(&x) && (3. ..9.).contains(&y) {1.} else if x<2. || y<2. || x>30. || y>30. {-1.} else {0.}
 }
 impl Sim {
  fn random(&mut self)->u32 { let mut x=self.rng; x^=x<<13;x^=x>>17;x^=x<<5;self.rng=x;x }
- fn add(&mut self,id:usize,kind:u32,x:f32,y:f32,faction:f32) { let mut e=Entity::EMPTY;e.active=true;e.x=(x*1024.) as i32;e.y=(y*1024.) as i32;e.data=[x,y,height(x,y),0.,kind as f32,0.,0.,1.,0.,faction,1.,0.];self.entities[id]=e; }
+ // The legacy initializer always adds slot zero first. Reset its mode here so
+ // sim_init itself stays byte-identical, including when called after a match.
+ // Match actors use match_add, and never pass through this showcase helper.
+ fn add(&mut self,id:usize,kind:u32,x:f32,y:f32,faction:f32) { if id==0 {self.mode=0;} let mut e=Entity::EMPTY;e.active=true;e.x=(x*1024.) as i32;e.y=(y*1024.) as i32;e.data=[x,y,height(x,y),0.,kind as f32,0.,0.,1.,0.,faction,1.,0.];self.entities[id]=e; }
  fn pack(&mut self) { self.count=0;for i in 0..CAP {if self.entities[i].active {self.entities[i].data[8]=if self.selected==i {1.} else {0.};self.ids[self.count]=i;self.snapshot[self.count*STRIDE..(self.count+1)*STRIDE].copy_from_slice(&self.entities[i].data);self.count+=1;}} }
  fn walk(&mut self,id:usize,x:f32,y:f32,speed:f32)->bool {let e=&mut self.entities[id];let dx=(x*1024.) as i32-e.x;let dy=(y*1024.) as i32-e.y;let dist=((dx as f64).powi(2)+(dy as f64).powi(2)).sqrt();let step=(speed*1024./60.) as i32;if dist<=step as f64 {e.x=(x*1024.) as i32;e.y=(y*1024.) as i32;} else {e.x+=(dx as f64/dist*step as f64).round() as i32;e.y+=(dy as f64/dist*step as f64).round() as i32;}
  e.data[0]=e.x as f32/1024.;e.data[1]=e.y as f32/1024.;e.data[2]=height(e.data[0],e.data[1]);e.data[3]=(dy as f32).atan2(dx as f32);e.data[5]=1.;dist<=step as f64 }
@@ -137,12 +140,820 @@ for id in 14..18 {let site=if id<16 {4}else{5};let x=s.entities[site].data[0]+if
 for id in 27..39 {let j=id-27;let jitter=(s.random()%200) as f32/1000.;s.add(id,40,3.+(j%3) as f32*1.5+jitter,19.+(j/3) as f32*2.3,2.);s.entities[id].data[10]=80.;}
 for id in 52..54 {s.add(id,41,16.,18.,2.);s.entities[id].data[2]=3.2;}
 s.pack();});}
-#[no_mangle] pub extern "C" fn sim_step(dt_ms:f32) {if !dt_ms.is_finite()||dt_ms<=0. {return;}SIM.with(|s| {let mut s=s.borrow_mut();let dt=if (dt_ms as f64-1000./60.).abs()<0.001 {1000./60.}else{dt_ms as f64};s.accumulator+=dt;while s.accumulator+0.00001>=1000./60. {s.accumulator-=1000./60.;s.tick();}});}
+#[no_mangle] pub extern "C" fn sim_step(dt_ms:f32) {if !dt_ms.is_finite()||dt_ms<=0. {return;}SIM.with(|s| {let mut s=s.borrow_mut();let dt=if (dt_ms as f64-1000./60.).abs()<0.001 {1000./60.}else{dt_ms as f64};s.accumulator+=dt;while s.accumulator+0.00001>=1000./60. {s.accumulator-=1000./60.;if s.mode==1 {s.match_tick();}else{s.tick();}}});}
 #[no_mangle] pub extern "C" fn sim_entity_count()->u32 {SIM.with(|s|s.borrow().count as u32)}
 #[no_mangle] pub extern "C" fn sim_entity_stride()->u32 {STRIDE as u32}
 #[no_mangle] pub extern "C" fn sim_entity_ptr()->*const f32 {SIM.with(|s|s.borrow().snapshot.as_ptr())}
-#[no_mangle] pub extern "C" fn sim_select(index:i32) {SIM.with(|s| {let mut s=s.borrow_mut();s.selected=if index>=0&&(index as usize)<s.count {let id=s.ids[index as usize];let k=s.entities[id].data[4];if (10. ..32.).contains(&k) {id}else{CAP}}else{CAP};s.pack();});}
+#[no_mangle] pub extern "C" fn sim_select(index:i32) {SIM.with(|s| {let mut s=s.borrow_mut();s.selected=if index>=0&&(index as usize)<s.count {let id=s.ids[index as usize];let k=s.entities[id].data[4] as u32;if if s.mode==1 {roster(k).is_some()}else{matches!(k,10|11|12|13|14|15|16|17|20|21|22|23|24|30|31)} {id}else{CAP}}else{CAP};s.pack();});}
 // Additive read-only terrain/resource exports; required entity ABI stays unchanged.
 #[no_mangle] pub extern "C" fn sim_terrain_ptr()->*const f32 {SIM.with(|s|s.borrow().terrain.as_ptr())}
-#[no_mangle] pub extern "C" fn sim_alloy()->u32 {SIM.with(|s|s.borrow().alloy)}
-#[no_mangle] pub extern "C" fn sim_charge()->u32 {SIM.with(|s|s.borrow().charge)}
+#[no_mangle] pub extern "C" fn sim_alloy()->u32 {SIM.with(|s|{let s=s.borrow();if s.mode==1 {s.game.sides[s.game.player].alloy}else{s.alloy}})}
+#[no_mangle] pub extern "C" fn sim_charge()->u32 {SIM.with(|s|{let s=s.borrow();if s.mode==1 {s.game.sides[s.game.player].charge}else{s.charge}})}
+
+// Match mode. The showcase tick and initializer above are deliberately frozen.
+const MATCH_ACTORS: usize = 120; // Remaining slots are bounded projectiles/wrecks.
+const ROSTER_STRIDE: usize = 8;
+#[derive(Clone, Copy)]
+struct Kind {
+    kind: u32, faction: usize, tier: u32, klass: u32, producer: u32,
+    alloy: u32, charge: u32, pop: u32, ticks: u32, width: f32, depth: f32,
+    hp: f32, speed: f32, range: f32, damage: f32, cadence: u32,
+}
+macro_rules! building {
+    ($k:expr,$f:expr,$t:expr,$a:expr,$c:expr,$s:expr,$w:expr,$d:expr,$hp:expr,$r:expr,$hit:expr,$beat:expr) => {
+        Kind { kind:$k, faction:$f, tier:$t, klass:0, producer:0, alloy:$a,
+            charge:$c, pop:0, ticks:$s*60, width:$w, depth:$d, hp:$hp,
+            speed:0., range:$r, damage:$hit, cadence:$beat }
+    };
+}
+macro_rules! unit {
+    ($k:expr,$f:expr,$t:expr,$p:expr,$a:expr,$c:expr,$s:expr,$pop:expr,$hp:expr,$v:expr,$r:expr,$hit:expr,$beat:expr) => {
+        Kind { kind:$k, faction:$f, tier:$t, klass:1, producer:$p, alloy:$a,
+            charge:$c, pop:$pop, ticks:$s*60, width:0.6, depth:0.6, hp:$hp,
+            speed:$v, range:$r, damage:$hit, cadence:$beat }
+    };
+}
+// Civilizations §5–§8. Starting scouts are a scenario exception; replacements
+// have tier 2. The single ABI producer is supplemented by support prerequisites.
+const KINDS: [Kind; 30] = [
+    building!(10,0,0,100,60,48,4.,4.,1500.,0.,0.,0),
+    building!(11,0,0,24,0,24,3.,3.,600.,0.,0.,0),
+    building!(12,0,0,32,20,30,2.,2.,600.,0.,0.,0),
+    building!(15,0,0,20,8,24,3.,2.,600.,0.,0.,0),
+    building!(13,0,1,28,12,24,3.,3.,600.,0.,0.,0),
+    building!(14,0,1,36,16,30,3.,3.,600.,0.,0.,0),
+    building!(16,0,2,40,24,42,2.,2.,900.,8.,30.,108),
+    building!(17,0,2,48,24,30,4.,3.,600.,0.,0.,0),
+    unit!(20,0,0,10,4,0,6,1,70.,1.4,0.,0.,0),
+    unit!(21,0,0,11,8,2,10,1,180.,1.0,0.,0.,0),
+    unit!(22,0,0,13,8,4,12,1,180.,1.6,5.,12.,60),
+    unit!(24,0,2,17,12,6,18,2,150.,2.0,0.,0.,0),
+    unit!(23,0,1,13,10,6,16,2,110.,1.4,7.,25.,96),
+    unit!(25,0,1,13,14,10,22,2,100.,1.35,0.,0.,0),
+    unit!(26,0,2,14,24,18,32,3,360.,0.75,7.,40.,144),
+    building!(60,1,0,90,50,44,4.,4.,1350.,0.,0.,0),
+    building!(61,1,0,22,0,21,3.,3.,525.,0.,0.,0),
+    building!(62,1,0,30,18,27,2.,2.,500.,0.,0.,0),
+    building!(65,1,0,18,6,20,3.,2.,450.,0.,0.,0),
+    building!(63,1,1,26,10,22,3.,3.,525.,0.,0.,0),
+    building!(64,1,1,34,14,28,3.,3.,650.,0.,0.,0),
+    building!(66,1,2,38,20,38,2.,2.,750.,7.,22.,108),
+    building!(67,1,2,44,22,28,4.,3.,550.,0.,0.,0),
+    unit!(32,1,0,60,4,0,5,1,60.,1.55,0.,0.,0),
+    unit!(33,1,0,61,7,2,9,1,150.,1.15,0.,0.,0),
+    unit!(34,1,0,63,7,3,10,1,150.,1.8,1.5,10.,48),
+    unit!(30,1,0,63,8,4,11,1,80.,1.8,5.,4.,48),
+    unit!(35,1,2,67,11,5,16,2,120.,2.4,3.,2.,90),
+    unit!(36,1,1,63,12,9,19,2,90.,1.5,0.,0.,0),
+    unit!(31,1,2,64,22,16,28,3,240.,0.9,7.,14.,144),
+];
+const fn roster_data() -> [f32; 30 * ROSTER_STRIDE] {
+    let mut data = [0.; 30 * ROSTER_STRIDE];
+    let mut i = 0;
+    while i < KINDS.len() {
+        let k = KINDS[i];
+        let row = [k.kind as f32, k.faction as f32, k.tier as f32, k.klass as f32,
+            k.producer as f32, k.alloy as f32, k.charge as f32, k.pop as f32];
+        let mut j = 0;
+        while j < ROSTER_STRIDE { data[i * ROSTER_STRIDE + j] = row[j]; j += 1; }
+        i += 1;
+    }
+    data
+}
+static ROSTER: [f32; 30 * ROSTER_STRIDE] = roster_data();
+fn roster(kind: u32) -> Option<&'static Kind> { KINDS.iter().find(|k| k.kind == kind) }
+fn worker(kind: u32) -> bool { matches!(kind, 20 | 32) }
+fn carrier(kind: u32) -> bool { matches!(kind, 21 | 33) }
+fn aircraft(kind: u32) -> bool { matches!(kind, 24 | 35) }
+fn headquarters(faction: usize) -> u32 { if faction == 0 { 10 } else { 60 } }
+fn housing(faction: usize) -> u32 { if faction == 0 { 15 } else { 65 } }
+fn source(faction: usize) -> u32 { if faction == 0 { 12 } else { 62 } }
+fn military(faction: usize) -> u32 { if faction == 0 { 13 } else { 63 } }
+fn age_cost(age: u32) -> (u32, u32, u32) {
+    match age { 0 => (60, 30, 40 * 60), 1 => (100, 60, 60 * 60), _ => (0, 0, 0) }
+}
+#[derive(Clone, Copy)]
+struct Side { alloy: u32, charge: u32, age: u32, advancing: u32 }
+impl Side { const START: Self = Self { alloy: 80, charge: 40, age: 0, advancing: 0 }; }
+#[derive(Clone, Copy)]
+struct Production { kind: u32, slot: usize, remaining: u32 }
+impl Production { const EMPTY: Self = Self { kind: 0, slot: CAP, remaining: 0 }; }
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Order { Idle, Gather, Build(usize), Defend, Raid(u32), Return }
+struct Match {
+    player: usize, sides: [Side; 2], jobs: [Production; CAP], orders: [Order; CAP],
+    homes: [(f32, f32); CAP], cooldowns: [u32; CAP], generations: [u32; CAP],
+    defenders: [usize; 2], next_raid: u32, waves: u32,
+}
+impl Match {
+    const EMPTY: Self = Self { player: 0, sides: [Side::START; 2],
+        jobs: [Production::EMPTY; CAP], orders: [Order::Idle; CAP],
+        homes: [(0., 0.); CAP], cooldowns: [0; CAP], generations: [0; CAP],
+        defenders: [CAP; 2], next_raid: 150 * 60, waves: 0 };
+}
+impl Sim {
+    fn match_add(&mut self, id: usize, kind: u32, x: f32, y: f32, faction: usize) {
+        let mut e = Entity::EMPTY;
+        e.active = true;
+        e.x = (x * 1024.) as i32;
+        e.y = (y * 1024.) as i32;
+        e.target = CAP;
+        e.data = [x, y, height(x, y), 0., kind as f32, 0., 0., 1., 0., faction as f32, 1., 0.];
+        if worker(kind) || carrier(kind) { e.data[10] = 0.; }
+        if aircraft(kind) { e.data[2] += 3.; }
+        self.entities[id] = e;
+        self.game.jobs[id] = Production::EMPTY;
+        self.game.orders[id] = Order::Idle;
+        self.game.homes[id] = (x, y);
+        self.game.cooldowns[id] = 0;
+        self.game.generations[id] = self.game.generations[id].wrapping_add(1);
+    }
+    fn match_init(&mut self, seed: u32, faction: u32) {
+        self.entities.fill(Entity::EMPTY);
+        self.snapshot.fill(0.);
+        self.ids.fill(0);
+        self.tick = 0;
+        self.accumulator = 0.;
+        self.rng = seed.max(1);
+        self.selected = CAP;
+        self.mode = 1;
+        self.game = Match::EMPTY;
+        // The void ABI maps invalid faction inputs to Dawnward.
+        self.game.player = usize::from(faction == 1);
+        for y in 0..32 { for x in 0..32 {
+            self.terrain[y * 32 + x] = height(x as f32 + 0.5, y as f32 + 0.5);
+        } }
+        for side in 0..2 {
+            let f = if side == 0 { self.game.player } else { 1 - self.game.player };
+            let base = side * 13;
+            let buildings = if side == 0 { [(12.,18.), (7.,23.), (10.,12.)] }
+                else { [(27.,11.), (27.,17.), (29.,6.)] };
+            let kinds = if f == 0 { [10,11,12,20,21,22,24] } else { [60,61,62,32,33,30,35] };
+            for j in 0..3 { self.match_add(base + j, kinds[j], buildings[j].0, buildings[j].1, f); }
+            for j in 0..6 {
+                let (x, y) = if side == 0 {
+                    if j < 4 { (4. + (j % 2) as f32, 19. + (j / 2) as f32 * 2.) }
+                    else { (9.4, 17. + (j - 4) as f32 * 2.) }
+                } else if j < 4 { (26. + (j % 2) as f32, 23. + (j / 2) as f32) }
+                else { (24.4, 10. + (j - 4) as f32 * 2.) };
+                self.match_add(base + 3 + j, kinds[3], x, y, f);
+                if j < 4 { self.game.orders[base + 3 + j] = Order::Gather; }
+            }
+            self.match_add(base + 9, kinds[4], buildings[1].0 + 1.9, buildings[1].1, f);
+            for j in 0..2 {
+                let (x, y) = if side == 0 { (18., 17. + j as f32 * 4.) }
+                    else { (24.8, 18. + j as f32 * 3.) };
+                self.match_add(base + 10 + j, kinds[5], x, y, f);
+                self.game.orders[base + 10 + j] = Order::Defend;
+                if side == 1 { self.game.defenders[j] = base + 10 + j; }
+            }
+            self.match_add(base + 12, kinds[6], buildings[0].0, buildings[0].1, f);
+        }
+        for j in 0..12 {
+            let jitter = (self.random() % 200) as f32 / 1000.;
+            let (x, y) = if j < 6 { (3.4 + (j % 2) as f32 * 1.5 + jitter, 19. + (j / 2) as f32 * 2.3) }
+                else { (26. + (j % 2) as f32 * 1.5 + jitter, 23. + ((j - 6) / 2) as f32) };
+            self.match_add(26 + j, 40, x, y, 2);
+            self.entities[26 + j].data[10] = 160.;
+        }
+        self.pack();
+    }
+    fn complete(&self, id: usize, f: usize) -> bool {
+        id < MATCH_ACTORS && self.entities[id].active && self.entities[id].data[9] == f as f32
+            && self.entities[id].data[7] > 0. && self.entities[id].data[5] != 5.
+            && roster(self.entities[id].data[4] as u32).is_some()
+    }
+    fn has(&self, f: usize, kind: u32) -> bool {
+        (0..MATCH_ACTORS).any(|id| self.complete(id, f) && self.entities[id].data[4] == kind as f32)
+    }
+    fn population(&self, f: usize) -> (u32, u32) {
+        let mut used = 0;
+        let mut cap = 0;
+        for id in 0..MATCH_ACTORS {
+            let e = self.entities[id];
+            if !e.active || e.data[9] != f as f32 { continue; }
+            if let Some(k) = roster(e.data[4] as u32) {
+                used += k.pop;
+                if self.complete(id, f) {
+                    if k.kind == headquarters(f) { cap += 15; }
+                    if k.kind == housing(f) { cap += 5; }
+                }
+            }
+            if let Some(k) = roster(self.game.jobs[id].kind) { used += k.pop; }
+        }
+        (used, cap)
+    }
+    fn free_actor(&self) -> Option<usize> {
+        (0..MATCH_ACTORS).find(|&id| !self.entities[id].active
+            && !self.game.jobs.iter().any(|p| p.kind != 0 && p.slot == id))
+    }
+    fn affordable(&self, f: usize, k: &Kind) -> bool {
+        let side = self.game.sides[f];
+        side.age >= k.tier && side.alloy >= k.alloy && side.charge >= k.charge
+    }
+    fn can_train(&self, f: usize, kind: u32, producer: usize) -> bool {
+        let Some(k) = roster(kind) else { return false; };
+        if k.klass != 1 || k.faction != f || !self.affordable(f, k)
+            || !self.complete(producer, f) || self.game.jobs[producer].kind != 0
+            || self.entities[producer].data[4] != k.producer as f32
+            || self.free_actor().is_none() { return false; }
+        let Some(p) = roster(k.producer) else { return false; };
+        if self.game.sides[f].age < p.tier { return false; }
+        if matches!(kind, 25 | 36) && !self.has(f, source(f)) { return false; }
+        let (used, cap) = self.population(f);
+        used + k.pop <= cap
+    }
+    fn train(&mut self, f: usize, kind: u32, producer: usize) -> bool {
+        if !self.can_train(f, kind, producer) { return false; }
+        let k = roster(kind).unwrap();
+        let slot = self.free_actor().unwrap();
+        self.game.sides[f].alloy -= k.alloy;
+        self.game.sides[f].charge -= k.charge;
+        self.game.jobs[producer] = Production { kind, slot, remaining: k.ticks };
+        true
+    }
+    fn ready_builder(&self, f: usize, id: usize) -> bool {
+        self.complete(id, f) && worker(self.entities[id].data[4] as u32)
+            && !matches!(self.game.orders[id], Order::Build(_))
+    }
+    fn can_build(&self, f: usize, kind: u32, selected: usize) -> bool {
+        let Some(k) = roster(kind) else { return false; };
+        k.klass == 0 && k.faction == f && self.affordable(f, k)
+            && self.ready_builder(f, selected) && self.free_actor().is_some()
+    }
+    fn placeable(&self, k: &Kind, tile: u32) -> bool {
+        if tile >= 1024 { return false; }
+        let x = (tile % 32) as f32 + 0.5;
+        let y = (tile / 32) as f32 + 0.5;
+        let (left, right, top, bottom) = (x - k.width / 2., x + k.width / 2., y - k.depth / 2., y + k.depth / 2.);
+        if left < 2. || right > 30. || top < 2. || bottom > 30. { return false; }
+        let z = height(x, y);
+        if z < 0. { return false; }
+        // Check every terrain cell touched by the entire footprint, not just its center.
+        for ty in top.floor() as u32..bottom.ceil() as u32 {
+            for tx in left.floor() as u32..right.ceil() as u32 {
+                if height(tx as f32 + 0.5, ty as f32 + 0.5) != z { return false; }
+            }
+        }
+        for e in &self.entities[..MATCH_ACTORS] {
+            if !e.active { continue; }
+            let ek = e.data[4] as u32;
+            let (w, d) = if let Some(other) = roster(ek) {
+                if aircraft(ek) { continue; }
+                (other.width, other.depth)
+            } else if ek == 40 { (1., 1.) } else { continue; };
+            if (e.data[0] - x).abs() < (w + k.width) / 2.
+                && (e.data[1] - y).abs() < (d + k.depth) / 2. { return false; }
+        }
+        true
+    }
+    fn nearest_builder(&self, f: usize, x: f32, y: f32) -> Option<usize> {
+        let mut nearest = None;
+        let mut distance = f32::INFINITY;
+        for id in 0..MATCH_ACTORS {
+            if !self.ready_builder(f, id) { continue; }
+            let e = self.entities[id];
+            let d = (e.data[0] - x).powi(2) + (e.data[1] - y).powi(2);
+            if d < distance { distance = d; nearest = Some(id); }
+        }
+        nearest
+    }
+    fn build(&mut self, f: usize, kind: u32, tile: u32, selected: usize) -> bool {
+        if !self.can_build(f, kind, selected) { return false; }
+        let k = roster(kind).unwrap();
+        if !self.placeable(k, tile) { return false; }
+        let (x, y) = ((tile % 32) as f32 + 0.5, (tile / 32) as f32 + 0.5);
+        let Some(builder) = self.nearest_builder(f, x, y) else { return false; };
+        let id = self.free_actor().unwrap();
+        self.game.sides[f].alloy -= k.alloy;
+        self.game.sides[f].charge -= k.charge;
+        self.match_add(id, kind, x, y, f);
+        self.entities[id].data[5] = 5.;
+        self.entities[id].data[10] = 0.;
+        self.entities[id].target = builder;
+        self.entities[builder].timer = 0;
+        self.game.orders[builder] = Order::Build(id);
+        true
+    }
+    fn advance(&mut self, f: usize) -> bool {
+        let s = &mut self.game.sides[f];
+        let (alloy, charge, ticks) = age_cost(s.age);
+        if ticks == 0 || s.advancing != 0 || s.alloy < alloy || s.charge < charge { return false; }
+        s.alloy -= alloy;
+        s.charge -= charge;
+        s.advancing = ticks;
+        true
+    }
+    // Cancellation is a full refund of an unfinished paid order. A builder or
+    // its site can cancel construction; an HQ can cancel the faction advance.
+    // Destroying a producer/site releases reservations without refunding costs.
+    fn cancel(&mut self, f: usize, id: usize) -> bool {
+        if id >= MATCH_ACTORS || !self.entities[id].active || self.entities[id].data[9] != f as f32 { return false; }
+        if let Some(k) = roster(self.game.jobs[id].kind) {
+            self.game.sides[f].alloy += k.alloy;
+            self.game.sides[f].charge += k.charge;
+            self.game.jobs[id] = Production::EMPTY;
+            return true;
+        }
+        let site = if self.entities[id].data[5] == 5. { id }
+            else if let Order::Build(site) = self.game.orders[id] { site } else { CAP };
+        if site < MATCH_ACTORS && self.entities[site].active && self.entities[site].data[5] == 5. {
+            let k = roster(self.entities[site].data[4] as u32).unwrap();
+            self.game.sides[f].alloy += k.alloy;
+            self.game.sides[f].charge += k.charge;
+            self.remove_actor(site);
+            return true;
+        }
+        if self.entities[id].data[4] == headquarters(f) as f32 && self.game.sides[f].advancing > 0 {
+            let (alloy, charge, _) = age_cost(self.game.sides[f].age);
+            self.game.sides[f].alloy += alloy;
+            self.game.sides[f].charge += charge;
+            self.game.sides[f].advancing = 0;
+            return true;
+        }
+        false
+    }
+    fn command(&mut self, op: u32, a: u32, b: u32) -> bool {
+        if self.mode != 1 { return false; }
+        let f = self.game.player;
+        let accepted = match op {
+            0 => if (b as usize) < self.count { self.train(f, a, self.ids[b as usize]) } else { false },
+            1 => self.build(f, a, b, self.selected),
+            2 if a == 0 && b == 0 => self.advance(f),
+            3 if a == 0 && b == 0 => self.cancel(f, self.selected),
+            _ => false,
+        };
+        if accepted { self.pack(); }
+        accepted
+    }
+}
+
+impl Sim {
+    fn remove_actor(&mut self, id: usize) {
+        self.entities[id].active = false;
+        self.game.jobs[id] = Production::EMPTY;
+        self.game.orders[id] = Order::Idle;
+        if self.selected == id { self.selected = CAP; }
+        for j in 0..MATCH_ACTORS {
+            if self.game.orders[j] == Order::Build(id) {
+                self.game.orders[j] = Order::Gather;
+                self.entities[j].timer = 0;
+            }
+            if self.entities[j].active && self.entities[j].data[5] == 5. && self.entities[j].target == id {
+                self.entities[j].target = CAP;
+            }
+        }
+    }
+    fn edge(&self, building: usize, from: usize) -> (f32, f32) {
+        let e = self.entities[building];
+        let k = roster(e.data[4] as u32).unwrap();
+        let positions = [(e.data[0] - k.width / 2. - 0.5, e.data[1]),
+            (e.data[0] + k.width / 2. + 0.5, e.data[1]),
+            (e.data[0], e.data[1] - k.depth / 2. - 0.5),
+            (e.data[0], e.data[1] + k.depth / 2. + 0.5)];
+        let origin = self.entities[from];
+        let mut result = positions[0];
+        let mut distance = f32::INFINITY;
+        for p in positions {
+            let d = (p.0 - origin.data[0]).powi(2) + (p.1 - origin.data[1]).powi(2);
+            if d < distance { distance = d; result = p; }
+        }
+        result
+    }
+    fn rally(&self, producer: usize) -> (f32, f32) {
+        let e = self.entities[producer];
+        let k = roster(e.data[4] as u32).unwrap();
+        // East-side rally points keep new opponent troops behind their works.
+        ((e.data[0] + k.width / 2. + 0.7).clamp(2.3, 29.7), e.data[1])
+    }
+    fn match_production(&mut self) {
+        for id in 0..MATCH_ACTORS {
+            let job = self.game.jobs[id];
+            if job.kind == 0 { continue; }
+            if !self.entities[id].active { self.game.jobs[id] = Production::EMPTY; continue; }
+            self.game.jobs[id].remaining -= 1;
+            if self.game.jobs[id].remaining != 0 { continue; }
+            let k = roster(job.kind).unwrap();
+            let (x, y) = self.rally(id);
+            self.game.jobs[id] = Production::EMPTY;
+            self.match_add(job.slot, k.kind, x, y, k.faction);
+            self.game.orders[job.slot] = if worker(k.kind) || carrier(k.kind) { Order::Gather }
+                else if aircraft(k.kind) { Order::Idle } else { Order::Defend };
+            if k.faction != self.game.player && k.damage > 0. && !aircraft(k.kind) {
+                if let Some(index) = self.game.defenders.iter().position(|&d| !self.complete(d, k.faction)) {
+                    self.game.defenders[index] = job.slot;
+                    self.game.homes[job.slot] = (24.8, 18. + index as f32 * 3.);
+                } else {
+                    self.game.homes[job.slot] = (25. + (job.slot % 2) as f32 * 0.6, 19. + (job.slot % 4) as f32);
+                }
+            }
+        }
+        // A lost builder pauses a site until the next available worker takes it.
+        for id in 0..MATCH_ACTORS {
+            let e = self.entities[id];
+            if !e.active || e.data[5] != 5. { continue; }
+            let f = e.data[9] as usize;
+            if e.target < MATCH_ACTORS && self.complete(e.target, f)
+                && self.game.orders[e.target] == Order::Build(id) { continue; }
+            if let Some(builder) = self.nearest_builder(f, e.data[0], e.data[1]) {
+                self.entities[id].target = builder;
+                self.entities[builder].timer = 0;
+                self.game.orders[builder] = Order::Build(id);
+            }
+        }
+    }
+    fn nearest_ore(&self, id: usize) -> Option<usize> {
+        let e = self.entities[id];
+        let mut distance = f32::INFINITY;
+        let mut result = None;
+        for j in 0..MATCH_ACTORS {
+            let node = self.entities[j];
+            if !node.active || node.data[4] != 40. || node.data[10] < 1. { continue; }
+            let d = (node.data[0] - e.data[0]).powi(2) + (node.data[1] - e.data[1]).powi(2);
+            if d < distance { distance = d; result = Some(j); }
+        }
+        result
+    }
+    fn dropoff(&self, id: usize) -> Option<usize> {
+        let e = self.entities[id];
+        let mut distance = f32::INFINITY;
+        let mut result = None;
+        for j in 0..MATCH_ACTORS {
+            let depot = self.entities[j];
+            if !self.complete(j, e.data[9] as usize) || !matches!(depot.data[4] as u32, 10 | 11 | 60 | 61) { continue; }
+            let p = self.edge(j, id);
+            let d = (p.0 - e.data[0]).powi(2) + (p.1 - e.data[1]).powi(2);
+            if d < distance { distance = d; result = Some(j); }
+        }
+        result
+    }
+    fn gather(&mut self, id: usize, k: &Kind) {
+        let e = self.entities[id];
+        let cargo_cap = if carrier(k.kind) { 12. } else { 4. };
+        if e.route == 1 || e.data[10] >= cargo_cap {
+            self.entities[id].route = 1;
+            if let Some(depot) = self.dropoff(id) {
+                let (x, y) = self.edge(depot, id);
+                if self.walk(id, x, y, k.speed) {
+                    self.entities[id].data[5] = 7.;
+                    self.entities[id].timer += 1;
+                    if self.entities[id].timer >= 30 {
+                        self.game.sides[k.faction].alloy = self.game.sides[k.faction].alloy.saturating_add(e.data[10] as u32);
+                        self.entities[id].data[10] = 0.;
+                        self.entities[id].timer = 0;
+                        self.entities[id].route = 0;
+                        self.entities[id].target = CAP;
+                    }
+                }
+            } else { self.entities[id].data[5] = 0.; }
+            return;
+        }
+        let target = e.target;
+        let node = if target < MATCH_ACTORS && self.entities[target].active
+            && self.entities[target].data[4] == 40. && self.entities[target].data[10] >= 1. { Some(target) }
+            else { self.nearest_ore(id) };
+        if let Some(node) = node {
+            if e.target != node { self.entities[id].timer = 0; }
+            self.entities[id].target = node;
+            let ore = self.entities[node];
+            if self.walk(id, ore.data[0] + 0.5, ore.data[1] + 0.3, k.speed) {
+                self.entities[id].data[5] = 3.;
+                self.entities[id].timer += 1;
+                if self.entities[id].timer >= if carrier(k.kind) { 60 } else { 120 } {
+                    self.entities[id].timer = 0;
+                    self.entities[id].data[10] += 1.;
+                    self.entities[node].data[10] -= 1.;
+                }
+            }
+        } else {
+            self.entities[id].data[5] = 0.;
+            if e.data[10] > 0. { self.entities[id].route = 1; }
+        }
+    }
+    fn enemy_near(&self, id: usize, radius: f32, fighters_only: bool) -> Option<usize> {
+        let e = self.entities[id];
+        let mut best = radius * radius;
+        let mut result = None;
+        for j in 0..MATCH_ACTORS {
+            let other = self.entities[j];
+            if !other.active || other.data[9] == e.data[9] { continue; }
+            let Some(k) = roster(other.data[4] as u32) else { continue; };
+            if fighters_only && (k.klass != 1 || k.damage == 0.) { continue; }
+            let d = (other.data[0] - e.data[0]).powi(2) + (other.data[1] - e.data[1]).powi(2);
+            if d <= best && (d < best || result.is_none()) { best = d; result = Some(j); }
+        }
+        result
+    }
+    fn repair(&mut self, id: usize, f: usize) {
+        if self.tick % 60 != 0 || self.game.sides[f].alloy == 0 { return; }
+        let e = self.entities[id];
+        for j in 0..MATCH_ACTORS {
+            let target = self.entities[j];
+            if !self.complete(j, f) || target.data[7] >= 1. { continue; }
+            let k = roster(target.data[4] as u32).unwrap();
+            if k.klass == 0 && (target.data[0] - e.data[0]).abs() <= k.width / 2. + 1.
+                && (target.data[1] - e.data[1]).abs() <= k.depth / 2. + 1. {
+                self.game.sides[f].alloy -= 1;
+                self.entities[j].data[7] = (target.data[7] + 10. / k.hp).min(1.);
+                self.entities[id].data[5] = 8.;
+                break;
+            }
+        }
+    }
+    fn match_orders(&mut self) {
+        for id in 0..MATCH_ACTORS {
+            let e = self.entities[id];
+            if !e.active { continue; }
+            let Some(k) = roster(e.data[4] as u32) else { continue; };
+            if k.klass == 0 { continue; }
+            self.entities[id].data[5] = 0.;
+            if (worker(k.kind) || carrier(k.kind)) && self.enemy_near(id, 4., true).is_some() {
+                if let Some(depot) = self.dropoff(id) {
+                    let (x, y) = self.edge(depot, id);
+                    self.walk(id, x, y, k.speed);
+                }
+                self.entities[id].data[5] = 6.;
+                continue;
+            }
+            match self.game.orders[id] {
+                Order::Gather => self.gather(id, k),
+                Order::Build(site) => {
+                    if !self.entities[site].active || self.entities[site].data[5] != 5. {
+                        self.game.orders[id] = Order::Gather;
+                        continue;
+                    }
+                    let (x, y) = self.edge(site, id);
+                    if self.walk(id, x, y, k.speed) {
+                        self.entities[id].data[5] = 3.;
+                        let building = roster(self.entities[site].data[4] as u32).unwrap();
+                        self.entities[site].timer += 1;
+                        self.entities[site].data[10] = (self.entities[site].timer as f32 / building.ticks as f32).min(1.);
+                        if self.entities[site].timer >= building.ticks {
+                            self.entities[site].data[5] = 0.;
+                            self.entities[site].target = CAP;
+                            self.game.orders[id] = Order::Gather;
+                            self.entities[id].timer = 0;
+                        }
+                    }
+                }
+                Order::Raid(until) => {
+                    if self.tick >= until { self.game.orders[id] = Order::Return; }
+                    else if self.enemy_near(id, k.range, false).is_none() {
+                        let target = self.enemy_near(id, 50., false);
+                        let (x, y) = target.map(|j| (self.entities[j].data[0], self.entities[j].data[1])).unwrap_or((12., 18.));
+                        self.walk(id, x, y, k.speed);
+                    }
+                }
+                Order::Defend => {
+                    if self.enemy_near(id, k.range, false).is_none() {
+                        let home = self.game.homes[id];
+                        // Defenders intercept nearby threats, but never pursue beyond
+                        // six tiles of their assigned post.
+                        let target = self.enemy_near(id, 6., true).filter(|&j| {
+                            (self.entities[j].data[0] - home.0).powi(2) + (self.entities[j].data[1] - home.1).powi(2) <= 36.
+                        });
+                        let (x, y) = target.map(|j| (self.entities[j].data[0], self.entities[j].data[1])).unwrap_or(home);
+                        if self.walk(id, x, y, k.speed) { self.entities[id].data[5] = 0.; }
+                    }
+                }
+                Order::Return => {
+                    let (x, y) = self.game.homes[id];
+                    if self.walk(id, x, y, k.speed) { self.game.orders[id] = Order::Defend; }
+                    else { self.entities[id].data[5] = 6.; }
+                }
+                Order::Idle => if worker(k.kind) { self.repair(id, k.faction); },
+            }
+            if aircraft(k.kind) { self.entities[id].data[2] = height(self.entities[id].data[0], self.entities[id].data[1]) + 3.; }
+        }
+    }
+    fn match_damage(&mut self, target: usize, damage: f32) {
+        if !self.entities[target].active { return; }
+        let victim = self.entities[target];
+        let Some(k) = roster(victim.data[4] as u32) else { return; };
+        self.entities[target].data[7] = (victim.data[7] - damage / k.hp).max(0.);
+        if self.entities[target].data[7] > 0. { return; }
+        self.remove_actor(target);
+        if let Some(fx) = (148..CAP).find(|&i| !self.entities[i].active) {
+            self.match_add(fx, 52, victim.data[0], victim.data[1], k.faction);
+            self.entities[fx].data[10] = k.kind as f32;
+        }
+    }
+    fn match_combat(&mut self) {
+        for id in 0..MATCH_ACTORS {
+            let e = self.entities[id];
+            if !e.active || e.data[5] == 5. { continue; }
+            let Some(k) = roster(e.data[4] as u32) else { continue; };
+            if k.damage == 0. { continue; }
+            if k.klass == 0 { self.entities[id].data[5] = 0.; }
+            self.game.cooldowns[id] = self.game.cooldowns[id].saturating_sub(1);
+            if k.klass == 1 { self.entities[id].data[11] = self.game.cooldowns[id] as f32 / k.cadence as f32; }
+            if self.game.orders[id] == Order::Return || e.data[5] == 6. { continue; }
+            let Some(target) = self.enemy_near(id, k.range, false) else { continue; };
+            let victim = self.entities[target];
+            self.entities[id].data[5] = 2.;
+            self.entities[id].data[3] = (victim.data[1] - e.data[1]).atan2(victim.data[0] - e.data[0]);
+            if self.game.cooldowns[id] > 0 { continue; }
+            if matches!(k.kind, 16 | 66) {
+                if self.game.sides[k.faction].charge == 0 { continue; }
+                self.game.sides[k.faction].charge -= 1;
+            }
+            self.game.cooldowns[id] = k.cadence;
+            if k.klass == 1 { self.entities[id].data[11] = 1.; }
+            if let Some(shot) = (MATCH_ACTORS..148).find(|&j| !self.entities[j].active) {
+                self.match_add(shot, 50, e.data[0], e.data[1], k.faction);
+                let generation = self.game.generations[target] as usize;
+                let yaw = self.entities[id].data[3];
+                let p = &mut self.entities[shot];
+                p.target = target;
+                p.route = generation;
+                p.data[2] = e.data[2] + if k.klass == 0 { 2. } else { 0.8 };
+                p.data[3] = yaw;
+                p.data[10] = k.kind as f32;
+                p.origin = [e.data[0], e.data[1], p.data[2]];
+                p.destination = [victim.data[0], victim.data[1], victim.data[2] + 0.5];
+            } else {
+                // Exhausting visual slots must not suppress a valid attack.
+                let bonus = if k.kind == 26 && roster(victim.data[4] as u32).unwrap().klass == 0 { 2. } else { 1. };
+                self.match_damage(target, k.damage * bonus);
+            }
+        }
+        for id in MATCH_ACTORS..CAP {
+            let e = self.entities[id];
+            if !e.active { continue; }
+            self.entities[id].timer += 1;
+            self.entities[id].data[11] = self.entities[id].timer as f32 / 60.;
+            if e.data[4] != 50. {
+                if self.entities[id].timer >= if e.data[4] == 52. { 30 * 60 } else { 24 } { self.entities[id].active = false; }
+                continue;
+            }
+            let k = roster(e.data[10] as u32).unwrap();
+            let duration = if matches!(k.kind, 26 | 31) { 54 } else { 12 };
+            let q = (self.entities[id].timer as f32 / duration as f32).min(1.);
+            for axis in 0..3 { self.entities[id].data[axis] = e.origin[axis] + (e.destination[axis] - e.origin[axis]) * q; }
+            if matches!(k.kind, 26 | 31) { self.entities[id].data[2] += 8. * q * (1. - q); }
+            if self.entities[id].timer < duration { continue; }
+            self.entities[id].data[4] = 51.;
+            self.entities[id].timer = 0;
+            self.entities[id].data[11] = 0.;
+            let victim = self.entities[e.target];
+            if !victim.active || self.game.generations[e.target] as usize != e.route { continue; }
+            let distance = (victim.data[0] - e.destination[0]).powi(2) + (victim.data[1] - e.destination[1]).powi(2);
+            if distance > 1.44 { continue; }
+            let bonus = if k.kind == 26 && roster(victim.data[4] as u32).unwrap().klass == 0 { 2. } else { 1. };
+            self.match_damage(e.target, k.damage * bonus);
+            if k.kind == 31 {
+                for j in 0..MATCH_ACTORS {
+                    let other = self.entities[j];
+                    if j != e.target && other.active && other.data[9] == victim.data[9]
+                        && (other.data[0] - e.destination[0]).powi(2) + (other.data[1] - e.destination[1]).powi(2) <= 1.44 {
+                        self.match_damage(j, k.damage / 2.);
+                    }
+                }
+            }
+        }
+    }
+    fn owned_count(&self, f: usize, kind: u32) -> usize {
+        (0..MATCH_ACTORS).filter(|&id| self.entities[id].active && self.entities[id].data[9] == f as f32
+            && self.entities[id].data[4] == kind as f32).count()
+            + self.game.jobs.iter().filter(|p| p.kind == kind).count()
+    }
+    fn ai_build(&mut self, f: usize, kind: u32) -> bool {
+        let Some(builder) = (0..MATCH_ACTORS).find(|&id| self.ready_builder(f, id)) else { return false; };
+        if !self.can_build(f, kind, builder) { return false; }
+        let k = roster(kind).unwrap();
+        let mut tile = None;
+        let mut distance = u32::MAX;
+        // Stable nearest-tile search around the eastern approach, with row-major ties.
+        for y in 3u32..26 { for x in 20u32..30 {
+            let d = x.abs_diff(24).pow(2) + y.abs_diff(14).pow(2);
+            if d < distance && self.placeable(k, x + y * 32) { tile = Some(x + y * 32); distance = d; }
+        } }
+        tile.is_some_and(|tile| self.build(f, kind, tile, builder))
+    }
+    fn ai_train(&mut self, f: usize, kind: u32) -> bool {
+        if let Some(producer) = (0..MATCH_ACTORS).find(|&id| self.can_train(f, kind, id)) {
+            self.train(f, kind, producer)
+        } else { false }
+    }
+    fn opponent(&mut self) {
+        let f = 1 - self.game.player;
+        let t = self.tick;
+        // Decisions every 5 s. Age requests start at 30 s / 180 s and retry
+        // on that clock if stock is short. Save for Starhold from 120 s onward.
+        if t % (5 * 60) == 0 {
+            let side = self.game.sides[f];
+            if (side.age == 0 && t >= 30 * 60) || (side.age == 1 && t >= 180 * 60) { self.advance(f); }
+            let side = self.game.sides[f];
+            let saving = side.advancing == 0 && ((side.age == 0 && t >= 30 * 60) || (side.age == 1 && t >= 120 * 60));
+            if !saving {
+                let (used, cap) = self.population(f);
+                if t >= 10 * 60 && (self.owned_count(f, housing(f)) == 0 || used + 3 > cap)
+                    && self.owned_count(f, housing(f)) < 3 { self.ai_build(f, housing(f)); }
+                if side.age >= 1 && self.owned_count(f, military(f)) == 0 { self.ai_build(f, military(f)); }
+                let forge = if f == 0 { 14 } else { 64 };
+                if side.age == 2 && self.owned_count(f, forge) == 0 { self.ai_build(f, forge); }
+                let worker_kind = if f == 0 { 20 } else { 32 };
+                if self.owned_count(f, worker_kind) < 6 { self.ai_train(f, worker_kind); }
+                let siege = if f == 0 { 26 } else { 31 };
+                if side.age == 2 && self.owned_count(f, siege) < 1 { self.ai_train(f, siege); }
+                let frontline = if f == 0 { 22 } else { 30 };
+                let ranged = if f == 0 { 23 } else { 34 };
+                if self.owned_count(f, frontline) < 6 { self.ai_train(f, frontline); }
+                else if self.owned_count(f, ranged) < 3 { self.ai_train(f, ranged); }
+            }
+        }
+        // At 150 s, then every 90 s: dispatch at most 3, 4, 5, then 6 paid
+        // combat units, keeping two defenders. Raids last 35 s, then return.
+        if t >= self.game.next_raid {
+            let limit = (3 + self.game.waves as usize).min(6);
+            let mut sent = 0;
+            for id in 0..MATCH_ACTORS {
+                if sent == limit { break; }
+                if !self.complete(id, f) || self.game.defenders.contains(&id)
+                    || self.game.orders[id] != Order::Defend { continue; }
+                let k = roster(self.entities[id].data[4] as u32).unwrap();
+                if k.klass != 1 || k.damage == 0. || aircraft(k.kind) { continue; }
+                self.game.orders[id] = Order::Raid(t + 35 * 60);
+                sent += 1;
+            }
+            self.game.waves += 1;
+            self.game.next_raid += 90 * 60;
+        }
+    }
+    fn match_tick(&mut self) {
+        self.tick += 1;
+        for side in &mut self.game.sides {
+            if side.advancing > 0 {
+                side.advancing -= 1;
+                if side.advancing == 0 { side.age += 1; }
+            }
+        }
+        self.match_production();
+        // Both starting haulers wait at the depot for the opening ten seconds.
+        if self.tick == 10 * 60 {
+            for id in 0..MATCH_ACTORS {
+                if self.entities[id].active && carrier(self.entities[id].data[4] as u32) {
+                    self.game.orders[id] = Order::Gather;
+                }
+            }
+        }
+        if self.tick % 60 == 0 {
+            for f in 0..2 {
+                let wells = (0..MATCH_ACTORS).filter(|&id| self.complete(id, f) && self.entities[id].data[4] == source(f) as f32).count();
+                self.game.sides[f].charge = self.game.sides[f].charge.saturating_add(wells as u32);
+            }
+        }
+        for e in &mut self.entities[..MATCH_ACTORS] {
+            if e.active && e.data[4] == 40. {
+                if self.tick % 180 == 0 { e.data[10] = (e.data[10] + 1.).min(160.); }
+                e.data[11] = if e.data[10] >= 160. { 0. } else { (self.tick % 180) as f32 / 180. };
+            }
+        }
+        self.opponent();
+        self.match_orders();
+        self.match_combat();
+        for id in 0..MATCH_ACTORS {
+            if !self.entities[id].active { continue; }
+            let state = self.entities[id].data[5] as u32;
+            let period = match state { 1 | 6 => 36, 2 => 60, _ => 120 };
+            self.entities[id].data[6] = ((self.tick + id as u32 * 17) % period) as f32 / period as f32;
+        }
+        self.pack();
+    }
+}
+
+#[no_mangle] pub extern "C" fn sim_match_init(seed: u32, faction: u32) { SIM.with(|s| s.borrow_mut().match_init(seed, faction)); }
+#[no_mangle] pub extern "C" fn sim_mode() -> u32 { SIM.with(|s| s.borrow().mode) }
+#[no_mangle] pub extern "C" fn sim_player() -> u32 { SIM.with(|s| { let s = s.borrow(); if s.mode == 1 { s.game.player as u32 } else { 0 } }) }
+#[no_mangle] pub extern "C" fn sim_age() -> u32 { SIM.with(|s| { let s = s.borrow(); if s.mode == 1 { s.game.sides[s.game.player].age } else { 0 } }) }
+#[no_mangle] pub extern "C" fn sim_age_progress() -> f32 { SIM.with(|s| {
+    let s = s.borrow();
+    if s.mode != 1 { return 1.; }
+    let side = s.game.sides[s.game.player];
+    if side.advancing == 0 { 1. } else { 1. - side.advancing as f32 / age_cost(side.age).2 as f32 }
+}) }
+#[no_mangle] pub extern "C" fn sim_age_cost() -> u32 { age_cost(sim_age()).0 }
+#[no_mangle] pub extern "C" fn sim_age_cost_charge() -> u32 { age_cost(sim_age()).1 }
+#[no_mangle] pub extern "C" fn sim_pop_used() -> u32 { SIM.with(|s| {
+    let s = s.borrow();
+    if s.mode == 1 { s.population(s.game.player).0 } else {
+        s.entities.iter().filter(|e| e.active && e.data[9] == 0.)
+            .filter_map(|e| roster(e.data[4] as u32)).map(|k| k.pop).sum()
+    }
+}) }
+#[no_mangle] pub extern "C" fn sim_pop_cap() -> u32 { SIM.with(|s| {
+    let s = s.borrow();
+    if s.mode == 1 { s.population(s.game.player).1 } else {
+        s.entities.iter().filter(|e| e.active && e.data[9] == 0. && e.data[10] >= 1.)
+            .map(|e| match e.data[4] as u32 { 10 => 15, 15 => 5, _ => 0 }).sum()
+    }
+}) }
+#[no_mangle] pub extern "C" fn sim_command(op: u32, a: u32, b: u32) -> u32 { SIM.with(|s| s.borrow_mut().command(op, a, b) as u32) }
+#[no_mangle] pub extern "C" fn sim_roster_count() -> u32 { KINDS.len() as u32 }
+#[no_mangle] pub extern "C" fn sim_roster_ptr() -> *const f32 { ROSTER.as_ptr() }
+#[no_mangle] pub extern "C" fn sim_can_train(kind: u32) -> u32 { SIM.with(|s| {
+    let s = s.borrow(); (s.mode == 1 && s.can_train(s.game.player, kind, s.selected)) as u32
+}) }
+#[no_mangle] pub extern "C" fn sim_can_build(kind: u32) -> u32 { SIM.with(|s| {
+    let s = s.borrow(); (s.mode == 1 && s.can_build(s.game.player, kind, s.selected)) as u32
+}) }

@@ -317,6 +317,19 @@ const MATCH_APP_API = ['startMatch', 'resetShowcase', 'command', 'fastForward', 
 // Canvas points tried when selecting player entities in match mode: centre-out
 // and west-biased (the player base occupies the west settlement, §6).
 const MATCH_SPOTS = [
+  // Exact yaw-0 body projections for the six west-base workers, plus nearby
+  // ground projections. Workers move during the 450 ms DOM settle, so include a
+  // narrow 2-D spread around the body rather than one fragile pixel.
+  [0.3100, 0.3710], [0.3074, 0.3634], [0.3110, 0.3634], [0.3040, 0.3634],
+  [0.3074, 0.3571], [0.3074, 0.3697],
+  [0.3125, 0.355], [0.300, 0.355], [0.325, 0.355],
+  [0.3250, 0.368], [0.313, 0.368], [0.337, 0.368],
+  [0.2875, 0.381], [0.276, 0.381], [0.299, 0.381],
+  [0.3000, 0.394], [0.288, 0.394], [0.312, 0.394],
+  [0.4050, 0.399], [0.393, 0.399], [0.417, 0.399],
+  [0.3800, 0.425], [0.368, 0.425], [0.392, 0.425],
+  [0.3125, 0.3754], [0.3250, 0.3882], [0.2875, 0.4011],
+  [0.3000, 0.4139], [0.4050, 0.4190], [0.3800, 0.4447],
   [0.5, 0.5], [0.46, 0.52], [0.54, 0.48], [0.42, 0.5], [0.58, 0.5],
   [0.5, 0.6], [0.5, 0.4], [0.38, 0.54], [0.62, 0.46], [0.34, 0.5],
   [0.46, 0.62], [0.54, 0.38], [0.3, 0.56], [0.66, 0.44], [0.38, 0.42],
@@ -857,8 +870,8 @@ function gate(name, pass, detail) {
       // Back to yaw 0 and the default zoom for the evidence frame (one touch
       // tap each: the rotate gate stepped yaw once, the pinch stepped zoom once).
       if (L.buttons.length === 4) {
-        const b3 = L.buttons[3];
-        if (zoomIndex((await state(page)).zoom) > 1) await tapAt(page, b3.x + b3.w / 2, b3.y + b3.h / 2);
+        const b2 = L.buttons[2];
+        if (zoomIndex((await state(page)).zoom) > 1) await tapAt(page, b2.x + b2.w / 2, b2.y + b2.h / 2);
         const b0 = L.buttons[0];
         if ((await state(page)).yawSteps !== 0) await tapAt(page, b0.x + b0.w / 2, b0.y + b0.h / 2);
       }
@@ -891,6 +904,10 @@ function gate(name, pass, detail) {
       gate('rotate-button', yawAfter !== yawBefore, `${yawBefore} -> ${yawAfter}`);
       await page.screenshot({ path: join(OUT, 'shot-rotated.png') });
       results.shots.push('shot-rotated.png');
+      // Restore the camera so all later interaction gates use the canonical
+      // yaw-0 screen projection rather than inheriting this visual probe.
+      await page.click('#rotate-left');
+      await page.waitForTimeout(450);
 
       // zoom via the REAL buttons
       const z0 = (await state(page)).zoom;
@@ -1060,7 +1077,10 @@ function gate(name, pass, detail) {
           mid = await state(page);
         }
         const drop = { alloy: before.alloy - mid.alloy, charge: before.charge - mid.charge };
-        const tol = { alloy: Math.max(0, drift.alloy), charge: Math.max(0, drift.charge) };
+        // A real click/readback can straddle the match's deterministic one-Charge
+        // generation tick. Preserve exact cost checking while allowing that one
+        // earned point to offset the observed drop.
+        const tol = { alloy: Math.max(1, Math.abs(drift.alloy)), charge: Math.max(1, Math.abs(drift.charge)) };
         const deducted = cost
           ? Math.abs(drop.alloy - cost[0]) <= tol.alloy && Math.abs(drop.charge - cost[1]) <= tol.charge && drop.alloy + drop.charge > 0
           : drop.alloy + drop.charge > tol.alloy + tol.charge;

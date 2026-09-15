@@ -22,7 +22,7 @@ const renderer=new Renderer();
 const touchLayout=navigator.maxTouchPoints>0||matchMedia('(pointer: coarse)').matches;
 document.body.classList.add(touchLayout?'touch':'mouse');
 renderer.hudButtons=!touchLayout;
-const hud=new Hud({command:(op,a,b)=>command(op,a,b),startMatch:(faction)=>startMatch(faction),resetShowcase:()=>resetShowcase()});
+const hud=new Hud({command:(op,a,b)=>command(op,a,b),build:(kind)=>buildNearest(kind),startMatch:(faction)=>startMatch(faction),resetShowcase:()=>resetShowcase()});
 function rotate(dir:1|-1) {yawSteps=(yawSteps+(dir===-1?-1:1)+4)%4;}
 function zoomBy(delta:1|-1) {zoomIndex=Math.max(0,Math.min(3,zoomIndex+(delta===-1?-1:1)));}
 function selectAt(x:number,y:number) {
@@ -125,6 +125,27 @@ function command(op:number,a:number,b:number):number {
  const accepted=sim.sim_command(op>>>0,a>>>0,b>>>0);
  refreshEntities();updateSelection();syncHud();
  return accepted?1:0;
+}
+/** Place one HUD-requested building on the nearest simulation-approved tile.
+ * Rejected probes are side-effect-free in the frozen command ABI; Rust remains
+ * authoritative for full footprints, level terrain, bounds, and collisions. */
+function buildNearest(kind:number):number {
+ if(!sim||typeof sim.sim_command!=='function'||selected===null)return 0;
+ const sx=entities[selected*12],sy=entities[selected*12+1];
+ const tiles:number[]=[];
+ for(let tile=0;tile<1024;tile++){
+  if(terrainAt(tile)<=0||tileOccupied(tile,selected))continue;
+  tiles.push(tile);
+ }
+ tiles.sort((a,b)=>{
+  const ax=a%32+.5-sx,ay=Math.floor(a/32)+.5-sy;
+  const bx=b%32+.5-sx,by=Math.floor(b/32)+.5-sy;
+  return ax*ax+ay*ay-(bx*bx+by*by)||a-b;
+ });
+ let accepted=0;
+ for(const tile of tiles)if(sim.sim_command(1,kind>>>0,tile)!==0){accepted=1;break;}
+ refreshEntities();updateSelection();syncHud();
+ return accepted;
 }
 function resetClock() {accumulator=0;previous=0;tick=0;refreshEntities();updateSelection();syncHud();}
 /** Keep a playable selection when the sim starts a mode without one. */
