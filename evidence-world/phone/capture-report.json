@@ -8,7 +8,7 @@
     {
       "name": "instance-budget",
       "pass": true,
-      "detail": "triangles=116257 saturated=false"
+      "detail": "triangles=116245 saturated=false"
     },
     {
       "name": "touch-layout",
@@ -78,7 +78,7 @@
     {
       "name": "fps>=59-vsync-locked",
       "pass": true,
-      "detail": "fps=60.3 p95=17.1ms max=19.5ms"
+      "detail": "fps=60.3 p95=17.0ms max=17.5ms"
     },
     {
       "name": "hud-skirmish-entry",
@@ -123,7 +123,7 @@
     {
       "name": "lod-budget",
       "pass": true,
-      "detail": "instances per zoom 0.67:4591 0.80:5800 1.00:8228 1.33:13400"
+      "detail": "instances per zoom 0.67:4593 0.80:5803 1.00:8234 1.33:13410"
     },
     {
       "name": "minimap-present",
@@ -151,6 +151,16 @@
       "detail": "camera 205,342 -> 193,831 moved=489 tiles"
     },
     {
+      "name": "worker-tap",
+      "pass": true,
+      "detail": "tap @388,174 selectedKind=20 (workers alive=6)"
+    },
+    {
+      "name": "cancel-order",
+      "pass": true,
+      "detail": "FREIGHT COURT24A site k11 refund=24a alloy 56->80 control=46x44 siteGone=true"
+    },
+    {
       "name": "age-advance",
       "pass": true,
       "detail": "cost=60a/30c drop=60a/30c drift=0/1 age 0->1 label=March labelShown=true"
@@ -158,12 +168,12 @@
     {
       "name": "train-unit",
       "pass": true,
-      "detail": "[exact tap kind 10 f0 @422,150] action=\"Train RIVETER, 4 alloy, 1 population RIVETER4A\" kind=20 roster=4a/0c pop 1 drop=4a/0c drift=0/0 pop 11->12 entities 54->55"
+      "detail": "[exact tap kind 10 f0 @422,150] action=\"Train RIVETER, 4 alloy, 1 population RIVETER4A\" kind=20 roster=4a/0c pop 1 drop=4a/0c drift=0/0 pop 11->12 entities 54->56"
     },
     {
       "name": "build-site",
       "pass": true,
-      "detail": "[exact tap kind 20 f0 @414,178] action=\"Build FREIGHT COURT, 24 alloy FREIGHT COURT24A\" kind=11 roster=24a/0c sitePlaced=true entities 54->55 alloy 80->56 charge 41->41 costSpent=true"
+      "detail": "[exact tap kind 20 f0 @402,178] action=\"Build FREIGHT COURT, 24 alloy FREIGHT COURT24A\" kind=11 roster=24a/0c sitePlaced=true entities 54->55 alloy 80->56 charge 41->41 costSpent=true"
     },
     {
       "name": "no-console-errors",
@@ -178,7 +188,7 @@
     {
       "name": "match-determinism",
       "pass": true,
-      "detail": "4fa520ff vs 4fa520ff entities=54/54 age=1/1"
+      "detail": "0f96e8dc vs 0f96e8dc entities=55/55 age=1/1"
     },
     {
       "name": "no-webgpu-error-path",
@@ -205,10 +215,10 @@
   "fps": {
     "fps": 60.25,
     "frames": 241,
-    "mean_ms": 16.63112033155449,
-    "p50_ms": 16.700000047683716,
-    "p95_ms": 17.100000143051147,
-    "max_ms": 19.5
+    "mean_ms": 16.62655601659751,
+    "p50_ms": 16.699999809265137,
+    "p95_ms": 17,
+    "max_ms": 17.5
   },
   "matchErrors": []
 }

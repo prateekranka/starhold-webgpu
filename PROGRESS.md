@@ -54,11 +54,25 @@ Effect measured: the AI opponent went from a frozen 13 entities for 20 minutes t
 levelled in about 12 minutes. The showcase determinism tuple is unchanged
 (`{"n":55,"alloy":247,"charge":199,"hash":"20b89f84"}`).
 
-Gates after the round: desktop 27/28 (one flaky `build-site`, root cause: gather
-workers cross the Freight Court's silhouette on the way to the west crystal seam,
-and a worker behind a building cannot be tapped — the sim writer subagent moves
-the seam to the south apron), phone 38/38, tablet 38/38, portrait 39/39, iPad
-40/40.
+Gates after the round, on the final build: desktop **29/29**, phone **39/39**,
+tablet **39/39**, portrait **40/40**, iPad **41/41** — 188/188, no console errors,
+60.0-60.3 fps.
+
+Two follow-ups from that round are also in:
+
+- The base crystal seam moved from the west approach to the south apron beside
+  the workers. Workers no longer walk behind the Freight Court, which is what
+  made `build-site` intermittent: a worker inside a building's silhouette cannot
+  be tapped, because that building's art is nearer to the camera along the pick
+  ray. A follow-up check proved the new seam also clears every start building
+  footprint (0 ore/building overlaps).
+- Two gates now guard the class of defect rather than the instance:
+  `worker-tap` (settle 75 s, tap the app-reported worker point, require a worker
+  selection) and `cancel-order` (place a site, cancel it, require the full
+  refund and the removal).
+
+Evidence: `evidence-world/{desktop,phone,tablet,portrait,ipad}/`, each with its
+gate log and capture report.
 
 ## Expansive world and floating minimap — 2026-09-15
 

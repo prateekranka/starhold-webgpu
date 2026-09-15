@@ -108,8 +108,20 @@ impl Sim {
  // Match actors use match_add, and never pass through this showcase helper.
  fn add(&mut self,id:usize,kind:u32,x:f32,y:f32,faction:f32) { if id==0 {self.mode=0;} let mut e=Entity::EMPTY;e.active=true;e.x=(x*1024.) as i32;e.y=(y*1024.) as i32;e.data=[x,y,height(x,y),0.,kind as f32,0.,0.,1.,0.,faction,1.,0.];self.entities[id]=e; }
  fn pack(&mut self) { self.count=0;for i in 0..CAP {if self.entities[i].active {self.entities[i].data[8]=if self.selected==i {1.} else {0.};self.ids[self.count]=i;self.snapshot[self.count*STRIDE..(self.count+1)*STRIDE].copy_from_slice(&self.entities[i].data);self.count+=1;}} }
- fn walk(&mut self,id:usize,x:f32,y:f32,speed:f32)->bool {let e=&mut self.entities[id];let dx=(x*1024.) as i32-e.x;let dy=(y*1024.) as i32-e.y;let dist=((dx as f64).powi(2)+(dy as f64).powi(2)).sqrt();let step=(speed*1024./60.) as i32;if dist<=step as f64 {e.x=(x*1024.) as i32;e.y=(y*1024.) as i32;} else {e.x+=(dx as f64/dist*step as f64).round() as i32;e.y+=(dy as f64/dist*step as f64).round() as i32;}
- e.data[0]=e.x as f32/1024.;e.data[1]=e.y as f32/1024.;e.data[2]=height(e.data[0],e.data[1]);e.data[3]=(dy as f32).atan2(dx as f32);e.data[5]=1.;dist<=step as f64 }
+ fn walk(&mut self,id:usize,x:f32,y:f32,speed:f32)->bool {
+  let arrived;
+  {let e=&mut self.entities[id];let dx=(x*1024.) as i32-e.x;let dy=(y*1024.) as i32-e.y;let dist=((dx as f64).powi(2)+(dy as f64).powi(2)).sqrt();let step=(speed*1024./60.) as i32;if dist<=step as f64 {e.x=(x*1024.) as i32;e.y=(y*1024.) as i32;} else {e.x+=(dx as f64/dist*step as f64).round() as i32;e.y+=(dy as f64/dist*step as f64).round() as i32;}
+  e.data[0]=e.x as f32/1024.;e.data[1]=e.y as f32/1024.;e.data[3]=(dy as f32).atan2(dx as f32);e.data[5]=1.;arrived=dist<=step as f64;}
+  // Height comes from the active map, not the frozen showcase function: in a
+  // world match the old call returned -1 and sank every moving unit into void.
+  // Movement is direct (no pathfinding, a stated non-goal), so a unit crossing
+  // a canyon holds its last ground height instead of dropping into the void.
+  let (px,py)=(self.entities[id].data[0],self.entities[id].data[1]);
+  let gz=self.ground(px,py);
+  let previous=self.entities[id].data[2].max(0.);
+  self.entities[id].data[2]=if gz<0. {previous} else {gz};
+  arrived
+ }
  fn tick(&mut self) {
   self.tick+=1;let t=self.tick; if t%30==0 {self.charge=(self.charge+1).min(200);}
   // Repair transactions spend actual stock, with a bounded visible repair beat.
@@ -389,13 +401,15 @@ impl Sim {
         // Both starts belong on flat land, far apart: opposite thirds of the map.
         let targets = [(WORLD as i32 / 5, WORLD as i32 / 3), (WORLD as i32 * 4 / 5, WORLD as i32 * 2 / 3)];
         for side in 0..2 {
-            self.game.base[side] = self.flat_site(targets[side].0, targets[side].1)
+            // Base consumers and the ABI index by faction, not starting slot.
+            let f = if side == 0 { self.game.player } else { 1 - self.game.player };
+            self.game.base[f] = self.flat_site(targets[side].0, targets[side].1)
                 .unwrap_or((targets[side].0 as f32 + 0.5, targets[side].1 as f32 + 0.5));
         }
         for side in 0..2 {
             let f = if side == 0 { self.game.player } else { 1 - self.game.player };
             let base = side * 13;
-            let (hx, hy) = self.game.base[side];
+            let (hx, hy) = self.game.base[f];
             let kinds = if f == 0 { [10,11,12,20,21,22,24] } else { [60,61,62,32,33,30,35] };
             // The authored start package, anchored on the world site and mirrored
             // so each faction builds away from the map edge. Every offset below
@@ -430,14 +444,16 @@ impl Sim {
         for j in 0..12 {
             let jitter = (self.random() % 200) as f32 / 1000.;
             let holder = if j < 6 { 0 } else { 1 };
-            let (hx, hy) = self.game.base[holder];
+            let f = if holder == 0 { self.game.player } else { 1 - self.game.player };
+            let (hx, hy) = self.game.base[f];
             // Mirror the seam the same way the base itself is mirrored.
             let m = if holder == 0 { 1. } else { -1. };
             let k = j % 6;
-            // A north-south seam one tile west of the workers: the gather walk
-            // never crosses the base buildings.
-            let x = hx - 6. * m;
-            let y = hy - 3.4 + k as f32 * 1.35 + jitter * 0.2;
+            // South-apron seam beside the workers, not behind the Court and not
+            // inside its 3x3 footprint (x hx-5.5..hx-2.5 at y hy+2.5..hy+5.5).
+            // Offsets stay inside the 13x13 flat patch the site search guarantees.
+            let x = hx + (-1. + k as f32 * 1.2) * m;
+            let y = hy + 5.5 + jitter * 0.2;
             self.match_add(26 + j, 40, x, y, 2);
             self.entities[26 + j].data[10] = 160.;
         }
@@ -659,7 +675,9 @@ impl Sim {
         let e = self.entities[producer];
         let k = roster(e.data[4] as u32).unwrap();
         // East-side rally points keep new opponent troops behind their works.
-        ((e.data[0] + k.width / 2. + 0.7).clamp(2.3, 29.7), e.data[1])
+        // The clamp follows the active map: at 32 tiles it is the authored island
+        // bound, in a world match it is the 1024-tile edge.
+        ((e.data[0] + k.width / 2. + 0.7).clamp(2.3, self.side() as f32 - 2.3), e.data[1])
     }
     fn match_production(&mut self) {
         for id in 0..MATCH_ACTORS {
@@ -675,11 +693,15 @@ impl Sim {
             self.game.orders[job.slot] = if worker(k.kind) || carrier(k.kind) { Order::Gather }
                 else if aircraft(k.kind) { Order::Idle } else { Order::Defend };
             if k.faction != self.game.player && k.damage > 0. && !aircraft(k.kind) {
+                // Posts sit around the AI's own base. They used to be authored
+                // island coordinates, which parked every replacement unit at the
+                // far corner of a 10 km map.
+                let (bx, by) = self.game.base[k.faction];
                 if let Some(index) = self.game.defenders.iter().position(|&d| !self.complete(d, k.faction)) {
                     self.game.defenders[index] = job.slot;
-                    self.game.homes[job.slot] = (24.8, 18. + index as f32 * 3.);
+                    self.game.homes[job.slot] = (bx - 2., by + 1. + index as f32 * 3.);
                 } else {
-                    self.game.homes[job.slot] = (25. + (job.slot % 2) as f32 * 0.6, 19. + (job.slot % 4) as f32);
+                    self.game.homes[job.slot] = (bx + 1. + (job.slot % 2) as f32 * 0.6, by + 2. + (job.slot % 4) as f32);
                 }
             }
         }
@@ -835,7 +857,10 @@ impl Sim {
                     if self.tick >= until { self.game.orders[id] = Order::Return; }
                     else if self.enemy_near(id, k.range, false).is_none() {
                         let target = self.enemy_near(id, 50., false);
-                        let (x, y) = target.map(|j| (self.entities[j].data[0], self.entities[j].data[1])).unwrap_or((12., 18.));
+                        // March at the enemy base, not at an authored island
+                        // coordinate: in a 10 km world (12,18) is the far corner.
+                        let foe = 1 - self.entities[id].data[9] as usize;
+                        let (x, y) = target.map(|j| (self.entities[j].data[0], self.entities[j].data[1])).unwrap_or(self.game.base[foe]);
                         self.walk(id, x, y, k.speed);
                     }
                 }
@@ -956,12 +981,21 @@ impl Sim {
         let Some(builder) = (0..MATCH_ACTORS).find(|&id| self.ready_builder(f, id)) else { return false; };
         if !self.can_build(f, kind, builder) { return false; }
         let k = roster(kind).unwrap();
+        let side = self.side();
+        let (bx, by) = self.game.base[f];
+        let (cx, cy) = (bx.floor() as i32, by.floor() as i32);
+        let reach = if self.mode == 1 { 26i32 } else { 8 };
         let mut tile = None;
         let mut distance = u32::MAX;
-        // Stable nearest-tile search around the eastern approach, with row-major ties.
-        for y in 3u32..26 { for x in 20u32..30 {
-            let d = x.abs_diff(24).pow(2) + y.abs_diff(14).pow(2);
-            if d < distance && self.placeable(k, x + y * 32) { tile = Some(x + y * 32); distance = d; }
+        // Stable nearest-tile search around this faction's own base, row-major
+        // ties. The authored eastern approach only exists on the 32x32 island,
+        // so a world AI that searched there never built anything at all.
+        let (y0, y1) = ((cy - reach).max(2), (cy + reach).min(side as i32 - 3));
+        let (x0, x1) = ((cx - reach).max(2), (cx + reach).min(side as i32 - 3));
+        for y in y0..=y1 { for x in x0..=x1 {
+            let candidate = x as u32 + y as u32 * side;
+            let d = x.abs_diff(cx).pow(2) + y.abs_diff(cy).pow(2);
+            if d < distance && self.placeable(k, candidate) { tile = Some(candidate); distance = d; }
         } }
         tile.is_some_and(|tile| self.build(f, kind, tile, builder))
     }
@@ -1008,7 +1042,13 @@ impl Sim {
                     || self.game.orders[id] != Order::Defend { continue; }
                 let k = roster(self.entities[id].data[4] as u32).unwrap();
                 if k.klass != 1 || k.damage == 0. || aircraft(k.kind) { continue; }
-                self.game.orders[id] = Order::Raid(t + 35 * 60);
+                // A raid window must cover the march to the enemy base: the two
+                // starts sit kilometres apart, so a fixed 35 s window leaves the
+                // raiders stranded in open ground for the whole wave.
+                let (hx, hy) = self.game.base[f];
+                let (ex, ey) = self.game.base[1 - f];
+                let march = (((ex - hx).powi(2) + (ey - hy).powi(2)).sqrt() / k.speed.max(0.1)).ceil() as u32;
+                self.game.orders[id] = Order::Raid(t + (35 + march) * 60);
                 sent += 1;
             }
             self.game.waves += 1;

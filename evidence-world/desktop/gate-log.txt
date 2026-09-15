@@ -1,6 +1,6 @@
 PASS  boots-ready — entities=55
-PASS  instance-budget — triangles=117901 saturated=false
-PASS  fps>=59-vsync-locked — fps=60.3 p95=17.1ms max=17.6ms
+PASS  instance-budget — triangles=117949 saturated=false
+PASS  fps>=59-vsync-locked — fps=60.3 p95=17.3ms max=23.9ms
 PASS  rotate-button — 0 -> 1
 PASS  zoom-buttons — zoom 1 -> 0.8 -> 1
 PASS  click-select — selected=0
@@ -12,20 +12,23 @@ PASS  hud-age — label="FOUNDING 60A 30C ADVANCE" state.age=0(Founding) otherAg
 PASS  world-scale — worldTiles=1024 worldMeters=10240 (10.24 km) camera=205,342
 PASS  world-terrain — side=1024 samples=16384 landShare=74.9% levelsOutside=none
 PASS  camera-pan — camera 205,342 -> 215,341 moved=11 tiles inside=true saturated=false
-PASS  lod-budget — instances per zoom 0.67:4729 0.80:5938 1.00:8366 1.33:13538
+PASS  lod-budget — instances per zoom 0.67:4731 0.80:5941 1.00:8372 1.33:13548
 PASS  minimap-present — rect=168x168@782,252 backing=256x256 drawnPx=48983
 PASS  minimap-move — moved 90 px left, 50 px up (drag -90,-50)
 PASS  minimap-close — off false -> true state.open=false
 PASS  minimap-reopen — off true -> false drawnPx=48983 state.open=true
 PASS  minimap-jump — camera 205,342 -> 203,821 moved=479 tiles
+PASS  worker-tap — tap @431,253 selectedKind=20 (workers alive=6)
+PASS  cancel-order — FREIGHT COURT24A site k11 refund=24a alloy 56->80 control=69x44 siteGone=true
 PASS  age-advance — cost=60a/30c drop=60a/30c drift=0/1 age 0->1 label=March labelShown=true
-PASS  train-unit — [exact tap kind 10 f0 @480,220] action="Train RIVETER, 4 alloy, 1 population RIVETER4A" kind=20 roster=4a/0c pop 1 drop=4a/0c drift=0/1 pop 11->12 entities 54->55
-PASS  build-site — [exact tap kind 20 f0 @468,260] action="Build FREIGHT COURT, 24 alloy FREIGHT COURT24A" kind=11 roster=24a/0c sitePlaced=true entities 54->55 alloy 80->56 charge 41->41 costSpent=true
+PASS  train-unit — [exact tap kind 10 f0 @480,220] action="Train RIVETER, 4 alloy, 1 population RIVETER4A" kind=20 roster=4a/0c pop 1 drop=4a/0c drift=0/1 pop 11->12 entities 54->56
+PASS  build-site — [exact tap kind 20 f0 @451,260] action="Build FREIGHT COURT, 24 alloy FREIGHT COURT24A" kind=11 roster=24a/0c sitePlaced=true entities 54->55 alloy 80->56 charge 40->41 costSpent=true
 PASS  no-console-errors
 PASS  determinism — {"n":55,"alloy":247,"charge":199,"hash":"20b89f84"} vs {"n":55,"alloy":247,"charge":199,"hash":"20b89f84"}
-PASS  match-determinism — 4fa520ff vs 4fa520ff entities=54/54 age=1/1
+PASS  match-determinism — 0f96e8dc vs 0f96e8dc entities=55/55 age=1/1
 PASS  no-webgpu-error-path — ready=false error="WebGPU is unavailable. Starhold requires a WebGPU-capable browser with hardware accelerati" overlays=error:"WebGPU is unavailable. Starhold requires a WebGPU-capable br"
 
-27/27 gates passed
-fps mean=60.3  p50=16.7ms  p95=17.1ms
-shots -> /tmp/world-ev/desktop
+29/29 gates passed
+fps mean=60.3  p50=16.7ms  p95=17.3ms
+shots -> /tmp/ev-desk16
+EXIT=0
