@@ -88,7 +88,7 @@ closed.
 | New ABI | `sim/src/lib.rs`, `src/hud.ts` | `sim_world_size`, `sim_world_ptr`, `sim_metres_per_tile`, `sim_base_x`, `sim_base_y` — additive only |
 | Windowed bake + LOD | `src/renderer.ts` | the static world is baked per camera window in three tiers (full <=170 px, column+cap <=380 px, flat plate beyond), nearest-first, stopped at `BAKE_LIMIT`; `stats.degraded` reports a stop; the camera uniform gained the view centre and the contour pass and `pick` follow it |
 | Camera pan | `src/main.ts` | one-finger and mouse drag pan the world; screen pixels convert through the live rotation and magnification; the view stays clamped inside the map; a drag never selects |
-| Minimap | `index.html`, `src/style.css`, `src/main.ts` | floating palette-only 2D canvas, drag to move, 24 px close control, `MAP` bar control (44x44) to reopen, tap to centre the camera, 256x256 terrain plate rebuilt per map |
+| Minimap | `index.html`, `src/style.css`, `src/main.ts` | floating palette-only 2D canvas, drag to move, 24 px close control, `MAP` bar control (44x44) to reopen, tap to centre the camera, 256x256 terrain plate rebuilt per map; a dragged panel is pulled back inside the viewport on a resize or orientation flip, so rotating never strands it off-screen |
 | Gates | `scripts/capture.mjs` | `world-scale`, `world-terrain`, `camera-pan`, `lod-budget`, `minimap-present/move/close/reopen/jump` |
 
 Frozen guarantees held: `sim_init(seed)` and its 32x32 showcase scenario are

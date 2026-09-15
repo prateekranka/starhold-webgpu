@@ -396,6 +396,19 @@ function resize() {
  const fit=Math.min(availW/RENDER_WIDTH,availH/RENDER_HEIGHT);
  const scale=fit>=1?Math.floor(fit):Math.max(0.1,fit);
  viewport.style.width=`${RENDER_WIDTH*scale}px`;viewport.style.height=`${RENDER_HEIGHT*scale}px`;
+ clampMinimap();
+}
+/** Keep a dragged minimap inside the viewport. A panel moved in portrait keeps
+ *  inline pixel offsets, so after a rotation it can end up off-screen; pull it
+ *  back instead of leaving the player without it. */
+function clampMinimap() {
+ if(!minimap||minimap.classList.contains('off'))return;
+ if(!minimap.style.left)return;
+ const w=minimap.offsetWidth,h=minimap.offsetHeight;
+ if(!w||!h)return;
+ const x=Math.max(0,Math.min(Math.max(0,innerWidth-w),parseFloat(minimap.style.left)||0));
+ const y=Math.max(0,Math.min(Math.max(0,innerHeight-h),parseFloat(minimap.style.top)||0));
+ minimap.style.left=`${x}px`;minimap.style.top=`${y}px`;
 }
 window.addEventListener('resize',resize);
 window.addEventListener('orientationchange',resize);resize();
