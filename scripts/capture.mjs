@@ -311,7 +311,7 @@ const AGE_NAMES = ['Founding', 'March', 'Starhold'];
 const AGE_COSTS = [[60, 30], [100, 60]];
 // Expansive-world and minimap gates (LARGEMAP_SPEC §7).
 const WORLD_GATE_NAMES = [
-  'world-scale', 'world-terrain', 'camera-pan', 'lod-budget',
+  'world-scale', 'world-terrain', 'camera-pan', 'lod-budget', 'cancel-order',
   'minimap-present', 'minimap-move', 'minimap-close', 'minimap-reopen', 'minimap-jump',
 ];
 const MATCH_GATE_NAMES = [
@@ -1244,6 +1244,42 @@ function gate(name, pass, detail) {
         return {
           pass: moved >= 40 && !!nearTarget,
           detail: `camera ${before ? `${before.x.toFixed(0)},${before.y.toFixed(0)}` : '-'} -> ${after ? `${after.x.toFixed(0)},${after.y.toFixed(0)}` : '-'} moved=${moved.toFixed(0)} tiles`,
+        };
+      });
+
+      // cancel-order: a selected construction site offers CANCEL, and the sim
+      // refunds the full cost (MATCH_SPEC §5, command op 3). Until this pass no
+      // control sent op 3 at all.
+      await guarded('cancel-order', async () => {
+        await freshMatch(0);
+        const placed = await page.evaluate(() => {
+          window.__APP.selectKind(20);
+          const button = [...document.querySelectorAll('#hud-bar button')]
+            .find((b) => b.dataset.action === 'build' && !b.disabled);
+          if (!button) return null;
+          const label = button.textContent.replace(/\s+/g, ' ').trim().slice(0, 24);
+          button.click();
+          const list = typeof window.__APP.entityProbe === 'function' ? window.__APP.entityProbe() : [];
+          const site = list.find((e) => e.state === 5);
+          return site ? { kind: site.kind, index: site.index, label } : null;
+        });
+        if (!placed) return { pass: false, detail: 'no build control, or no construction site appeared' };
+        await page.waitForTimeout(300);
+        const mid = await state(page);
+        await page.evaluate((index) => window.__APP.selectEntity(index), placed.index);
+        await page.waitForTimeout(200);
+        const control = (await hudSnapshot(page)).controls
+          .filter((c) => c.visible && /cancel/i.test(`${c.name} ${c.action || ''}`))[0] || null;
+        if (!control) return { pass: false, detail: `no CANCEL control for site kind ${placed.kind} (selectedKind=${(await state(page)).selectedKind})` };
+        await clickControl(page, control);
+        await page.waitForTimeout(400);
+        const after = await state(page);
+        const gone = await page.evaluate(() => !window.__APP.entityProbe().some((e) => e.state === 5));
+        const refund = after.alloy - mid.alloy;
+        return {
+          pass: refund > 0 && gone,
+          detail: `${placed.label} site k${placed.kind} refund=${refund}a alloy ${mid.alloy}->${after.alloy} ` +
+            `control=${control.w.toFixed(0)}x${control.h.toFixed(0)} siteGone=${gone}`,
         };
       });
 

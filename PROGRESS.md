@@ -31,6 +31,35 @@ Integration and release rules for wave 2:
 - Image generation is for concept sheets and HUD icons only. In-world rendering
   stays procedural and pixel-exact.
 
+## Playtest round — 2026-09-15 (orchestrator played the world build)
+
+A scripted play session (start a match, drive the HUD, fast-forward, read
+`__APP.entityProbe()`) found eight real defects and they are fixed. Issue log with
+reproductions: `docs/PLAYTEST_ISSUES.md` (also holds the six open items for a
+deeper pass, including a match-end state and a placement preview).
+
+| # | What was wrong | Fix |
+|---|---|---|
+| P1 | `walk()` recomputed height with the frozen showcase function, so every moving unit in a world match got z = -1 and sank under the map | `walk` reads the active map through `ground()` |
+| P2 | `Order::Raid` fell back to the authored island's `(12, 18)`, so raiders walked to the map corner and sat there | march at `game.base[enemy]` |
+| P3 | a raid lasted 35 s where the march between starts takes about 7 minutes | window is `35 s + distance / speed` |
+| P4 | `ai_build` searched the showcase's eastern approach with 32-tile indexing, so the AI never placed a single building in the world | search around the faction's own base using the active side length |
+| P5 | `match_production` posted replacement AI units at island coordinates | posts sit around the AI base |
+| P6 | `rally` clamped spawn points to the 32-tile island (x = 29.7 in a 1024-tile world) | the clamp follows the active map |
+| P7 | units crossing a canyon dropped into the void | a unit holds its last ground height over void |
+| P8 | MATCH_SPEC §5 and command op 3 refund a cancelled order, but no HUD control ever sent op 3 | a selected construction site now offers `CANCEL / REFUND`; new gate `cancel-order` proves the refund and the removal |
+
+Effect measured: the AI opponent went from a frozen 13 entities for 20 minutes to
+26 entities with 7 raiders that reached the player's base; an idle player is now
+levelled in about 12 minutes. The showcase determinism tuple is unchanged
+(`{"n":55,"alloy":247,"charge":199,"hash":"20b89f84"}`).
+
+Gates after the round: desktop 27/28 (one flaky `build-site`, root cause: gather
+workers cross the Freight Court's silhouette on the way to the west crystal seam,
+and a worker behind a building cannot be tapped — the sim writer subagent moves
+the seam to the south apron), phone 38/38, tablet 38/38, portrait 39/39, iPad
+40/40.
+
 ## Expansive world and floating minimap — 2026-09-15
 
 Contract: `docs/LARGEMAP_SPEC.md`. The match runs on a **10.24 km x 10.24 km**

@@ -195,6 +195,8 @@ export class Hud {
   private view: HudView;
   private sim: SimAbi | undefined;
   private rows: readonly RosterRow[] = EMPTY;
+  /** True when the current selection has an unfinished order to cancel. */
+  private cancelable = false;
   private key = '';
   private page = 0;
   private buttons: HTMLButtonElement[] = [];
@@ -294,9 +296,13 @@ export class Hud {
     this.setOff(this.ageCost, costText === '');
 
     // Right: context actions for the current selection, from the roster table.
+    // A construction site in progress also offers CANCEL, so the cancel flag is
+    // part of the key that decides whether the button set must be rebuilt.
+    const cancelable = inMatch && view.selectedState === State.Construct;
     const key = `${match ? 1 : 0}|${inMatch ? 1 : 0}|${view.player}|${view.selected ?? -1}|${view.selectedKind ?? -1}|${view.selectedState}`;
-    if (key !== this.key) {
+    if (key !== this.key || cancelable !== this.cancelable) {
       this.key = key;
+      this.cancelable = cancelable;
       this.rows = inMatch ? candidates(sim, view) : EMPTY;
       this.page = 0;
       this.build();
@@ -311,6 +317,7 @@ export class Hud {
     if (!match) return 'MATCH UNAVAILABLE';
     if (!inMatch) return '';
     if (this.view.selectedKind === null) return 'NO SELECTION';
+    if (this.cancelable) return 'UNDER CONSTRUCTION';
     return this.rows.length === 0 ? 'NO ACTIONS' : '';
   }
 
@@ -322,6 +329,24 @@ export class Hud {
     this.kinds = [];
     this.buildFlags = [];
     this.enabledFlags = [];
+    // A selected construction site offers CANCEL: the simulation refunds a
+    // cancelled order in full (MATCH_SPEC §5, command op 3) and until now no
+    // control ever sent it, so a misplaced site could only be waited out.
+    if (this.cancelable) {
+      const cancel = document.createElement('button');
+      cancel.type = 'button';
+      cancel.dataset.action = 'cancel';
+      const name = document.createElement('span');
+      name.className = 'n';
+      name.textContent = 'CANCEL';
+      const cost = document.createElement('span');
+      cost.className = 'c';
+      cost.textContent = 'REFUND';
+      cancel.append(name, cost);
+      cancel.setAttribute('aria-label', 'Cancel this construction, full refund');
+      cancel.title = 'Cancel this construction, full refund';
+      this.list.append(cancel);
+    }
     const start = this.page * PAGE_SIZE;
     const stop = Math.min(start + PAGE_SIZE, this.rows.length);
     for (let i = start; i < stop; i++) {
@@ -393,6 +418,7 @@ export class Hud {
     else if (action === 'advance') this.wiring.command(2, 0, 0);
     else if (action === 'train') this.wiring.command(0, kind, this.view.selected ?? 0);
     else if (action === 'build') this.wiring.build(kind);
+    else if (action === 'cancel') this.wiring.command(3, 0, 0);
   }
 
   private setText(element: HTMLElement, value: string): void {

@@ -12,6 +12,8 @@ interface App {
   worldTiles:number;worldMeters:number;camera:{x:number;y:number};minimap:{open:boolean}};
  /** Read-only heightfield sample: level codes on a fixed grid. */
  terrainSample(step:number):{side:number;stride:number;levels:number[]};
+ /** Read-only actor view: one row per live entity. */
+ entityProbe():{index:number;kind:number;faction:number;x:number;y:number;z:number;state:number;health:number;progress:number}[];
  rotate(dir:1|-1):void;zoomBy(delta:1|-1):void;selectAt(x:number,y:number):void;fastForward(seconds:number):void;
  startMatch(faction:0|1):void;resetShowcase():void;command(op:number,a:number,b:number):number;
  selectEntity(index:number):boolean;selectKind(kind:number):boolean;
@@ -79,6 +81,12 @@ function minimapDraw(force=false):void {
  const reach=Math.max(5,24*zooms[zoomIndex]);
  minimapContext.strokeStyle=minimapHex(9);minimapContext.lineWidth=2;
  minimapContext.strokeRect(Math.floor((camX-reach)*scale)+.5,Math.floor((camY-reach)*scale)+.5,Math.ceil(reach*2*scale),Math.ceil(reach*2*scale));
+}
+/** Read-only view of the live actors, for the capture harness and playtests.
+ *  Nothing here selects, moves or mutates state. */
+function entityProbe():{index:number;kind:number;faction:number;x:number;y:number;z:number;state:number;health:number;progress:number}[] {
+ const out=[];for(let i=0;i<entityCount;i++)out.push({index:i,kind:entities[i*12+4],faction:entities[i*12+9],x:entities[i*12],y:entities[i*12+1],z:entities[i*12+2],state:entities[i*12+5],health:entities[i*12+7],progress:entities[i*12+10]});
+ return out;
 }
 /** Read-only heightfield sample on a fixed grid, for the capture harness. */
 function terrainSample(step:number):{side:number;stride:number;levels:number[]} {
@@ -369,7 +377,7 @@ window.__APP={ready:false,error:null,getState:()=>({touch:touchLayout,yawSteps,z
  mode:simMode(),player:simPlayer(),age:simAge(),ageProgress:simAgeProgress(),popUsed:simPopUsed(),popCap:simPopCap(),
  alloy:sim?sim.sim_alloy():0,charge:sim?sim.sim_charge():0,selectedKind:currentKind(),actions:hud.actions(),
  worldTiles:worldSide,worldMeters:worldSide*(sim&&typeof sim.sim_metres_per_tile==='function'?sim.sim_metres_per_tile():10),camera:{x:camX,y:camY},minimap:{open:!minimap.classList.contains('off')}}),
- rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,command,selectEntity,selectKind,kinds,entityScreen,terrainSample};
+ rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,command,selectEntity,selectKind,kinds,entityScreen,terrainSample,entityProbe};
 const canvas=document.querySelector<HTMLCanvasElement>('#world')!;
 const viewport=document.querySelector<HTMLElement>('#viewport')!;
 const selection=document.querySelector<HTMLOutputElement>('#selection')!;

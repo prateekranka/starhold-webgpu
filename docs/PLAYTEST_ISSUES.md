@@ -1,0 +1,102 @@
+# Starhold — playtest issues for Astra
+
+Opened 2026-09-15 by the orchestrator while playing the 10 km world build.
+One entry per issue: what I saw, how to reproduce, and what is left.
+Reproduce with `node scripts/capture.mjs` for the gates and a playtest script in
+the same shape as the runs quoted here (start a match, drive the HUD, then
+`fastForward` and read `__APP.entityProbe()`).
+
+Status values: **fixed here**, **open**, **needs design**.
+
+---
+
+## Fixed here (kept as a record)
+
+### P1 — every moving unit sank into void in a world match — fixed
+`walk()` recomputed an entity's height with the frozen showcase `height()`
+function, so in a 10 km world any unit that moved got z = -1 and was drawn under
+the map. Evidence: the first playtest reported 12 actors on void at match start
+and 16 after 6.5 minutes. Fix: `walk` reads the active map through `ground()`.
+After: 0 actors below terrain.
+
+### P2 — raiders marched at an authored island coordinate — fixed
+`Order::Raid` fell back to the literal `(12, 18)`, the showcase island's centre,
+so in the world every raider walked to the map's far corner and sat there.
+Evidence: 20 minutes of match time left the nearest raider 740 tiles from the
+player's base. Fix: march at the enemy base from `game.base`.
+
+### P3 — a raid lasted 35 s; the march takes about 7 minutes — fixed
+The raid window could not cover the distance between the two starts, so a wave
+expired long before contact. Fix: the window is `35 s + distance / speed`.
+
+### P4 — the AI never built anything in a world match — fixed
+`ai_build` searched `x 20..30, y 3..26` around `(24, 14)` with 32-tile indexing
+— the authored eastern approach. On the world those tiles are far away or void,
+so the AI placed no building, trained no combat unit, and never raided.
+Evidence: the enemy stayed at its 13 starting entities for 20 minutes; after the
+fix it reached 27 entities with 7 raiders and attacked the player's base. Fix:
+search around the faction's own base using the active side length.
+
+### P5 — new AI units were posted at island coordinates — fixed
+`match_production` assigned homes at `(24.8, 18 + 3n)` and `(25 + …, 19 + …)`, so
+replacement units walked to the map corner instead of defending their base.
+Fix: homes sit around the AI's own base.
+
+### P6 — `rally` clamped spawn points to the 32-tile island — fixed
+New units spawned at `x = 29.7`, the island's east edge, in a 1024-tile world.
+Fix: the clamp follows the active map.
+
+### P7 — units crossing a canyon dropped to z = -1 — fixed
+Movement is direct (no pathfinding, a stated non-goal), so a unit that crossed
+void lost its height and sank. Fix: a unit holds its last ground height while it
+is over void.
+
+### P8 — no control could cancel an unfinished order — fixed
+MATCH_SPEC §5 and command op 3 refund a cancelled order in full, but no HUD
+control ever sent op 3, so a misplaced construction site could only be waited
+out. Fix: a selected construction site offers `CANCEL / REFUND` in the action bar
+and the status line reads UNDER CONSTRUCTION.
+
+---
+
+## Open — needs design or deeper work
+
+### A1 — a defeated player is never told the match ended — needs design
+When the AI razes the player's base the settlement simply empties: population
+reads `0/0`, every action is disabled, and the bar still says FOUNDING. Evidence:
+playtest t+12 min, `pop=0/0`, alloy frozen at 568, no message anywhere.
+Suggestion: a match state in the sim (`won`, `lost`, `running`) plus one line in
+the bar, and a way to restart without a page reload.
+
+### A2 — the Heliowell offers no actions at all — needs design
+Selecting a Heliowell (kind 12) shows `NO ACTIONS`: it is only a prerequisite for
+the Sunlance and a charge source. A player reads that as a broken selection.
+Suggestion: show a status readout instead (`CHARGE SOURCE +1/s`, `ALLOWS
+SUNLANCE`), or give it a real production action.
+
+### A3 — BUILD places the building for the player, silently — needs design
+`buildNearest` picks the nearest simulation-approved tile, so pressing BUILD
+drops a 24-alloy building somewhere the player did not choose, with no preview
+and no confirmation. Note the positive: it never fails, and Rust still enforces
+footprints, level ground and collisions. Suggestion: a placement mode with a
+ghost footprint and a confirm tap.
+
+### A4 — the action bar pages, and the page hides build actions — needs design
+With four build actions plus train actions the bar shows one page and puts the
+rest behind `◀ ▶`. A test that indexes the fourth build control got `null`
+because it sat on page two. Worth checking on a phone: how many taps to reach the
+Hearth? Suggestion: keep build actions on the first page, or widen the desktop
+bar.
+
+### A5 — units walk over canyons — open
+Direct movement means units cross void gaps; they now hold their height instead
+of sinking, so they read as walking on an invisible bridge. Suggestion: a terrain
+cost field and a two-level path (a coarse region graph plus straight steering),
+or authored bridges over the planned chasms.
+
+### A6 — raid balance on a 10 km map — needs design
+With P2–P4 fixed the AI now reaches the player's base and, if the player does
+nothing, levels it in roughly 12 minutes. Verify that this is the intended
+pressure: waves start at 150 s and repeat every 90 s, and a wave needs about
+7 minutes to cross. Suggestion: either move the starts closer, or scale the wave
+clock with the map distance and give the player a warning beat.
