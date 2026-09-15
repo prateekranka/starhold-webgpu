@@ -20,8 +20,12 @@ Acceptance criteria (user verbatim, 2026-09-13):
 - Quarter-turn camera buttons stay.
 - Zoom `+` / `-` buttons stay.
 - Two-finger pinch zoom works. A pinch must not break tap.
-- Portrait mode shows a clear rotate-to-landscape overlay.
-- Verified at 844x390 landscape (phone), 390x844 portrait, 1024x768 tablet.
+- Portrait mode is **playable** (wave 2, supersedes the rotate notice): the canvas
+  fits the width above the HUD bar, the bar stays fully visible with >=44x44 CSS px
+  targets, and there is no page scroll. The rotate notice survives only as the
+  no-WebGPU error path.
+- Verified at 844x390 landscape (iPhone), 390x844 portrait (iPhone), 1024x768
+  landscape (iPad), 768x1024 portrait (iPad), and 960x540 desktop.
 
 Preserved invariants (do not change):
 
@@ -186,28 +190,23 @@ State: `activePointers: Map<number, {x,y}>`, `downX`, `downY`, `downAt`,
 layout). Every other field and function stays exactly as `docs/INTERFACE.md`
 defines.
 
-## 5. Portrait mode
+## 5. Portrait mode (wave 2: playable)
 
-New element in `index.html`:
+Portrait is a playable orientation, not a notice. `docs/MATCH_SPEC.md` §8 is the
+binding contract:
 
-```html
-<div id="rotate-notice" role="status" aria-label="Rotate device to landscape">
-  <p>ROTATE TO LANDSCAPE</p>
-</div>
-```
+- the canvas fits the width above the HUD bar and keeps its 16:9 ratio;
+- `#hud-bar` is fully visible and every target stays >=44x44 CSS px;
+- no page scroll in either orientation, and rotation never reloads the app;
+- `#rotate-notice` is kept only as the no-WebGPU error path, never as an
+  orientation gate. The DOM text stays exempt from the strict render palette, as
+  the existing `#error` overlay is.
 
-```css
-#rotate-notice { display: none; position: fixed; inset: 0; z-index: 10;
-  background: #10121C; color: #F3F0D7; font: 18px/1.6 monospace; letter-spacing: 2px;
-  align-items: center; justify-content: center; text-align: center; }
-@media (orientation: portrait) { body.touch #rotate-notice { display: flex; } }
-```
+## 5.1 Landscape
 
-- Portrait on a touch device shows the overlay. The overlay is opaque and covers
-  the whole viewport.
-- Landscape hides it with no JS.
-- The DOM text is exempt from the strict render-palette rule, as the existing
-  `#error` overlay is. The canvas render stays palette-pure.
+Unchanged from the shipped mobile pass: canvas fits the viewport, camera buttons
+sit bottom-right with 48x48 CSS px targets, and the new HUD bar spans the bottom
+without covering them.
 
 ## 6. Must-not-change list
 

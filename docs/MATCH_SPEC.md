@@ -113,6 +113,13 @@ covers the camera buttons.
 - Right cluster: context actions for the current selection — train buttons for a
   completed building, build buttons for a completed worker. Each shows name and
   cost, is disabled when `sim_can_train`/`sim_can_build` returns 0.
+- **Showcase mode** (mode 0) has no commands yet. Its middle cluster shows a
+  **SKIRMISH** control with two faction buttons — `DAWNWARD` and `CINDERWAKE` —
+  that call `__APP.startMatch(0)` / `__APP.startMatch(1)`. Starting a match is a
+  deliberate player action; the app never boots straight into a match, so the
+  showcase benchmark and the shipped phone build stay valid.
+- **Match mode** (mode 1) shows the faction name, the age cluster, and the action
+  clusters. A **RESET** button returns to the showcase.
 - Every interactive element is at least **44×44 CSS px**. Text uses the existing
   palette. No new colours.
 - The bar is `#hud-bar`. Buttons carry `data-action`, `data-kind`, and an
@@ -149,6 +156,7 @@ Existing showcase gates stay green.
 
 ```ts
 startMatch(faction:0|1):void;         // deterministic match start
+resetShowcase():void;                 // back to the showcase scenario
 command(op:number,a:number,b:number):number;   // -> sim_command
 getState():{ ...existing,
   mode:number; player:number; age:number; ageProgress:number;
