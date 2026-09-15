@@ -314,6 +314,11 @@ const MATCH_GATE_NAMES = [
   'age-advance', 'train-unit', 'build-site',
 ];
 const MATCH_APP_API = ['startMatch', 'resetShowcase', 'command', 'fastForward', 'getState'];
+// Kinds the exact-tap probe asks for first: the tier-0 producers (train actions)
+// and the two workers (build actions). The spot scan below stays as the fallback
+// for builds that predate the entityScreen probe.
+const PRODUCER_KINDS = [10, 11, 12, 60, 61, 62];
+const WORKER_KINDS = [20, 32];
 // Canvas points tried when selecting player entities in match mode: centre-out
 // and west-biased (the player base occupies the west settlement, §6).
 const MATCH_SPOTS = [
@@ -461,6 +466,13 @@ async function clickCanvas(page, box, fx, fy) {
   if (!box) return;
   const x = box.x + box.width * fx;
   const y = box.y + box.height * fy;
+  if (TOUCH) await page.touchscreen.tap(x, y);
+  else await page.mouse.click(x, y);
+  await page.waitForTimeout(TOUCH ? 300 : 200);
+}
+
+/** A real tap on an absolute CSS point, using the same input path as clickCanvas. */
+async function clickPoint(page, x, y) {
   if (TOUCH) await page.touchscreen.tap(x, y);
   else await page.mouse.click(x, y);
   await page.waitForTimeout(TOUCH ? 300 : 200);
@@ -972,12 +984,32 @@ function gate(name, pass, detail) {
         await page.evaluate((f) => window.__APP.startMatch(f), faction);
         await page.waitForTimeout(450);
       };
-      const selectFirst = async (matcher) => {
+      const selectFirst = async (matcher, kinds = []) => {
+        // Prefer one exact tap on a live position the app reports for the kind
+        // the gate needs (read-only probe, no mutation). The point comes from
+        // the same projection the renderer submits, so no guessed fractions.
+        const player = (await state(page)).player ?? 0;
+        for (const faction of [player, 1 - player]) {
+          for (const kind of kinds) {
+            const pt = await page.evaluate(([k, f]) => {
+              const probe = window.__APP.entityScreen;
+              return typeof probe === 'function' ? probe(k, f) : null;
+            }, [kind, faction]);
+            if (!pt) continue;
+            await clickPoint(page, pt.x, pt.y);
+            const snap = await hudSnapshot(page);
+            const found = snap.controls.filter((c) => c.visible && matcher(c));
+            if (found.length) {
+              return { snap, found, how: `exact tap kind ${kind} f${faction} @${pt.x.toFixed(0)},${pt.y.toFixed(0)}` };
+            }
+          }
+        }
+        // Fallback for builds that predate the probe: scan the known spots.
         for (const [fx, fy] of MATCH_SPOTS) {
           await clickCanvas(page, canvasBox, fx, fy);
           const snap = await hudSnapshot(page);
           const found = snap.controls.filter((c) => c.visible && matcher(c));
-          if (found.length) return { snap, found };
+          if (found.length) return { snap, found, how: `spot scan ${fx},${fy}` };
         }
         return null;
       };
@@ -1102,7 +1134,7 @@ function gate(name, pass, detail) {
       // population) immediately and raises the entity count after the spawn.
       await guarded('train-unit', async () => {
         await freshMatch(0);
-        const found = await selectFirst((c) => c.visible && isTrainControl(c));
+        const found = await selectFirst((c) => c.visible && isTrainControl(c), PRODUCER_KINDS);
         if (!found) return { pass: false, detail: `no train action for any of ${MATCH_SPOTS.length} canvas selections (selectedKind=${(await state(page)).selectedKind ?? 'null'})` };
         const button = found.found.find((c) => !c.disabled) || found.found[0];
         if (button.disabled) return { pass: false, detail: `all ${found.found.length} train actions disabled for selectedKind=${found.snap.st.selectedKind}` };
@@ -1122,7 +1154,7 @@ function gate(name, pass, detail) {
         const grew = after.entityCount > before.entityCount;
         return {
           pass: spent && popOk && grew,
-          detail: `action="${button.name || button.action}" kind=${button.kind ?? '-'} roster=${row ? `${row.alloy}a/${row.charge}c pop ${row.pop}` : 'n/a'} ` +
+          detail: `[${found.how}] action="${button.name || button.action}" kind=${button.kind ?? '-'} roster=${row ? `${row.alloy}a/${row.charge}c pop ${row.pop}` : 'n/a'} ` +
             `drop=${drop.alloy}a/${drop.charge}c drift=${drift.alloy}/${drift.charge} pop ${before.popUsed}->${after.popUsed} ` +
             `entities ${before.entityCount}->${after.entityCount}`,
         };
@@ -1132,7 +1164,7 @@ function gate(name, pass, detail) {
       // so the entity count rises as soon as the site is placed (§5).
       await guarded('build-site', async () => {
         await freshMatch(0);
-        const found = await selectFirst((c) => c.visible && isBuildControl(c));
+        const found = await selectFirst((c) => c.visible && isBuildControl(c), WORKER_KINDS);
         if (!found) return { pass: false, detail: `no build action for any of ${MATCH_SPOTS.length} canvas selections (selectedKind=${(await state(page)).selectedKind ?? 'null'})` };
         const button = found.found.find((c) => !c.disabled) || found.found[0];
         if (button.disabled) return { pass: false, detail: `all ${found.found.length} build actions disabled for selectedKind=${found.snap.st.selectedKind}` };
@@ -1149,7 +1181,7 @@ function gate(name, pass, detail) {
         const spent = after.alloy < before.alloy || after.charge < before.charge;
         return {
           pass: placed,
-          detail: `action="${button.name || button.action}" kind=${button.kind ?? '-'} roster=${row ? `${row.alloy}a/${row.charge}c` : 'n/a'} ` +
+          detail: `[${found.how}] action="${button.name || button.action}" kind=${button.kind ?? '-'} roster=${row ? `${row.alloy}a/${row.charge}c` : 'n/a'} ` +
             `sitePlaced=${placed} entities ${before.entityCount}->${after.entityCount} ` +
             `alloy ${before.alloy}->${after.alloy} charge ${before.charge}->${after.charge} costSpent=${spent}`,
         };

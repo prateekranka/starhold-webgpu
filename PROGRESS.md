@@ -40,6 +40,7 @@ cause was in the harness or in the HUD wiring, not in the simulation.
 |---|---|---|
 | gate restored zoom on the wrong button | `scripts/capture.mjs` | the rotate gate re-zoomed with `buttons[3]` (zoom-in) instead of `buttons[2]` (zoom-out), so later gates inherited the wrong zoom index |
 | rotated camera leaked forward | `scripts/capture.mjs` | after `shot-rotated.png` the harness never returned to yaw 0, so every later tap used a rotated screen projection; it now clicks `#rotate-left` |
+| gates scanned 40 guessed points | `scripts/capture.mjs`, `src/main.ts` | the harness could not know where a unit was drawn, so `train-unit` and `build-site` scanned ~40 constants; the read-only `__APP.entityScreen(kind,faction)` probe now returns the live screen centre from the renderer's own projection, and each gate makes **one** exact tap |
 | cost tolerance too strict | `scripts/capture.mjs` | a real click/readback can straddle one deterministic Charge tick; the tolerance is now `max(1, abs(drift))` per resource, so the exact cost is still checked |
 | BUILD used the HUD tile | `src/hud.ts`, `src/main.ts` | the bar sent the raw HUD tile; it now calls `buildNearest(kind)`, which asks Rust for the nearest placeable tile and leaves `sim_command` authoritative |
 | production list showed disabled rows | `src/hud.ts` | a building with no matching roster rows now shows no production action |
@@ -56,6 +57,11 @@ Build: **PASS** (`npm run wasm && tsc --noEmit && vite build`). Capture
 | 768x1024, dsf 2 | iPad portrait | **30/30 PASS** |
 
 - 133/133 gates. FPS 60.3 mean, p95 16.7-17.1 ms, max 18.4 ms in every run.
+- `train-unit` and `build-site` selected their target with **one exact tap** in
+  all five viewports (`kind 10 f0 @417,221` desktop, `@379,152` phone/portrait/
+  ipad, `@440,333` tablet; `kind 20 f0 @318,181` desktop, `@311,124` phone).
+  The 40-point scan did not run once. Each gate line starts with the path used,
+  so a regression to the scan is visible in the log.
 - Showcase determinism `{"n":55,"alloy":247,"charge":199,"hash":"20b89f84"}` and
   match determinism `a7b9e906` are unchanged in every run.
 - Instance, palette, grid and arena gates unchanged; `saturated=false`.
@@ -76,12 +82,17 @@ Build: **PASS** (`npm run wasm && tsc --noEmit && vite build`). Capture
 
 ### Open items carried out of wave 2
 
-1. `MATCH_SPOTS` in `scripts/capture.mjs` is a workaround: units move during the
-   450 ms DOM settle, so the harness scans ~40 points until the expected action
-   appears. Picking itself is verified (above). Rewrite the gate to derive one
-   live screen position from the snapshot instead of scanning points.
-2. The release stays frozen on pass 15. Wave 2 passes every objective gate, but
-   no fresh independent visual critic has judged the wave-2 match frame yet.
+1. `MATCH_SPOTS` in `scripts/capture.mjs` is now only a fallback for builds that
+   predate `__APP.entityScreen`. No gate used it in this run. Delete it once no
+   gate can regress to it, and keep the `[exact tap ...]` prefix in the gate
+   detail so a silent fallback stays visible.
+2. No independent critic clears the wave-2 match frame, so the release stays
+   frozen on pass 15. The DeepSeek vision critic names grounded richness and
+   readability as the biggest gap — the same parked structural residual — and the
+   second opinion route is unavailable: `cursor-agent --model
+   cursor-grok-4.6-xhigh` returns `ActionRequiredError: Named models unavailable
+   Free plans can only use Auto.` and the local bridge returns HTTP 502 for that
+   model.
 
 **Lighting loop parked at pass 30 (`45212d0`). Every pass 25-30 passed all
 objective gates; the independent visual gate is still open — each fresh critic

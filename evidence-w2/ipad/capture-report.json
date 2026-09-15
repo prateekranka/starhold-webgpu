@@ -88,7 +88,7 @@
     {
       "name": "fps>=59-vsync-locked",
       "pass": true,
-      "detail": "fps=60.3 p95=16.9ms max=17.2ms"
+      "detail": "fps=60.3 p95=16.9ms max=17.0ms"
     },
     {
       "name": "hud-skirmish-entry",
@@ -123,12 +123,12 @@
     {
       "name": "train-unit",
       "pass": true,
-      "detail": "action=\"Train PACK BEETLE, 8 alloy, 2 charge, 1 population PACK BEET\" kind=21 roster=8a/2c pop 1 drop=8a/2c drift=0/1 pop 11->12 entities 38->40"
+      "detail": "[exact tap kind 10 f0 @379,152] action=\"Train RIVETER, 4 alloy, 1 population RIVETER4A\" kind=20 roster=4a/0c pop 1 drop=4a/0c drift=0/1 pop 11->12 entities 38->40"
     },
     {
       "name": "build-site",
       "pass": true,
-      "detail": "action=\"Build FREIGHT COURT, 24 alloy FREIGHT COURT24A\" kind=11 roster=24a/0c sitePlaced=true entities 38->39 alloy 80->56 charge 40->41 costSpent=true"
+      "detail": "[exact tap kind 20 f0 @311,124] action=\"Build FREIGHT COURT, 24 alloy FREIGHT COURT24A\" kind=11 roster=24a/0c sitePlaced=true entities 38->39 alloy 80->56 charge 40->41 costSpent=true"
     },
     {
       "name": "no-console-errors",
@@ -172,10 +172,10 @@
   "fps": {
     "fps": 60.25,
     "frames": 241,
-    "mean_ms": 16.62282157735706,
-    "p50_ms": 16.700000047683716,
+    "mean_ms": 16.63195020727102,
+    "p50_ms": 16.699999809265137,
     "p95_ms": 16.899999856948853,
-    "max_ms": 17.200000047683716
+    "max_ms": 17
   },
   "matchErrors": []
 }

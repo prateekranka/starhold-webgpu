@@ -166,6 +166,18 @@ getState():{ ...existing,
 
 `sim_charge()` and `sim_alloy()` must keep working in both modes.
 
+Read-only probes, added for the capture harness and safe to call at any time
+(they never select, move, or mutate simulation state):
+
+```ts
+selectEntity(index:number):boolean;    // -> sim_select, reports whether it took
+selectKind(kind:number):boolean;       // first live entity of a kind
+kinds():number[];                      // distinct kinds in the snapshot
+entityScreen(kind:number,faction:number):{x:number;y:number}|null;
+  // CSS-pixel centre of the first live entity of that kind and faction, using
+  // the renderer's own projection, so a tap on the point hits that entity.
+```
+
 ## 11. Non-goals for this wave
 
 - Unit movement orders, attack orders, and formation control.

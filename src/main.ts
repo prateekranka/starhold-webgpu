@@ -13,6 +13,10 @@ interface App {
  selectEntity(index:number):boolean;selectKind(kind:number):boolean;
  /** Distinct entity kinds in the current snapshot (read-only coverage probe). */
  kinds():number[];
+ /** Screen centre (CSS px) of the first live entity of a kind, or null. The
+  * harness taps this exact live position instead of scanning guessed points.
+  * Read-only: it never selects, moves, or mutates simulation state. */
+ entityScreen(kind:number,faction:number):{x:number;y:number}|null;
 }
 declare global {interface Window {__APP:App}}
 let yawSteps=0,zoomIndex=1,sim:SimExports|undefined,entities=new Float32Array(0),entityCount=0,selected:number|null=null,fps:number|null=null;
@@ -180,9 +184,29 @@ function kinds():number[] {
  for(let i=0;i<entityCount;i++){const k=entities[i*12+4];if(!out.includes(k))out.push(k);}
  return out.sort((a,b)=>a-b);
 }
+/** Screen centre (CSS px) of the first live entity of a kind, or null. Uses the
+ *  same forward projection the vertex shader applies (grid 2, magnification
+ *  1/zoom, rounded quarter-turn rotation), so a tap on the returned point lands
+ *  on that entity's own box. Read-only: nothing is selected or moved. */
+function entityScreen(kind:number,faction:number):{x:number;y:number}|null {
+ if(!sim)return null;
+ for(let i=0;i<entityCount;i++){
+  if(entities[i*12+4]!==kind||entities[i*12+9]!==faction)continue;
+  const state=entities[i*12+5];
+  if(state===State.Death)continue;
+  const rect=canvas.getBoundingClientRect();
+  if(!rect.width||!rect.height)return null;
+  const zoom=zooms[zoomIndex],c=Math.round(Math.cos(yawSteps*Math.PI/2)),s=Math.round(Math.sin(yawSteps*Math.PI/2));
+  const dx=entities[i*12]-16,dy=entities[i*12+1]-16,z=entities[i*12+2];
+  const rx=dx*c-dy*s,ry=dx*s+dy*c;
+  const px=2*(240+6*(rx-ry)/zoom),py=2*(136+3.4641016*(rx+ry)/zoom-6.9282032*z/zoom);
+  return {x:rect.left+px*rect.width/RENDER_WIDTH,y:rect.top+py*rect.height/RENDER_HEIGHT};
+ }
+ return null;
+}
 window.__APP={ready:false,error:null,getState:()=>({touch:touchLayout,yawSteps,zoom:zooms[zoomIndex],selected,entityCount,fps,frameStats:window.__APP.ready?renderer.stats:null,
  mode:simMode(),player:simPlayer(),age:simAge(),ageProgress:simAgeProgress(),popUsed:simPopUsed(),popCap:simPopCap(),
- alloy:sim?sim.sim_alloy():0,charge:sim?sim.sim_charge():0,selectedKind:currentKind(),actions:hud.actions()}),rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,command,selectEntity,selectKind,kinds};
+ alloy:sim?sim.sim_alloy():0,charge:sim?sim.sim_charge():0,selectedKind:currentKind(),actions:hud.actions()}),rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,command,selectEntity,selectKind,kinds,entityScreen};
 const canvas=document.querySelector<HTMLCanvasElement>('#world')!;
 const viewport=document.querySelector<HTMLElement>('#viewport')!;
 const selection=document.querySelector<HTMLOutputElement>('#selection')!;

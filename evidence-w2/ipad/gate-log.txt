@@ -1,0 +1,34 @@
+PASS  boots-ready — entities=55
+PASS  instance-budget — triangles=116281 saturated=false
+PASS  portrait-playable — canvas=768x432@0,216 bar=768x160@y864 controls=2 smallHud=none navSmall=none navOutside=none doc=768x1024/768x1024 notice=hidden
+PASS  ipad-portrait — viewport=768x1024 dpr=2 · canvas=768x432@0,216 bar=768x160@y864 controls=2 smallHud=none navSmall=none navOutside=none doc=768x1024/768x1024 notice=hidden
+PASS  no-scroll — portrait doc=768x1024 client=768x1024
+PASS  portrait-clears-on-rotate — notice=none canvas=580x326 btns=48x48 48x48 48x48 48x48
+PASS  canvas-fits — rect=579.5x326.0@132.2,0.0 aspect=1.778 backing=960x540
+PASS  hud-unclipped — buttons=4 outside=none
+PASS  touch-targets-44 — sizes=48x48 48x48 48x48 48x48 overlap=none
+PASS  safe-area-respected — canvas=132.2..711.8 firstBtn=574.0 lastBtn=790.0
+PASS  rotate-touch — 0 -> 1
+PASS  zoom-touch — zoom 1 -> 0.8 -> 1
+PASS  tap-clears — boot=7 afterClear=null
+PASS  tap-select — selected=0
+PASS  pinch-zoom — zoom 1 -> 0.8 (idx 1 -> 2)
+PASS  pinch-keeps-selection — 0 -> 0
+PASS  tap-after-pinch — clear=null select=0
+PASS  fps>=59-vsync-locked — fps=60.3 p95=16.9ms max=17.0ms
+PASS  hud-skirmish-entry — showcaseMode=0 skirmishLabel=true dawnward=69x44 cinderwake=82x44 dawnwardClick=mode 1 player 0 reset->mode 0 cinderwakeClick=mode 1 player 1
+PASS  match-boot — mode=1 player=0 age=0 alloy=80 charge=40 pop=11/15 entities=38 (standard start 80/40, 11/15, 3 buildings + 10 units) factionLabel=true resetControl="Reset to the showcase scenar" resetShowcase->mode 0
+PASS  hud-bar — bar=844x64@0,326 visible=true tall>=44=true covers=none insets44=44..800 of 844, h=64
+PASS  hud-resources — bar alloy=80 charge=41 pop=11/15 | state alloy=80 charge=41 pop=11/15
+PASS  hud-age — label="FOUNDING 60A 30C ADVANCE" state.age=0(Founding) otherAges=none ageProgress=1 progress=hidden ratio=0.93
+PASS  age-advance — cost=60a/30c drop=60a/29c drift=0/0 age 0->1 label=March labelShown=true
+PASS  train-unit — [exact tap kind 10 f0 @379,152] action="Train RIVETER, 4 alloy, 1 population RIVETER4A" kind=20 roster=4a/0c pop 1 drop=4a/0c drift=0/1 pop 11->12 entities 38->40
+PASS  build-site — [exact tap kind 20 f0 @311,124] action="Build FREIGHT COURT, 24 alloy FREIGHT COURT24A" kind=11 roster=24a/0c sitePlaced=true entities 38->39 alloy 80->56 charge 40->41 costSpent=true
+PASS  no-console-errors
+PASS  determinism — {"n":55,"alloy":247,"charge":199,"hash":"20b89f84"} vs {"n":55,"alloy":247,"charge":199,"hash":"20b89f84"}
+PASS  match-determinism — a7b9e906 vs a7b9e906 entities=39/39 age=1/1
+PASS  no-webgpu-error-path — ready=false error="WebGPU is unavailable. Starhold requires a WebGPU-capable browser with hardware accelerati" overlays=error:"WebGPU is unavailable. Starhold requires a WebGPU-capable br"
+
+30/30 gates passed
+fps mean=60.3  p50=16.7ms  p95=16.9ms
+shots -> /home/bobbyranka/Cowork/starhold/evidence-ipad
