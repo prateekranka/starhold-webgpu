@@ -1,0 +1,186 @@
+#!/usr/bin/env node
+// Objective composition measures for the world terrain, per
+// docs/TERRAIN_COMPOSITION_SPEC.md. No browser, no renderer: it reads the world
+// buffer the simulation generates and reports the numbers the spec sets floors on.
+//
+// Usage: node scripts/world-composition-probe.mjs [public/sim.wasm] [seed] [faction]
+import { readFile } from 'node:fs/promises';
+
+const wasmPath = process.argv[2] || 'public/sim.wasm';
+const seed = Number(process.argv[3] || 73129) >>> 0;
+const faction = Number(process.argv[4] || 0) >>> 0;
+
+const bytes = await readFile(wasmPath);
+const { instance } = await WebAssembly.instantiate(bytes, {});
+const e = instance.exports;
+
+const t0 = Date.now();
+e.sim_match_init(seed, faction);
+const genMs = Date.now() - t0;
+
+const side = e.sim_world_size();
+const metres = e.sim_metres_per_tile();
+const world = new Float32Array(e.memory.buffer, e.sim_world_ptr(), side * side);
+const at = (x, y) => (x < 0 || y < 0 || x >= side || y >= side ? -2 : world[y * side + x]);
+
+// ---------------------------------------------------------------- level census
+const census = new Map();
+for (let i = 0; i < world.length; i += 1) census.set(world[i], (census.get(world[i]) || 0) + 1);
+const rows = [...census.entries()].sort((a, b) => b[1] - a[1]);
+console.log(`world: ${side}x${side} tiles, ${(side * metres / 1000).toFixed(2)} km a side, generated in ${genMs} ms`);
+console.log(`levels: ${rows.map(([h, n]) => `${h}->${(100 * n / world.length).toFixed(1)}%`).join('  ')}`);
+
+// ------------------------------------------------------------- clearing extent
+// The largest connected run of land at one height that contains the base. The
+// spec wants a quiet clearing at least 60 tiles across on its short axis.
+function clearing(bx, by) {
+  const cx = Math.floor(bx), cy = Math.floor(by);
+  const level = at(cx, cy);
+  if (level === -1 || level === -2) return { level, area: 0, w: 0, h: 0, note: 'base is not on land' };
+  const seen = new Uint8Array(side * side);
+  const queue = [cy * side + cx];
+  seen[cy * side + cx] = 1;
+  let area = 0, minX = cx, maxX = cx, minY = cy, maxY = cy;
+  // A clearing is flat: same level, no void, and the walk must not step onto a
+  // tile whose level differs. Anything else is a terrace edge.
+  while (queue.length) {
+    const i = queue.pop();
+    const x = i % side, y = (i - x) / side;
+    area += 1;
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+    const neighbours = [i - 1, i + 1, i - side, i + side];
+    const nx = [x - 1, x + 1, x, x];
+    const ny = [y, y, y - 1, y + 1];
+    for (let k = 0; k < 4; k += 1) {
+      if (nx[k] < 0 || ny[k] < 0 || nx[k] >= side || ny[k] >= side) continue;
+      const j = neighbours[k];
+      if (seen[j]) continue;
+      if (world[j] !== level) continue;
+      seen[j] = 1;
+      queue.push(j);
+    }
+  }
+  return { level, area, w: maxX - minX + 1, h: maxY - minY + 1, minX, maxX, minY, maxY };
+}
+
+const bases = [0, 1].map((f) => ({ f, x: e.sim_base_x(f), y: e.sim_base_y(f) }));
+for (const b of bases) {
+  const c = clearing(b.x, b.y);
+  const short = Math.min(c.w || 0, c.h || 0);
+  console.log(`base ${b.f} at (${b.x},${b.y}) level=${c.level} clearing area=${c.area} tiles ${c.w}x${c.h} short axis=${short} ${short >= 60 ? 'OK' : 'TOO SMALL (spec floor 60)'}`);
+}
+
+// ------------------------------------------------------ routes: land-only path
+// A route must be traceable from the clearing to the map centre without void.
+function landPath(fromX, fromY, toX, toY) {
+  const start = Math.floor(fromY) * side + Math.floor(fromX);
+  const goal = Math.floor(toY) * side + Math.floor(toX);
+  const seen = new Int32Array(side * side).fill(-1);
+  const queue = [start];
+  seen[start] = start;
+  let head = 0;
+  let steps = 0;
+  while (head < queue.length) {
+    const i = queue[head];
+    head += 1;
+    steps += 1;
+    if (i === goal) {
+      let length = 0;
+      for (let j = i; j !== start; j = seen[j]) length += 1;
+      return { reachable: true, length, visited: steps };
+    }
+    const x = i % side, y = (i - x) / side;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= side || ny >= side) continue;
+      const j = ny * side + nx;
+      if (seen[j] !== -1 || world[j] < 0) continue;
+      seen[j] = i;
+      queue.push(j);
+    }
+  }
+  return { reachable: false, visited: steps };
+}
+const mid = Math.floor(side / 2);
+for (const b of bases) {
+  const p = landPath(b.x + 0.5, b.y + 0.5, mid, mid);
+  console.log(`base ${b.f} -> centre: land-only route ${p.reachable ? `yes, ${p.length} tiles (${(p.length * metres / 1000).toFixed(2)} km)` : 'NO'} (visited ${p.visited})`);
+}
+
+// ------------------------------------------------------------- ridge structure
+// A ridge reads as a lit face and a shadowed face: at least two height steps
+// along one flank. Count step faces and how many 100x100 regions hold two or more.
+let stepFaces = 0;
+const regionSteps = new Map();
+for (let y = 1; y < side - 1; y += 1) {
+  for (let x = 1; x < side - 1; x += 1) {
+    const h = world[y * side + x];
+    let steps = 0;
+    if (h >= 0) {
+      for (const [dx, dy] of [[1, 0], [0, 1]]) {
+        const n = world[(y + dy) * side + (x + dx)];
+        if (n >= 0 && Math.abs(n - h) >= 0.5) steps += 1;
+      }
+    }
+    if (steps) {
+      stepFaces += steps;
+      const key = `${Math.floor(x / 100)},${Math.floor(y / 100)}`;
+      regionSteps.set(key, (regionSteps.get(key) || 0) + steps);
+    }
+  }
+}
+const regions = [...regionSteps.values()];
+const withTwo = regions.filter((n) => n >= 2).length;
+console.log(`ridge step faces: ${stepFaces}  regions with any step: ${regions.length}  with 2+ faces: ${withTwo}`);
+
+// --------------------------------------------------------------- ore clustering
+const n = e.sim_entity_count();
+const stride = e.sim_entity_stride();
+const ents = new Float32Array(e.memory.buffer, e.sim_entity_ptr(), n * stride);
+const ore = [];
+for (let i = 0; i < n; i += 1) {
+  if (ents[i * stride + 4] === 40) ore.push({ x: ents[i * stride], y: ents[i * stride + 1] });
+}
+// Single-link clustering at 30 tiles: a group is ore that sits together.
+const groups = [];
+const taken = new Array(ore.length).fill(false);
+for (let i = 0; i < ore.length; i += 1) {
+  if (taken[i]) continue;
+  const stack = [i];
+  taken[i] = true;
+  const members = [];
+  while (stack.length) {
+    const a = stack.pop();
+    members.push(ore[a]);
+    for (let b = 0; b < ore.length; b += 1) {
+      if (taken[b]) continue;
+      if (Math.hypot(ore[a].x - ore[b].x, ore[a].y - ore[b].y) <= 30) { taken[b] = true; stack.push(b); }
+    }
+  }
+  const cx = members.reduce((s, m) => s + m.x, 0) / members.length;
+  const cy = members.reduce((s, m) => s + m.y, 0) / members.length;
+  groups.push({ size: members.length, cx, cy, spread: Math.max(...members.map((m) => Math.hypot(m.x - cx, m.y - cy))) });
+}
+groups.sort((a, b) => b.size - a.size);
+console.log(`ore tiles: ${ore.length}  groups (single-link at 30 tiles): ${groups.length}  sizes: ${groups.map((g) => g.size).join(',')}`);
+for (const b of bases) {
+  const near = groups.filter((g) => Math.hypot(g.cx - b.x, g.cy - b.y) <= 120);
+  const usable = near.filter((g) => g.size >= 3);
+  console.log(`base ${b.f}: ore groups within 120 tiles = ${near.length}, of them 3+ tiles = ${usable.length} ${usable.length >= 4 ? 'OK' : 'SHORT (spec wants 4)'}`);
+}
+
+// ------------------------------------------------------------------ void share
+const voidTiles = census.get(-1) || 0;
+let voidNearBase = 0, boxTiles = 0;
+for (let y = 0; y < side; y += 1) {
+  for (let x = 0; x < side; x += 1) {
+    for (const b of bases) {
+      if (Math.abs(x - b.x) <= 60 && Math.abs(y - b.y) <= 60) {
+        boxTiles += 1;
+        if (world[y * side + x] < 0) voidNearBase += 1;
+      }
+    }
+  }
+}
+console.log(`void: ${(100 * voidTiles / world.length).toFixed(1)}% of the world, ${(100 * voidNearBase / Math.max(1, boxTiles)).toFixed(2)}% inside 121x121 boxes at the bases`);
