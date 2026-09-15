@@ -40,7 +40,7 @@ cause was in the harness or in the HUD wiring, not in the simulation.
 |---|---|---|
 | gate restored zoom on the wrong button | `scripts/capture.mjs` | the rotate gate re-zoomed with `buttons[3]` (zoom-in) instead of `buttons[2]` (zoom-out), so later gates inherited the wrong zoom index |
 | rotated camera leaked forward | `scripts/capture.mjs` | after `shot-rotated.png` the harness never returned to yaw 0, so every later tap used a rotated screen projection; it now clicks `#rotate-left` |
-| gates scanned 40 guessed points | `scripts/capture.mjs`, `src/main.ts` | the harness could not know where a unit was drawn, so `train-unit` and `build-site` scanned ~40 constants; the read-only `__APP.entityScreen(kind,faction)` probe now returns the live screen centre from the renderer's own projection, and each gate makes **one** exact tap |
+| gates scanned ~50 guessed points | `scripts/capture.mjs`, `src/main.ts` | the harness could not know where a unit was drawn, so `train-unit` and `build-site` scanned constants until one hit; the read-only `__APP.entityScreen(kind,faction)` probe now returns the live screen centre from the renderer's own projection, each gate makes **one** exact tap, and the constant list and its scan loop are deleted (`61e37e0`) |
 | cost tolerance too strict | `scripts/capture.mjs` | a real click/readback can straddle one deterministic Charge tick; the tolerance is now `max(1, abs(drift))` per resource, so the exact cost is still checked |
 | BUILD used the HUD tile | `src/hud.ts`, `src/main.ts` | the bar sent the raw HUD tile; it now calls `buildNearest(kind)`, which asks Rust for the nearest placeable tile and leaves `sim_command` authoritative |
 | production list showed disabled rows | `src/hud.ts` | a building with no matching roster rows now shows no production action |
@@ -56,12 +56,12 @@ Build: **PASS** (`npm run wasm && tsc --noEmit && vite build`). Capture
 | 390x844 -> 844x390, dsf 2 | portrait, then rotate | **29/29 PASS** |
 | 768x1024, dsf 2 | iPad portrait | **30/30 PASS** |
 
-- 133/133 gates. FPS 60.3 mean, p95 16.7-17.1 ms, max 18.4 ms in every run.
+- 133/133 gates. FPS 60.3 mean, p95 16.7-17.2 ms, max 18.4 ms in every run.
 - `train-unit` and `build-site` selected their target with **one exact tap** in
   all five viewports (`kind 10 f0 @417,221` desktop, `@379,152` phone/portrait/
   ipad, `@440,333` tablet; `kind 20 f0 @318,181` desktop, `@311,124` phone).
-  The 40-point scan did not run once. Each gate line starts with the path used,
-  so a regression to the scan is visible in the log.
+  Each gate line names the tap it used, so a projection regression fails the
+  gate instead of hiding behind a lucky hit.
 - Showcase determinism `{"n":55,"alloy":247,"charge":199,"hash":"20b89f84"}` and
   match determinism `a7b9e906` are unchanged in every run.
 - Instance, palette, grid and arena gates unchanged; `saturated=false`.
@@ -82,10 +82,9 @@ Build: **PASS** (`npm run wasm && tsc --noEmit && vite build`). Capture
 
 ### Open items carried out of wave 2
 
-1. `MATCH_SPOTS` in `scripts/capture.mjs` is now only a fallback for builds that
-   predate `__APP.entityScreen`. No gate used it in this run. Delete it once no
-   gate can regress to it, and keep the `[exact tap ...]` prefix in the gate
-   detail so a silent fallback stays visible.
+1. `MATCH_SPOTS` is deleted (`61e37e0`) and no guessed fraction or scan remains.
+   **Done** — kept here as a record. The selection path is now one exact tap on a
+   position the app reports.
 2. No independent critic clears the wave-2 match frame, so the release stays
    frozen on pass 15. The DeepSeek vision critic names grounded richness and
    readability as the biggest gap — the same parked structural residual.
@@ -111,8 +110,9 @@ Build: **PASS** (`npm run wasm && tsc --noEmit && vite build`). Capture
    up unit and building silhouettes and separate the ground mids so both
    settlements read at normal zoom. Stay inside the frozen contracts — 32
    colours, locked map, camera, and controls.
-3. Delete `MATCH_SPOTS` from `scripts/capture.mjs` once no gate can regress to
-   it, and keep the `[exact tap ...]` prefix so a silent fallback stays visible.
+3. Re-run the five viewports after the readability piece lands. The exact-tap
+   gates now fail on any projection regression, so they are the guard for that
+   work.
 
 **Lighting loop parked at pass 30 (`45212d0`). Every pass 25-30 passed all
 objective gates; the independent visual gate is still open — each fresh critic
