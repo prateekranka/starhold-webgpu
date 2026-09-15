@@ -99,6 +99,28 @@ taps), and "enemy worker touch selection" expects an enemy worker to be
 selectable (enemy entities are not selectable by design). "producer 12 actions"
 is A2 below, and "44px targets containment overlap scroll" is P9 above.
 
+### P10 — the page chevron at the last page — checked, not a defect (kept as a record)
+
+Found while answering "how do I see an Ash Jackal in the game", and withdrawn
+after checking the code. The chevron does nothing at the last page because
+`next.disabled` is set exactly then, `turn()` clamps the page, and
+`#hud-bar button:disabled` styles the muted border and text — so the control is
+correctly inert *and* visibly inert. The probe that flagged it was the faulty
+part: it clicked a disabled button and used the `.off` class as its exit test,
+but `.off` is only set when there is a single page, so the loop read the last
+page six times and reported six pages.
+
+Two things worth keeping from it:
+
+1. **The Fang Yard sits on page 2 of the Cinderwake build list.** It is buildable,
+   but the building that trains the faction's signature raider is one chevron away
+   from the default view, with no other hint that a second page exists. That is a
+   discoverability question, not a bug.
+2. **Read the whole bar before concluding anything about a faction.** The first
+   reading took only the visible page and made it look as though Cinderwake could
+   not build a Fang Yard at all. The same class of mistake produced the earlier
+   action-bar entry (A4) in this file, which was also withdrawn on measurement.
+
 ## Open — needs design or deeper work
 
 ### A1 — a defeated player is never told the match ended — needs design
