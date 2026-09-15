@@ -11,6 +11,8 @@ interface App {
  rotate(dir:1|-1):void;zoomBy(delta:1|-1):void;selectAt(x:number,y:number):void;fastForward(seconds:number):void;
  startMatch(faction:0|1):void;resetShowcase():void;command(op:number,a:number,b:number):number;
  selectEntity(index:number):boolean;selectKind(kind:number):boolean;
+ /** Distinct entity kinds in the current snapshot (read-only coverage probe). */
+ kinds():number[];
 }
 declare global {interface Window {__APP:App}}
 let yawSteps=0,zoomIndex=1,sim:SimExports|undefined,entities=new Float32Array(0),entityCount=0,selected:number|null=null,fps:number|null=null;
@@ -150,9 +152,16 @@ function selectKind(kind:number):boolean {
  }
  return spare<0?false:selectEntity(spare);
 }
+/** Distinct kinds present in the current snapshot. Read-only; used by the
+ *  orchestrator's coverage probe and safe to call at any time. */
+function kinds():number[] {
+ const out:number[]=[];
+ for(let i=0;i<entityCount;i++){const k=entities[i*12+4];if(!out.includes(k))out.push(k);}
+ return out.sort((a,b)=>a-b);
+}
 window.__APP={ready:false,error:null,getState:()=>({touch:touchLayout,yawSteps,zoom:zooms[zoomIndex],selected,entityCount,fps,frameStats:window.__APP.ready?renderer.stats:null,
  mode:simMode(),player:simPlayer(),age:simAge(),ageProgress:simAgeProgress(),popUsed:simPopUsed(),popCap:simPopCap(),
- alloy:sim?sim.sim_alloy():0,charge:sim?sim.sim_charge():0,selectedKind:currentKind(),actions:hud.actions()}),rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,command,selectEntity,selectKind};
+ alloy:sim?sim.sim_alloy():0,charge:sim?sim.sim_charge():0,selectedKind:currentKind(),actions:hud.actions()}),rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,command,selectEntity,selectKind,kinds};
 const canvas=document.querySelector<HTMLCanvasElement>('#world')!;
 const viewport=document.querySelector<HTMLElement>('#viewport')!;
 const selection=document.querySelector<HTMLOutputElement>('#selection')!;
