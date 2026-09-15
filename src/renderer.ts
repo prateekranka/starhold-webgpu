@@ -1,6 +1,9 @@
 import {palette, names, jobs} from './kinds';
 import {glyphs} from './font';
-const MAX=16000, STRIDE=8;
+// 16000 was enough for the authored 32x32 island. The 10 km world bakes the
+// visible window with three detail tiers, so the ceiling is raised and the bake
+// itself stops at BAKE_LIMIT instead of dropping instances one by one.
+const MAX=26000, BAKE_LIMIT=24000, STRIDE=8;
 const buildingFootprints:Readonly<Record<number,readonly [number,number]>>={10:[4,4],11:[3,3],12:[2,2],13:[3,3],14:[3,3],15:[3,2],16:[2,2],17:[4,3],60:[4,4],61:[3,3],62:[2,2],65:[3,2],63:[3,3],64:[3,3],66:[2,2],67:[4,3]};
 const cinderBuildings=new Set([60,61,62,65,63,64,66,67]);
 const dawnUnits=new Set([20,21,22,23,24,25,26]);
@@ -17,7 +20,7 @@ const paletteWGSL=`const palette = array<vec3f,32>(${colors.map(c=>`vec3f(${c.jo
 const geometryWGSL=paletteWGSL+`
 const resolution=vec2f(${RENDER_WIDTH}.,${RENDER_HEIGHT}.);
 const grid=${GRID}.;
-struct Camera { rotation:vec2f, magnification:f32, padding:f32 }
+struct Camera { rotation:vec2f, magnification:f32, padding:f32, center:vec2f, pad2:vec2f }
 @group(0) @binding(0) var<uniform> camera:Camera;
 struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @location(1) unit:f32, @location(2) rim:vec2f, @location(3) cliff:vec2f, @location(4) ground:vec2f, @location(5) @interpolate(flat) material:u32 }
 @vertex fn vs(@location(0) vertex:vec3f,@location(1) shade:f32,@location(2) origin:vec3f,@location(3) size:vec3f,@location(4) color:f32,@location(5) screen:f32,@location(6) actor:vec4f)->Out {
@@ -37,7 +40,7 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  if screen == -4. {p=origin;}
  if screen>0.5 {let hud=p.xy*grid/(resolution*.5);o.position=vec4f(hud.x-1.,1.-hud.y,select(0.0001,.999,screen==2.),1.);o.color=palette[u32(pigment)];}
  else {
- let d=p.xy-vec2f(16.);
+ let d=p.xy-camera.center;
  let r=vec2f(d.x*camera.rotation.x-d.y*camera.rotation.y,d.x*camera.rotation.y+d.y*camera.rotation.x);
  var projected=vec2f(6.*(r.x-r.y),3.4641016*(r.x+r.y)-6.9282032*p.z);
  var pixel=round(vec2f(240.,136.)*grid+projected*camera.magnification*grid);
@@ -195,10 +198,16 @@ export class Renderer {
  readonly owners=new Int32Array(MAX);
  private actorData=new Float32Array(MAX*4);
  private actorBuffer:any;
- readonly camera=new Float32Array([1,0,1,0]);
- readonly stats={drawCalls:2,triangles:0,saturated:false};
+ readonly camera=new Float32Array([1,0,1,0,16,16,0,0]);
+ readonly stats={drawCalls:2,triangles:0,saturated:false,degraded:false};
  time=0;count=0;staticCount=0;worldCount=0;selected:number|null=null;
  private emissiveCount=0;private staticEmissiveCount=0;private dropped=0;
+  // Expansive-world view state. The showcase keeps side 32 and centre (16,16),
+  // so every projection stays byte-identical for it.
+  private terrainSide=32;
+  private camX=16;private camY=16;
+  private bakedX=NaN;private bakedY=NaN;private bakedZoom=-1;
+  private degraded=false;
  private contourData=new Uint8Array(256*CONTOUR_ROWS);
  private contourUpload:any;
  private contourLayout={bytesPerRow:256,rowsPerImage:CONTOUR_ROWS};
@@ -206,7 +215,7 @@ export class Renderer {
  private device:any;private context:any;private pipeline:any;private post:any;private vertex:any;private buffer:any;private uniform:any;private group:any;private postGroup:any;
  private scenePass:any;private presentPass:any;
  private hudAlloy=-1;private hudCharge=-1;private hudSelection=-2;private hudKind=-1;private hudHealth=-1;private hudJob=-1;private hudProgress=-1;private hudData=new Float32Array(24000);private hudCount=0;
- private terrain=new Float32Array(1024);
+ private terrain:Float32Array<ArrayBufferLike>=new Float32Array(1024);
  async init(canvas:HTMLCanvasElement,terrain:Float32Array) {
   if(!navigator.gpu) throw new Error('WebGPU is unavailable. Open Starhold in a WebGPU-capable browser with hardware acceleration enabled.');
   const adapter=await navigator.gpu.requestAdapter({powerPreference:'high-performance'});
@@ -225,7 +234,7 @@ export class Renderer {
   this.vertex=d.createBuffer({size:mesh.length*4,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});d.queue.writeBuffer(this.vertex,0,new Float32Array(mesh));
   this.buffer=d.createBuffer({size:this.data.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});
   this.actorBuffer=d.createBuffer({size:this.actorData.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});
-  this.uniform=d.createBuffer({size:16,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
+  this.uniform=d.createBuffer({size:32,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
   const module=d.createShaderModule({code:geometryWGSL});
   this.pipeline=d.createRenderPipeline({layout:'auto',vertex:{module,entryPoint:'vs',buffers:[{arrayStride:16,attributes:[{shaderLocation:0,offset:0,format:'float32x3'},{shaderLocation:1,offset:12,format:'float32'}]},{arrayStride:32,stepMode:'instance',attributes:[{shaderLocation:2,offset:0,format:'float32x3'},{shaderLocation:3,offset:12,format:'float32x3'},{shaderLocation:4,offset:24,format:'float32'},{shaderLocation:5,offset:28,format:'float32'}]},{arrayStride:16,stepMode:'instance',attributes:[{shaderLocation:6,offset:0,format:'float32x4'}]}]},fragment:{module,entryPoint:'fs',targets:[{format:'rgba8unorm'},{format:'rgba16float'}]},primitive:{topology:'triangle-list'},depthStencil:{format:'depth24plus',depthWriteEnabled:true,depthCompare:'less-equal'}});
   this.group=d.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:this.uniform}}]});
@@ -246,7 +255,9 @@ export class Renderer {
   if(this.count>=MAX){this.dropped++;return;}
   const i=this.count*8;this.data[i]=x;this.data[i+1]=y;this.data[i+2]=z;this.data[i+3]=sx;this.data[i+4]=sy;this.data[i+5]=sz;this.data[i+6]=color;this.data[i+7]=screen;this.owners[this.count++]=owner;
  }
- ground(x:number,y:number) {return this.terrain[Math.max(0,Math.min(31,Math.floor(y)))*32+Math.max(0,Math.min(31,Math.floor(x)))];}
+ ground(x:number,y:number) {const n=this.terrainSide-1;return this.terrain[Math.max(0,Math.min(n,Math.floor(y)))*this.terrainSide+Math.max(0,Math.min(n,Math.floor(x)))];}
+  /** True when a tile is inside the world and holds land. */
+  land(x:number,y:number):boolean {return x>=0&&y>=0&&x<this.terrainSide&&y<this.terrainSide&&this.terrain[y*this.terrainSide+x]>=0;}
  private emissive(x:number,y:number,z:number,color:number,owner=-1,w=1,h=2) {
   // Each opaque core gets a hard two-pixel expansion on every side.
   // HUD glyphs retain their existing size and palette; broad world faces use
@@ -527,7 +538,117 @@ export class Renderer {
   }
   for(const [x,y,w] of [[87,48,18],[108,48.5,9],[317,43,21],[334,43.5,8],[386,52,16]])this.box(x,y,0,w,.5,0,28,-1,2);
   this.staticCount=this.count;this.staticEmissiveCount=this.emissiveCount;
- }
+  }
+
+  // ---- Expansive world (LARGEMAP_SPEC §5) ---------------------------------
+  /** Adopt a generated world: side-length terrain, view centred on a base. */
+  setWorld(terrain:Float32Array,side:number,cx:number,cy:number) {
+   this.terrain=terrain;this.terrainSide=side;this.setView(cx,cy);
+   this.bakedX=NaN;this.bakedY=NaN;this.bakedZoom=-1;
+  }
+  /** Back to the authored 32x32 island, baked once at init. */
+  setShowcase() {
+   this.terrainSide=32;this.setView(16,16);
+   this.bakedX=NaN;this.bakedY=NaN;this.bakedZoom=-1;
+  }
+  /** View centre in world tiles. */
+  get viewX() {return this.camX;}
+  get viewY() {return this.camY;}
+  setView(x:number,y:number) {
+   const n=this.terrainSide;
+   this.camX=Math.max(4,Math.min(n-4,x));this.camY=Math.max(4,Math.min(n-4,y));
+  }
+  private maybeBake(yaw:number,zoom:number) {
+   if(this.terrainSide<=32)return;
+   if(this.bakedZoom===zoom&&Math.abs(this.camX-this.bakedX)<4&&Math.abs(this.camY-this.bakedY)<4)return;
+   this.bakeWorld(yaw,zoom);
+  }
+  /** Coarse material provinces, so plateau tops read as authored bands. */
+  private province(x:number,y:number):number {
+   const c=((Math.floor(x/24)*73856093)^(Math.floor(y/24)*19349663))>>>0;
+   const v=c%7;
+   return v<3?29:v<5?28:4;
+  }
+  /** Bake the visible window in three detail tiers, nearest first. */
+  private bakeWorld(yaw:number,zoom:number) {
+   this.count=0;this.emissiveCount=0;this.degraded=false;
+   const side=this.terrainSide;
+   const c=Math.round(Math.cos(yaw*Math.PI/2)),s=Math.round(Math.sin(yaw*Math.PI/2));
+   const m=1/zoom,hx=6*GRID*m,hy=3.4641016*GRID*m,hz=6.9282032*GRID*m;
+   const cx=this.camX,cy=this.camY,mx=RENDER_WIDTH/2,my=RENDER_HEIGHT/2;
+   const reach=Math.ceil(.5*(RENDER_WIDTH/hx+RENDER_HEIGHT/hy))+2;
+   const x0=Math.max(0,Math.floor(cx-reach)),x1=Math.min(side-1,Math.ceil(cx+reach));
+   const y0=Math.max(0,Math.floor(cy-reach)),y1=Math.min(side-1,Math.ceil(cy+reach));
+   for(let tier=0;tier<3;tier++) {
+    for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++) {
+     const h=this.terrain[y*side+x];
+     if(h<0)continue;
+     const u=x+.5-cx,v=y+.5-cy,rx=u*c-v*s,ry=u*s+v*c;
+     const px=mx+hx*(rx-ry),py=my+hy*(rx+ry)-hz*h;
+     if(px<-32||px>RENDER_WIDTH+32||py<-32||py>RENDER_HEIGHT+32)continue;
+     const d=Math.hypot(px-mx,py-my);
+     if((d<=170?0:d<=380?1:2)!==tier)continue;
+     if(this.count>=BAKE_LIMIT){this.degraded=true;break;}
+     if(tier===2)this.box(x+.5,y+.5,h-.16,1,1,.16,this.province(x,y));
+     else this.worldTile(x,y,h,tier===0);
+    }
+    if(this.degraded)break;
+   }
+   for(let i=0;i<this.count;i++)if(this.data[i*8+7]===0)this.data[i*8+7]=-6;
+   this.staticCount=this.count;this.staticEmissiveCount=this.emissiveCount;
+   this.bakedX=cx;this.bakedY=cy;this.bakedZoom=zoom;
+  }
+  /** One land tile of the generated world. Full detail at tier 0, column and
+   *  cap with a rim lip at tier 1; the far tier is a flat plate in bakeWorld. */
+  private worldTile(x:number,y:number,h:number,detail:boolean) {
+   const hash=((x*374761393+y*668265263)^(x*y*1274126177))>>>0;
+   const bottom=-3.5-(hash%5)*.35;
+   this.cliffBottom=bottom;this.cliffTop=h;
+   const lowN=!this.land(x+1,y)||this.ground(x+1,y)<h;
+   const lowE=!this.land(x,y+1)||this.ground(x,y+1)<h;
+   const edge=!this.land(x-1,y)||!this.land(x,y-1);
+   const rim=lowN||lowE||edge;
+   this.terrainBox(x+.5,y+.5,bottom,rim?.84:1,rim?.88:1,h-bottom-.16,2,rim||!this.land(x+1,y)||!this.land(x,y+1));
+   const cap=this.province(x,y);
+   this.terrainBox(x+.5,y+.5,h-.16,rim?.94:1,rim?.96:1,.16,cap);
+   if(rim) {
+    this.terrainBox(x+.5,y+.5,h-.22,1.04,1.02,.22,cap);
+    this.terrainBox(x+.78,y+.84,bottom+.2,.18,.12,h-bottom-.5,3);
+    if(hash%2===0)this.terrainBox(x+.5,y+.5,h-1.2,.94,.96,.18,4);
+   }
+   if(!detail)return;
+   // Contour strips, exposed seams, ribs and retaining skins follow the authored
+   // island's rules so the generated land keeps the same carved read.
+   if(!this.land(x-1,y)||this.ground(x-1,y)<h)this.box(x+.03,y+.5,h+.012,.06,1,.008,y%4===0?29:30);
+   if((!this.land(x,y-1)||this.ground(x,y-1)<h)&&x%5<2)this.box(x+.5,y+.03,h+.012,1,.06,.008,29);
+   if(lowN||lowE||edge) {
+    this.terrainBox(x+.87,y+.83,bottom+.4,.17,.18,h-bottom-.6,hash%2?2:3);
+    if(hash%3===0)this.terrainBox(x+.55,y+.64,bottom+1.1,.9,.92,.2,4);
+   }
+   for(let side=0;side<2;side++) {
+    if(!(edge||side===0&&lowN||side===1&&lowE))continue;
+    const faceBottom=edge?bottom:Math.max(bottom,this.ground(x+(side===0?1:0),y+(side===1?1:0))-1.1);
+    for(let rib=0;rib<3;rib++) {
+     const along=.18+rib*.31,xx=x+(side===0?1.015:along),yy=y+(side===1?1.015:along);
+     const top=h-.28-(hash+rib)%3*.13;
+     this.terrainBox(xx,yy,faceBottom,side===0?.12:.16,side===1?.12:.16,top-faceBottom,(hash+rib)%2?5:4);
+     if((hash+rib)%3===0)this.terrainBox(xx,yy,top-.8,side===0?.25:.26,side===1?.25:.26,.14,5);
+    }
+   }
+   for(let s2=0;s2<4;s2++) {
+    const dx=s2===0?-1:s2===1?1:0,dy=s2===2?-1:s2===3?1:0;
+    if(!this.land(x+dx,y+dy))continue;
+    const low=this.ground(x+dx,y+dy);
+    if(low>=h)continue;
+    const xx=x+.5+dx*.505,yy=y+.5+dy*.505,w=dx?.075:1,d=dy?.075:1,rise=h-low;
+    for(let band=0;band<3;band++)this.box(xx,yy,low+rise*band/3,w,d,rise/3,3+band-(dx>0||dy>0?1:0));
+    this.box(xx,yy,low+.012,w+.015,d+.015,.055,1);
+    if(dx<0||dy<0)this.box(xx-dx*.045,yy-dy*.045,h+.012,dx?.06:1,dy?.06:1,.015,30);
+   }
+   // A sparse authored sprinkle: crystals and rock clusters, never tile noise.
+   if(hash%37===3)this.shard(x+.5,y+.5,h+.05,.9+(hash%3)*.2,30);
+   else if(hash%53===7) {this.groundContact(x+.62,y+.55,.42,.4);this.box(x+.62,y+.55,h+.05,.5,.46,.34,5);this.box(x+.72,y+.5,h+.39,.3,.28,.2,4);}
+  }
  private building(e:Float32Array,o:number,id:number) {
   if(cinderBuildings.has(e[o+4])){
    const start=this.count;
@@ -1258,7 +1379,7 @@ export class Renderer {
   for(let i=0;i<this.worldCount;i++){
    const q=i*8,color=this.data[q+6],core=this.data[q+7]===-4;
    if(Math.floor((color%32768)/32)===0&&!core)continue;
-   const x=this.data[q]-16,y=this.data[q+1]-16,rx=x*c-y*s,ry=x*s+y*c;
+   const x=this.data[q]-this.camX,y=this.data[q+1]-this.camY,rx=x*c-y*s,ry=x*s+y*c;
    let px=240*GRID+horizontal*(rx-ry),py=136*GRID+vertical*(rx+ry)-height*this.data[q+2];
    const combat=Math.floor(color/32768)>=18;
    let halfX=horizontal*(this.data[q+3]+this.data[q+4])*.5;
@@ -1271,7 +1392,7 @@ export class Renderer {
   }
  }
  render(e:Float32Array,n:number,yaw:number,zoom:number,alloy:number,charge:number,tick:number) {
-  this.time=tick/60;this.count=this.staticCount;this.emissiveCount=this.staticEmissiveCount;this.selected=null;this.dropped=0;
+  this.time=tick/60;this.maybeBake(yaw,zoom);this.count=this.staticCount;this.emissiveCount=this.staticEmissiveCount;this.selected=null;this.dropped=0;
   for(let id=0;id<n;id++){const o=id*12,k=e[o+4];if(e[o+8]===1)this.selected=id;
    if(buildingFootprints[k])this.building(e,o,id);
    else if(dawnUnits.has(k)||cinderUnits.has(k))this.unit(e,o,id);
@@ -1285,11 +1406,11 @@ export class Renderer {
   this.ambient(this.time);
   this.worldCount=this.count;this.hud(e,alloy,charge);
   this.markContours(yaw,zoom);
-  this.camera[0]=Math.round(Math.cos(yaw*Math.PI/2));this.camera[1]=Math.round(Math.sin(yaw*Math.PI/2));this.camera[2]=1/zoom;
+  this.camera[0]=Math.round(Math.cos(yaw*Math.PI/2));this.camera[1]=Math.round(Math.sin(yaw*Math.PI/2));this.camera[2]=1/zoom;this.camera[4]=this.camX;this.camera[5]=this.camY;
   const d=this.device;d.queue.writeBuffer(this.uniform,0,this.camera);d.queue.writeBuffer(this.buffer,0,this.data.buffer,0,this.count*32);d.queue.writeBuffer(this.actorBuffer,0,this.actorData.buffer,0,this.count*16);
   d.queue.writeTexture(this.contourUpload,this.contourData,this.contourLayout,this.contourSize);
   const encoder=d.createCommandEncoder();const pass=encoder.beginRenderPass(this.scenePass);pass.setPipeline(this.pipeline);pass.setBindGroup(0,this.group);pass.setVertexBuffer(0,this.vertex);pass.setVertexBuffer(1,this.buffer);pass.setVertexBuffer(2,this.actorBuffer);pass.draw(36,this.count);pass.end();
-  this.presentPass.colorAttachments[0].view=this.context.getCurrentTexture().createView();const post=encoder.beginRenderPass(this.presentPass);post.setPipeline(this.post);post.setBindGroup(0,this.postGroup);post.draw(3);post.end();d.queue.submit(this.commands(encoder.finish()));this.stats.triangles=this.count*12+1;this.stats.saturated=this.dropped>0;
+  this.presentPass.colorAttachments[0].view=this.context.getCurrentTexture().createView();const post=encoder.beginRenderPass(this.presentPass);post.setPipeline(this.post);post.setBindGroup(0,this.postGroup);post.draw(3);post.end();d.queue.submit(this.commands(encoder.finish()));this.stats.triangles=this.count*12+1;this.stats.saturated=this.dropped>0;this.stats.degraded=this.degraded;
  }
  private commandList:any[]=[null];
  private commands(command:any) {this.commandList[0]=command;return this.commandList;}
@@ -1299,7 +1420,7 @@ export class Renderer {
   const c=Math.round(Math.cos(yaw*Math.PI/2)),s=Math.round(Math.sin(yaw*Math.PI/2));
   const diff=(px/GRID-240)*zoom/6,sum=(py/GRID-136)*zoom/3.4641016+100;
   const a=(sum+diff)/2,b=(sum-diff)/2;
-  const ox=16+c*a+s*b,oy=16-s*a+c*b,oz=50,dx=-c-s,dy=s-c,dz=-1;
+  const ox=this.camX+c*a+s*b,oy=this.camY-s*a+c*b,oz=50,dx=-c-s,dy=s-c,dz=-1;
   let best=Infinity,owner=-1;
   for(let i=0;i<this.worldCount;i++){const o=i*8;if(this.data[o+7]>0||(this.data[o+7]===-3||this.data[o+7]===-4))continue;let near=0,far=Infinity;
    for(let axis=0;axis<3;axis++){const origin=axis===0?ox:axis===1?oy:oz,dir=axis===0?dx:axis===1?dy:dz;let min=this.data[o+axis]-(axis<2?this.data[o+3+axis]/2:0),max=min+this.data[o+3+axis];if(this.owners[i]>=0&&this.data[o+3]<1&&this.data[o+4]<1){min-=.12;max+=.12;}if(dir===0){if(origin<min||origin>max){far=-1;break;}}else{let t1=(min-origin)/dir,t2=(max-origin)/dir;if(t1>t2){const t=t1;t1=t2;t2=t;}near=Math.max(near,t1);far=Math.min(far,t2);}}

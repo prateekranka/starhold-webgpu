@@ -83,3 +83,19 @@ body.mouse #viewport canvas.glyph { display:none; }
  #hud-middle { flex:1 1 0; min-height:44px; }
  #hud-actions { flex:1 1 0; min-height:44px; }
 }
+
+/* --- Floating minimap (LARGEMAP_SPEC §6). Sits above the bar, moves with a
+   drag on any pointer, and hides completely when closed. --- */
+/* Parked clear of the camera-button row, which sits between the bar and the
+   canvas: the panel must never cover a control the player needs. */
+#minimap { position:fixed; z-index:6; right:calc(var(--safe-r) + 10px); bottom:calc(var(--safe-b) + var(--hud-h) + 56px);
+ width:168px; height:168px; padding:4px; background:#10121C; border:2px solid #F3F0D7;
+ touch-action:none; cursor:move; }
+body.touch #minimap { width:120px; height:120px; bottom:calc(var(--safe-b) + var(--hud-h) + 66px); }
+#minimap.off { display:none; }
+#minimap canvas { display:block; width:100%; height:100%; image-rendering:pixelated; }
+#minimap-close { position:absolute; top:-2px; right:-2px; width:24px; height:24px; min-width:0; min-height:0;
+ display:grid; place-items:center; border:2px solid #F3F0D7; background:#10121C; color:#F3F0D7;
+ font:14px/1 monospace; padding:0; cursor:pointer; pointer-events:auto; touch-action:manipulation; }
+#minimap-close:hover { background:#2B2D46; }
+#hud-bar button[data-action="minimap"] { border-color:#B7C8C6; }

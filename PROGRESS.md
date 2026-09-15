@@ -31,6 +31,53 @@ Integration and release rules for wave 2:
 - Image generation is for concept sheets and HUD icons only. In-world rendering
   stays procedural and pixel-exact.
 
+## Expansive world and floating minimap — 2026-09-15
+
+Contract: `docs/LARGEMAP_SPEC.md`. The match runs on a **10.24 km x 10.24 km**
+world (1024 x 1024 tiles at 10 m per tile), generated deterministically from the
+match seed, and the HUD carries a **floating minimap** that can be moved and
+closed.
+
+| Piece | Files | What landed |
+|---|---|---|
+| World generator | `sim/src/lib.rs` | integer-hash fBm, terraced onto the art's own levels (void -1, land 0/0.5/1); 4 MB heap heightfield (`Vec`, never an inline array — a 4 MB inline array overflows the wasm stack during thread-local init); two-pass pinhole fill |
+| World spawns | `sim/src/lib.rs` | both starts spiral-search a 13x13 flat land patch 745 tiles apart (7.45 km); the authored start package is mirrored onto each site; 12 base crystals plus 16 deposits spread over the map |
+| New ABI | `sim/src/lib.rs`, `src/hud.ts` | `sim_world_size`, `sim_world_ptr`, `sim_metres_per_tile`, `sim_base_x`, `sim_base_y` — additive only |
+| Windowed bake + LOD | `src/renderer.ts` | the static world is baked per camera window in three tiers (full <=170 px, column+cap <=380 px, flat plate beyond), nearest-first, stopped at `BAKE_LIMIT`; `stats.degraded` reports a stop; the camera uniform gained the view centre and the contour pass and `pick` follow it |
+| Camera pan | `src/main.ts` | one-finger and mouse drag pan the world; screen pixels convert through the live rotation and magnification; the view stays clamped inside the map; a drag never selects |
+| Minimap | `index.html`, `src/style.css`, `src/main.ts` | floating palette-only 2D canvas, drag to move, 24 px close control, `MAP` bar control (44x44) to reopen, tap to centre the camera, 256x256 terrain plate rebuilt per map |
+| Gates | `scripts/capture.mjs` | `world-scale`, `world-terrain`, `camera-pan`, `lod-budget`, `minimap-present/move/close/reopen/jump` |
+
+Frozen guarantees held: `sim_init(seed)` and its 32x32 showcase scenario are
+byte-identical, so the showcase determinism tuple is still
+`{"n":55,"alloy":247,"charge":199,"hash":"20b89f84"}`. The match hash moved to
+`07592fea` because the match map changed.
+
+Measured: instances per zoom 4729 / 5938 / 8366 / 13538 (ceiling 26000, never
+saturated or degraded), 60.0-60.3 fps, terrain sample 74.9% land with no level
+outside {-1, 0, 0.5, 1}, minimap drag moves the panel by the drag delta, tap
+centres the camera on the tapped tile.
+
+### Two integration findings the gates caught
+
+1. **A tall building hides a worker behind it.** The Keep projects its art
+   upwards on screen, so a worker standing west of it is drawn behind the
+   building and cannot be tapped (only 4 of 5046 canvas taps reached any worker).
+   The world start apron now puts the workers south of the Keep, where they are
+   in front and reachable.
+2. **The `entityScreen` probe needed to verify itself.** A projected centre can
+   land under a neighbour's art, so the probe now scans outwards and returns the
+   first *reachable* entity of the requested kind; `train-unit` and `build-site`
+   again select their target with one exact tap (`kind 20 f0 @468,260`).
+
+### Not done
+
+- Boot is still the authored showcase island; the world opens from the HUD
+  SKIRMISH buttons and RESET returns to the showcase. Flipping boot to the world
+  is one line, but the showcase-boot gates (`tap-clears`, `click-select`) would
+  need re-baselining, so it is left for a separate verified step.
+- No pathfinding: units cross terrain directly, as before.
+
 ## Wave 2 verification — 2026-09-15 (all viewports green; release still frozen)
 
 The wave-2 tree was dirty and the build/verify path was failing. Every root

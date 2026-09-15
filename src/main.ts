@@ -2,12 +2,16 @@ import './style.css';
 import {Renderer, RENDER_WIDTH, RENDER_HEIGHT, buttonGlyphPixels} from './renderer';
 import {State, names, jobs} from './kinds';
 import {Hud, HQ_POP_CAP, isBuildingKind, isUnitKind, type HudView, type SimAbi} from './hud';
+import {palette} from './kinds';
 /** Frozen ABI plus the wave-2 additions (docs/MATCH_SPEC.md §2). */
 type SimExports = SimAbi & WebAssembly.Exports;
 interface App {
  ready:boolean;error:string|null;
  getState():{touch:boolean;yawSteps:number;zoom:number;selected:number|null;entityCount:number;fps:number|null;frameStats:{drawCalls:number;triangles:number}|null;
-  mode:number;player:number;age:number;ageProgress:number;popUsed:number;popCap:number;alloy:number;charge:number;selectedKind:number|null;actions:number[]};
+  mode:number;player:number;age:number;ageProgress:number;popUsed:number;popCap:number;alloy:number;charge:number;selectedKind:number|null;actions:number[];
+  worldTiles:number;worldMeters:number;camera:{x:number;y:number};minimap:{open:boolean}};
+ /** Read-only heightfield sample: level codes on a fixed grid. */
+ terrainSample(step:number):{side:number;stride:number;levels:number[]};
  rotate(dir:1|-1):void;zoomBy(delta:1|-1):void;selectAt(x:number,y:number):void;fastForward(seconds:number):void;
  startMatch(faction:0|1):void;resetShowcase():void;command(op:number,a:number,b:number):number;
  selectEntity(index:number):boolean;selectKind(kind:number):boolean;
@@ -27,7 +31,112 @@ const touchLayout=navigator.maxTouchPoints>0||matchMedia('(pointer: coarse)').ma
 document.body.classList.add(touchLayout?'touch':'mouse');
 renderer.hudButtons=!touchLayout;
 const hud=new Hud({command:(op,a,b)=>command(op,a,b),build:(kind)=>buildNearest(kind),startMatch:(faction)=>startMatch(faction),resetShowcase:()=>resetShowcase()});
+// ---- Floating minimap (LARGEMAP_SPEC §6) ----------------------------------
+const minimap=document.getElementById('minimap') as HTMLElement;
+const minimapCanvas=document.getElementById('minimap-canvas') as HTMLCanvasElement;
+const minimapContext=minimapCanvas.getContext('2d')!;
+const MINIMAP=256;
+let minimapTerrain:ImageData|null=null,minimapSide=0,minimapStamp=-1000,minimapDrag:number|null=null,minimapGrabX=0,minimapGrabY=0,minimapMoved=0;
+const minimapHex=(index:number)=>`#${palette[index]}`;
+/** Terrain bitmap for the active map: 4 tiles per pixel in the world, 8 in the
+ *  showcase. Rebuilt when the map changes, never per frame. */
+function minimapBuild():void {
+ const view=terrainView(),side=sideOf();
+ const image=minimapContext.createImageData(MINIMAP,MINIMAP);
+ const step=side/MINIMAP;
+ const rgb=new Map<number,number[]>();
+ // Void, low shore, mesa, plateau: three separated steps so plateaus read.
+ const shade=(h:number)=>h<0?0:h<0.25?28:h<0.75?30:31;
+ const colour=(index:number)=>{
+  let value=rgb.get(index);
+  if(!value) {const hex=palette[index];value=[parseInt(hex.slice(0,2),16),parseInt(hex.slice(2,4),16),parseInt(hex.slice(4,6),16)];rgb.set(index,value);}
+  return value;
+ };
+ for(let py=0;py<MINIMAP;py++)for(let px=0;px<MINIMAP;px++) {
+  const tile=shade(view[Math.min(side-1,Math.floor(py*step))*side+Math.min(side-1,Math.floor(px*step))]);
+  const c=colour(tile),i=(py*MINIMAP+px)*4;
+  image.data[i]=c[0];image.data[i+1]=c[1];image.data[i+2]=c[2];image.data[i+3]=255;
+ }
+ minimapTerrain=image;minimapSide=side;
+}
+/** Redraw the panel at 10 Hz: terrain plate, entity dots, camera window. */
+function minimapDraw(force=false):void {
+ if(minimap.classList.contains('off'))return;
+ if(!force&&performance.now()-minimapStamp<100)return;
+ minimapStamp=performance.now();
+ if(!minimapTerrain||minimapSide!==sideOf())minimapBuild();
+ if(!minimapTerrain)return;
+ minimapContext.putImageData(minimapTerrain,0,0);
+ const scale=MINIMAP/minimapSide;
+ for(let i=0;i<entityCount;i++) {
+  const kind=entities[i*12+4];
+  const ore=kind===40;
+  if(!ore&&!isUnitKind(kind)&&!isBuildingKind(kind))continue;
+  minimapContext.fillStyle=minimapHex(ore?22:entities[i*12+9]===1?25:13);
+  const size=ore?1:2;
+  minimapContext.fillRect(Math.floor(entities[i*12]*scale),Math.floor(entities[i*12+1]*scale),size,size);
+ }
+ const reach=Math.max(5,24*zooms[zoomIndex]);
+ minimapContext.strokeStyle=minimapHex(9);minimapContext.lineWidth=2;
+ minimapContext.strokeRect(Math.floor((camX-reach)*scale)+.5,Math.floor((camY-reach)*scale)+.5,Math.ceil(reach*2*scale),Math.ceil(reach*2*scale));
+}
+/** Read-only heightfield sample on a fixed grid, for the capture harness. */
+function terrainSample(step:number):{side:number;stride:number;levels:number[]} {
+ const view=terrainView(),side=sideOf(),stride=Math.max(1,Math.floor(step)||1),levels:number[]=[];
+ for(let y=0;y<side;y+=stride)for(let x=0;x<side;x+=stride)levels.push(view[y*side+x]);
+ return {side,stride,levels};
+}
+function minimapInvalidate():void {minimapTerrain=null;minimapSide=0;minimapDraw(true);}
+function setMinimapOpen(open:boolean):void {minimap.classList.toggle('off',!open);if(open)minimapDraw(true);}
+/** Centre the camera on the tapped tile, the same way a drag pans it. */
+function minimapJump(clientX:number,clientY:number):void {
+ if(worldSide<=0)return;
+ const rect=minimapCanvas.getBoundingClientRect();
+ if(!rect.width||!rect.height)return;
+ renderer.setView((clientX-rect.left)/rect.width*worldSide,(clientY-rect.top)/rect.height*worldSide);
+ camX=renderer.viewX;camY=renderer.viewY;minimapDraw(true);
+}
+minimap.addEventListener('pointerdown',e=>{
+ if((e.target as HTMLElement).id==='minimap-close')return;
+ const rect=minimap.getBoundingClientRect();
+ minimapDrag=e.pointerId;minimapMoved=0;minimapGrabX=e.clientX-rect.left;minimapGrabY=e.clientY-rect.top;
+ minimap.setPointerCapture(e.pointerId);e.preventDefault();
+});
+minimap.addEventListener('pointermove',e=>{
+ if(minimapDrag!==e.pointerId)return;
+ if(e.pointerType==='mouse')minimapMoved+=Math.abs(e.movementX)+Math.abs(e.movementY);
+ else {const rect=minimap.getBoundingClientRect();minimapMoved+=Math.abs(e.clientX-rect.left-minimapGrabX)+Math.abs(e.clientY-rect.top-minimapGrabY);}
+ const w=minimap.offsetWidth,h=minimap.offsetHeight;
+ const x=Math.max(0,Math.min(innerWidth-w,e.clientX-minimapGrabX));
+ const y=Math.max(0,Math.min(innerHeight-h,e.clientY-minimapGrabY));
+ minimap.style.left=`${x}px`;minimap.style.top=`${y}px`;minimap.style.right='auto';minimap.style.bottom='auto';
+ e.preventDefault();
+});
+minimap.addEventListener('pointerup',e=>{
+ if(minimapDrag!==e.pointerId)return;
+ minimapDrag=null;
+ if(minimapMoved<=6)minimapJump(e.clientX,e.clientY);
+});
+minimap.addEventListener('pointercancel',()=>{minimapDrag=null;});
+document.getElementById('minimap-close')!.addEventListener('click',()=>setMinimapOpen(false));
+document.getElementById('hud-minimap')!.addEventListener('click',()=>setMinimapOpen(minimap.classList.contains('off')));
+
 function rotate(dir:1|-1) {yawSteps=(yawSteps+(dir===-1?-1:1)+4)%4;}
+/** Drag the world under the pointer. Screen pixels in, world tiles out, using
+ *  the same quarter-turn rotation and magnification the shader applies. */
+function panBy(dxCss:number,dyCss:number):boolean {
+ if(worldSide<=0)return false;
+ const rect=canvas.getBoundingClientRect();
+ if(!rect.width||!rect.height)return false;
+ const scale=rect.width/RENDER_WIDTH,zoom=zooms[zoomIndex];
+ const c=Math.round(Math.cos(yawSteps*Math.PI/2)),s2=Math.round(Math.sin(yawSteps*Math.PI/2));
+ const hx=6*2/zoom*scale,hy=3.4641016*2/zoom*scale;
+ const drx=.5*(dxCss/hx+dyCss/hy),dry=.5*(dyCss/hy-dxCss/hx);
+ const du=drx*c+dry*s2,dv=-drx*s2+dry*c;
+ renderer.setView(camX-du,camY-dv);
+ camX=renderer.viewX;camY=renderer.viewY;
+ return true;
+}
 function zoomBy(delta:1|-1) {zoomIndex=Math.max(0,Math.min(3,zoomIndex+(delta===-1?-1:1)));}
 function selectAt(x:number,y:number) {
  if(!sim||!window.__APP.ready)return;
@@ -66,15 +175,34 @@ function simPopUsed():number {
  for(let i=0;i<entityCount;i++)if(isUnitKind(entities[i*12+4])&&entities[i*12+5]!==State.Death)used++;
  return used;
 }
-const clampTile=(value:number)=>Math.max(0,Math.min(31,Math.floor(value)||0));
-const tileOf=(x:number,y:number)=>clampTile(x)+clampTile(y)*32;
+// Expansive world state (LARGEMAP_SPEC §2, §5). worldSide is 0 in the showcase,
+// so every helper below falls back to the authored 32x32 behaviour.
+let worldSide=0,worldTerrain=new Float32Array(0),camX=16,camY=16;
+function sideOf():number {return worldSide>0?worldSide:32;}
+/** The world heightfield, re-viewed if wasm memory grew since the last look. */
+function worldView():Float32Array {
+ if(!sim||worldSide===0)return worldTerrain;
+ const pointer=sim.sim_world_ptr?sim.sim_world_ptr():0;
+ if(pointer&&worldTerrain.buffer!==sim.memory.buffer)worldTerrain=new Float32Array(sim.memory.buffer,pointer,worldSide*worldSide);
+ return worldTerrain;
+}
+const clampTile=(value:number)=>Math.max(0,Math.min(sideOf()-1,Math.floor(value)||0));
+const tileOf=(x:number,y:number)=>clampTile(x)+clampTile(y)*sideOf();
 function currentKind():number|null {return selected===null||selected*12+4>=entities.length?null:entities[selected*12+4];}
-/** Terrain height at a tile, from the sim's 32x32 grid (0 void, 0.5/1 land). */
+let showcaseTerrain=new Float32Array(0);
+/** The active heightfield as a live view: the generated world in a world match,
+ *  else the sim's 32x32 showcase grid. Cached, so per-call cost is an index. */
+function terrainView():Float32Array {
+ if(!sim)return showcaseTerrain;
+ if(worldSide>0)return worldView();
+ const pointer=sim.sim_terrain_ptr?sim.sim_terrain_ptr():0;
+ if(pointer&&showcaseTerrain.buffer!==sim.memory.buffer)showcaseTerrain=new Float32Array(sim.memory.buffer,pointer,1024);
+ return showcaseTerrain;
+}
+/** Terrain height at a tile. Heights are -1 void, 0/0.5/1 land. */
 function terrainAt(tile:number):number {
- if(!sim)return 0;
- const pointer=sim.sim_terrain_ptr();
- if(!pointer||tile<0||tile>1023)return 0;
- return new Float32Array(sim.memory.buffer,pointer,1024)[tile];
+ const view=terrainView();
+ return tile<0||tile>=view.length?0:view[tile];
 }
 function tileOccupied(tile:number,ignore:number):boolean {
  for(let i=0;i<entityCount;i++){if(i===ignore)continue;if(tileOf(entities[i*12],entities[i*12+1])===tile)return true;}
@@ -117,10 +245,19 @@ function syncHud() {
 function startMatch(faction:0|1) {
  if(!sim||typeof sim.sim_match_init!=='function')return;
  sim.sim_match_init(seed>>>0,faction===1?1:0);
+ worldTerrain=new Float32Array(0);
+ worldSide=typeof sim.sim_world_size==='function'?sim.sim_world_size():0;
+ if(worldSide>0) {
+  const player=faction===1?1:0;
+  camX=sim.sim_base_x?sim.sim_base_x(player):worldSide/2;camY=sim.sim_base_y?sim.sim_base_y(player):worldSide/2;
+  renderer.setWorld(worldView(),worldSide,camX,camY);
+ }
+ minimapInvalidate();
  resetClock();selectDefault();
 }
 function resetShowcase() {
  if(!sim)return;
+ worldSide=0;worldTerrain=new Float32Array(0);showcaseTerrain=new Float32Array(0);camX=16;camY=16;renderer.setShowcase();minimapInvalidate();
  sim.sim_init(seed>>>0);
  resetClock();selectDefault();
 }
@@ -136,9 +273,15 @@ function command(op:number,a:number,b:number):number {
 function buildNearest(kind:number):number {
  if(!sim||typeof sim.sim_command!=='function'||selected===null)return 0;
  const sx=entities[selected*12],sy=entities[selected*12+1];
+ const side=sideOf();
+ // A bounded window around the builder: the world is 1M tiles, so the search
+ // stays local and Rust remains authoritative for the final placement.
+ const reach=worldSide>0?26:side;
+ const bx=Math.floor(sx),by=Math.floor(sy);
  const tiles:number[]=[];
- for(let tile=0;tile<1024;tile++){
-  if(terrainAt(tile)<=0||tileOccupied(tile,selected))continue;
+ for(let y=Math.max(0,by-reach);y<=Math.min(side-1,by+reach);y++)for(let x=Math.max(0,bx-reach);x<=Math.min(side-1,bx+reach);x++){
+  const tile=tileOf(x,y);
+  if(tiles.includes(tile)||terrainAt(tile)<=0||tileOccupied(tile,selected))continue;
   tiles.push(tile);
  }
  tiles.sort((a,b)=>{
@@ -190,6 +333,7 @@ function kinds():number[] {
  *  on that entity's own box. Read-only: nothing is selected or moved. */
 function entityScreen(kind:number,faction:number):{x:number;y:number}|null {
  if(!sim)return null;
+ let fallback:{x:number;y:number}|null=null;
  for(let i=0;i<entityCount;i++){
   if(entities[i*12+4]!==kind||entities[i*12+9]!==faction)continue;
   const state=entities[i*12+5];
@@ -197,16 +341,35 @@ function entityScreen(kind:number,faction:number):{x:number;y:number}|null {
   const rect=canvas.getBoundingClientRect();
   if(!rect.width||!rect.height)return null;
   const zoom=zooms[zoomIndex],c=Math.round(Math.cos(yawSteps*Math.PI/2)),s=Math.round(Math.sin(yawSteps*Math.PI/2));
-  const dx=entities[i*12]-16,dy=entities[i*12+1]-16,z=entities[i*12+2];
+  // The live view centre, so the point is correct on the 10 km map too.
+  // Aim at the middle of the body, not at its feet: a tall neighbour in front
+  // would otherwise occlude the tap point of a small unit.
+  const rise=isBuildingKind(kind)?1.2:.55;
+  const dx=entities[i*12]-camX,dy=entities[i*12+1]-camY,z=entities[i*12+2]+rise;
   const rx=dx*c-dy*s,ry=dx*s+dy*c;
   const px=2*(240+6*(rx-ry)/zoom),py=2*(136+3.4641016*(rx+ry)/zoom-6.9282032*z/zoom);
-  return {x:rect.left+px*rect.width/RENDER_WIDTH,y:rect.top+py*rect.height/RENDER_HEIGHT};
+  // The projected centre can miss the drawn body: the renderer's own actor box
+  // is the authority on where the pixels are. Scan outwards from the centre and
+  // return the first point whose tap really resolves to this entity. pick() is
+  // read-only, so the scan changes no state.
+  const offsets:[number,number][]=[[0,0]];
+  for(let r=4;r<=56;r+=4)for(let a=0;a<10;a++)offsets.push([Math.round(Math.cos(a*Math.PI/5)*r),Math.round(Math.sin(a*Math.PI/5)*r)]);
+  const centre={x:rect.left+px*rect.width/RENDER_WIDTH,y:rect.top+py*rect.height/RENDER_HEIGHT};
+  if(!fallback)fallback=centre;
+  for(const [ox,oy] of offsets) {
+   if(renderer.pick(px+ox,py+oy,yawSteps,zoom)!==i)continue;
+   return {x:rect.left+(px+ox)*rect.width/RENDER_WIDTH,y:rect.top+(py+oy)*rect.height/RENDER_HEIGHT};
+  }
+  // This entity is buried under a neighbour's art; try the next one of its kind
+  // and remember this centre in case none is reachable.
  }
- return null;
+ return fallback;
 }
 window.__APP={ready:false,error:null,getState:()=>({touch:touchLayout,yawSteps,zoom:zooms[zoomIndex],selected,entityCount,fps,frameStats:window.__APP.ready?renderer.stats:null,
  mode:simMode(),player:simPlayer(),age:simAge(),ageProgress:simAgeProgress(),popUsed:simPopUsed(),popCap:simPopCap(),
- alloy:sim?sim.sim_alloy():0,charge:sim?sim.sim_charge():0,selectedKind:currentKind(),actions:hud.actions()}),rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,command,selectEntity,selectKind,kinds,entityScreen};
+ alloy:sim?sim.sim_alloy():0,charge:sim?sim.sim_charge():0,selectedKind:currentKind(),actions:hud.actions(),
+ worldTiles:worldSide,worldMeters:worldSide*(sim&&typeof sim.sim_metres_per_tile==='function'?sim.sim_metres_per_tile():10),camera:{x:camX,y:camY},minimap:{open:!minimap.classList.contains('off')}}),
+ rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,command,selectEntity,selectKind,kinds,entityScreen,terrainSample};
 const canvas=document.querySelector<HTMLCanvasElement>('#world')!;
 const viewport=document.querySelector<HTMLElement>('#viewport')!;
 const selection=document.querySelector<HTMLOutputElement>('#selection')!;
@@ -239,12 +402,24 @@ document.getElementById('rotate-left')!.addEventListener('click',()=>rotate(-1))
 document.getElementById('rotate-right')!.addEventListener('click',()=>rotate(1));
 document.getElementById('zoom-out')!.addEventListener('click',()=>zoomBy(-1));
 document.getElementById('zoom-in')!.addEventListener('click',()=>zoomBy(1));
-canvas.addEventListener('click',e=>selectAt(e.clientX,e.clientY));
+canvas.addEventListener('click',e=>{if(mousePanned){mousePanned=false;return;}selectAt(e.clientX,e.clientY);});
+let mouseDown=false,mousePanned=false,mouseX=0,mouseY=0;
+canvas.addEventListener('pointerdown',e=>{
+ if(e.pointerType!=='mouse')return;
+ mouseDown=true;mousePanned=false;mouseX=e.clientX;mouseY=e.clientY;
+});
+window.addEventListener('pointermove',e=>{
+ if(!mouseDown||e.pointerType!=='mouse')return;
+ const dx=e.clientX-mouseX,dy=e.clientY-mouseY;mouseX=e.clientX;mouseY=e.clientY;
+ if(!mousePanned&&Math.abs(dx)+Math.abs(dy)>3)mousePanned=true;
+ if(mousePanned)panBy(dx,dy);
+});
+window.addEventListener('pointerup',e=>{if(e.pointerType==='mouse')mouseDown=false;});
 const activePointers=new Map<number,{x:number;y:number}>();
-let downX=0,downY=0,downAt=0,pinched=false,pinchStartDist=0,pinchStartZoom=0;
+let downX=0,downY=0,downAt=0,pinched=false,panning=false,pinchStartDist=0,pinchStartZoom=0;
 let suppressPointerClick=false;
 function resetGesture() {
- pinched=false;pinchStartDist=0;pinchStartZoom=0;downX=0;downY=0;downAt=0;
+ pinched=false;panning=false;pinchStartDist=0;pinchStartZoom=0;downX=0;downY=0;downAt=0;
 }
 function pointerDistance() {
  const points=activePointers.values(),a=points.next().value!,b=points.next().value!;
@@ -265,7 +440,12 @@ canvas.addEventListener('pointerdown',e=>{
 canvas.addEventListener('pointermove',e=>{
  const point=activePointers.get(e.pointerId);
  if(e.pointerType==='mouse'||!point)return;
- e.preventDefault();point.x=e.clientX;point.y=e.clientY;
+ e.preventDefault();
+ // A one-finger drag past the tap threshold pans the world; a short touch that
+ // stays inside the threshold still selects (MATCH_SPEC §7).
+ const moveX=e.clientX-point.x,moveY=e.clientY-point.y;
+ if(activePointers.size===1&&!pinched&&(panning||Math.hypot(e.clientX-downX,e.clientY-downY)>12)){panning=panBy(moveX,moveY);}
+ point.x=e.clientX;point.y=e.clientY;
  if(activePointers.size===2&&pinched&&pinchStartDist>=20){
   const ratio=pointerDistance()/pinchStartDist;
   const steps=Math.round(Math.log(ratio)/Math.log(1.4));
@@ -275,7 +455,7 @@ canvas.addEventListener('pointermove',e=>{
 canvas.addEventListener('pointerup',e=>{
  if(e.pointerType==='mouse'||!activePointers.has(e.pointerId))return;
  e.preventDefault();
- if(activePointers.size===1&&!pinched&&Math.hypot(e.clientX-downX,e.clientY-downY)<=12&&e.timeStamp-downAt<=400)selectAt(e.clientX,e.clientY);
+ if(activePointers.size===1&&!pinched&&!panning&&Math.hypot(e.clientX-downX,e.clientY-downY)<=12&&e.timeStamp-downAt<=400)selectAt(e.clientX,e.clientY);
  activePointers.delete(e.pointerId);
  if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId);
  if(activePointers.size===0)resetGesture();
@@ -306,7 +486,7 @@ function frame(now:number) {
   if(previous===0){previous=now;windowStart=now;}
   accumulator+=Math.min(now-previous,250);previous=now;
   while(accumulator>=1000/60){sim.sim_step(1000/60);tick++;accumulator-=1000/60;}
-  refreshEntities();updateSelection();syncHud();
+  refreshEntities();updateSelection();syncHud();minimapDraw();
   renderer.render(entities,entityCount,yawSteps,zooms[zoomIndex],sim.sim_alloy(),sim.sim_charge(),tick);
   frames++;if(now-windowStart>=1000){fps=frames*1000/(now-windowStart);frames=0;windowStart=now;}
   window.__APP.ready=true;requestAnimationFrame(frame);

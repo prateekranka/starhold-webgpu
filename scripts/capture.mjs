@@ -309,10 +309,17 @@ async function entityHash(page) {
 const AGE_NAMES = ['Founding', 'March', 'Starhold'];
 // Founding->March 60 Alloy/30 Charge; March->Starhold 100 Alloy/60 Charge (§4).
 const AGE_COSTS = [[60, 30], [100, 60]];
+// Expansive-world and minimap gates (LARGEMAP_SPEC §7).
+const WORLD_GATE_NAMES = [
+  'world-scale', 'world-terrain', 'camera-pan', 'lod-budget',
+  'minimap-present', 'minimap-move', 'minimap-close', 'minimap-reopen', 'minimap-jump',
+];
 const MATCH_GATE_NAMES = [
   'hud-skirmish-entry', 'match-boot', 'hud-bar', 'hud-resources', 'hud-age',
   'age-advance', 'train-unit', 'build-site',
 ];
+// These run next to the match gates and share their live match.
+MATCH_GATE_NAMES.push(...WORLD_GATE_NAMES);
 const MATCH_APP_API = ['startMatch', 'resetShowcase', 'command', 'fastForward', 'getState'];
 // Kinds the exact-tap probe asks for: the tier-0 producers (train actions) and
 // the two workers (build actions). The app reports each one's live screen
@@ -1049,6 +1056,196 @@ function gate(name, pass, detail) {
 
       await guarded('hud-resources', () => checkHudResources(page));
       await guarded('hud-age', () => checkHudAge(page));
+
+      // world-scale: the match runs on the generated 10 km map (LARGEMAP_SPEC §2).
+      await guarded('world-scale', async () => {
+        const g = await state(page);
+        const tiles = g.worldTiles ?? 0;
+        const metres = g.worldMeters ?? 0;
+        const pass = tiles === 1024 && metres >= 10000 &&
+          Number.isFinite(g.camera && g.camera.x) && Number.isFinite(g.camera && g.camera.y);
+        return {
+          pass,
+          detail: `worldTiles=${tiles} worldMeters=${metres} (${(metres / 1000).toFixed(2)} km) ` +
+            `camera=${g.camera ? `${g.camera.x.toFixed(0)},${g.camera.y.toFixed(0)}` : 'missing'}`,
+        };
+      });
+
+      // world-terrain: the heightfield is a real mix of land and void, and every
+      // level is one of the four the art pipeline knows (LARGEMAP_SPEC §2).
+      await guarded('world-terrain', async () => {
+        const sample = await page.evaluate(() => {
+          const probe = window.__APP.terrainSample;
+          return typeof probe === 'function' ? probe(8) : null;
+        });
+        if (!sample) return { pass: false, detail: 'no terrainSample probe' };
+        const levels = sample.levels;
+        const allowed = new Set([-1, 0, 0.5, 1]);
+        const bad = [...new Set(levels.filter((v) => !allowed.has(v)))];
+        const land = levels.filter((v) => v >= 0).length;
+        const share = land / levels.length;
+        const pass = sample.side === 1024 && bad.length === 0 && share > 0.25 && share < 0.98 && levels.length > 1000;
+        return {
+          pass,
+          detail: `side=${sample.side} samples=${levels.length} landShare=${(share * 100).toFixed(1)}% ` +
+            `levelsOutside=${bad.length ? bad.slice(0, 4).join(',') : 'none'}`,
+        };
+      });
+
+      // camera-pan: a real drag moves the view centre and rebakes the world,
+      // and the centre stays inside the map (LARGEMAP_SPEC §5).
+      await guarded('camera-pan', async () => {
+        await freshMatch(0);
+        const box = await page.locator('canvas#world').boundingBox();
+        const before = (await state(page)).camera;
+        const from = { x: box.x + box.width * 0.5, y: box.y + box.height * 0.5 };
+        if (TOUCH) {
+          const cdp = await page.context().newCDPSession(page);
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: from.x, y: from.y }] });
+          for (let i = 1; i <= 8; i++) {
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: from.x - i * 14, y: from.y - i * 8 }] });
+          }
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+          await cdp.detach();
+        } else {
+          await page.mouse.move(from.x, from.y);
+          await page.mouse.down();
+          for (let i = 1; i <= 8; i++) await page.mouse.move(from.x - i * 14, from.y - i * 8);
+          await page.mouse.up();
+        }
+        await page.waitForTimeout(700);
+        const after = await state(page);
+        const moved = before && after.camera ? Math.hypot(after.camera.x - before.x, after.camera.y - before.y) : 0;
+        const inside = after.camera && after.camera.x >= 4 && after.camera.y >= 4 &&
+          after.camera.x <= (after.worldTiles || 1024) - 4 && after.camera.y <= (after.worldTiles || 1024) - 4;
+        const budget = after.frameStats && after.frameStats.saturated === false;
+        return {
+          pass: moved >= 8 && !!inside && !!budget,
+          detail: `camera ${before ? `${before.x.toFixed(0)},${before.y.toFixed(0)}` : '-'} -> ` +
+            `${after.camera ? `${after.camera.x.toFixed(0)},${after.camera.y.toFixed(0)}` : '-'} moved=${moved.toFixed(0)} tiles ` +
+            `inside=${!!inside} saturated=${after.frameStats ? after.frameStats.saturated === true : 'n/a'}`,
+        };
+      });
+
+      // lod-budget: no detail tier oversubscribes the instance budget at any zoom.
+      await guarded('lod-budget', async () => {
+        await freshMatch(0);
+        const rows = [];
+        let ok = true;
+        for (const want of [3, 2, 1, 0]) {
+          await page.evaluate((index) => {
+            const order = [4 / 3, 1, 4 / 5, 2 / 3];
+            const current = order.indexOf(window.__APP.getState().zoom);
+            // zoomBy moves one step per call, so step it explicitly.
+            for (let k = 0; k < Math.abs(index - current); k++) window.__APP.zoomBy(index > current ? 1 : -1);
+          }, want);
+          await page.waitForTimeout(500);
+          const g = await state(page);
+          const saturated = g.frameStats ? g.frameStats.saturated === true : false;
+          const degraded = g.frameStats ? g.frameStats.degraded === true : false;
+          if (saturated || degraded) ok = false;
+          rows.push(`${g.zoom.toFixed(2)}:${Math.round((g.frameStats ? g.frameStats.triangles : 0) / 12)}${degraded ? 'D' : ''}${saturated ? 'S' : ''}`);
+        }
+        return { pass: ok, detail: `instances per zoom ${rows.join(' ')}` };
+      });
+
+      const minimapRect = async () => page.evaluate(() => {
+        const panel = document.querySelector('#minimap');
+        if (!panel) return null;
+        const r = panel.getBoundingClientRect();
+        const canvas = document.querySelector('#minimap-canvas');
+        const ctx = canvas && canvas.getContext('2d');
+        let ink = -1;
+        if (ctx) {
+          const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+          ink = 0;
+          for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 0 && (d[i] !== 16 || d[i + 1] !== 18 || d[i + 2] !== 28)) ink++;
+        }
+        return {
+          off: panel.classList.contains('off'),
+          x: r.x, y: r.y, w: r.width, h: r.height,
+          backing: canvas ? `${canvas.width}x${canvas.height}` : null,
+          ink,
+        };
+      });
+
+      // minimap-present: floating panel with a drawn terrain plate (§6).
+      await guarded('minimap-present', async () => {
+        await freshMatch(0);
+        const m = await minimapRect();
+        if (!m) return { pass: false, detail: 'no #minimap panel' };
+        const pass = !m.off && m.w >= 88 && m.h >= 88 && m.backing === '256x256' && m.ink > 20000;
+        return { pass, detail: `rect=${m.w.toFixed(0)}x${m.h.toFixed(0)}@${m.x.toFixed(0)},${m.y.toFixed(0)} backing=${m.backing} drawnPx=${m.ink}` };
+      });
+
+      // minimap-move: a real drag moves the panel by the drag delta (§6).
+      await guarded('minimap-move', async () => {
+        const before = await minimapRect();
+        if (!before) return { pass: false, detail: 'no #minimap panel' };
+        const from = { x: before.x + before.w / 2, y: before.y + before.h / 2 };
+        const dx = -90, dy = -50;
+        if (TOUCH) {
+          const cdp = await page.context().newCDPSession(page);
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: from.x, y: from.y }] });
+          for (let i = 1; i <= 9; i++) {
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: from.x + (dx * i) / 9, y: from.y + (dy * i) / 9 }] });
+          }
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+          await cdp.detach();
+        } else {
+          await page.mouse.move(from.x, from.y);
+          await page.mouse.down();
+          for (let i = 1; i <= 9; i++) await page.mouse.move(from.x + (dx * i) / 9, from.y + (dy * i) / 9);
+          await page.mouse.up();
+        }
+        await page.waitForTimeout(400);
+        const after = await minimapRect();
+        const movedX = before.x - after.x, movedY = before.y - after.y;
+        const pass = Math.abs(movedX - Math.abs(dx)) <= 12 && Math.abs(movedY - Math.abs(dy)) <= 12;
+        return { pass, detail: `moved ${movedX.toFixed(0)} px left, ${movedY.toFixed(0)} px up (drag ${dx},${dy})` };
+      });
+
+      // minimap-close / minimap-reopen: hiding is never a one-way door (§6).
+      await guarded('minimap-close', async () => {
+        const before = await minimapRect();
+        await page.click('#minimap-close');
+        await page.waitForTimeout(300);
+        const after = await minimapRect();
+        const g = await state(page);
+        const pass = !!before && !before.off && !!after && after.off && g.minimap && g.minimap.open === false;
+        return { pass, detail: `off ${before ? before.off : '-'} -> ${after ? after.off : '-'} state.open=${g.minimap ? g.minimap.open : 'n/a'}` };
+      });
+
+      await guarded('minimap-reopen', async () => {
+        const closed = await minimapRect();
+        const control = (await hudSnapshot(page)).controls.filter((c) => c.visible && /minimap/i.test(`${c.name} ${c.action || ''}`))[0] || null;
+        if (!control) return { pass: false, detail: 'no minimap control in the bar' };
+        if (control.w < 44 || control.h < 44) return { pass: false, detail: `bar control too small: ${control.w.toFixed(0)}x${control.h.toFixed(0)}` };
+        await clickControl(page, control);
+        await page.waitForTimeout(400);
+        const after = await minimapRect();
+        const g = await state(page);
+        const pass = !!closed && closed.off && !!after && !after.off && after.ink > 20000 && g.minimap && g.minimap.open === true;
+        return { pass, detail: `off ${closed ? closed.off : '-'} -> ${after ? after.off : '-'} drawnPx=${after ? after.ink : '-'} state.open=${g.minimap ? g.minimap.open : 'n/a'}` };
+      });
+
+      // minimap-jump: a tap on the panel (not a drag) centres the camera there.
+      await guarded('minimap-jump', async () => {
+        const m = await minimapRect();
+        if (!m || m.off) return { pass: false, detail: 'panel hidden' };
+        const before = (await state(page)).camera;
+        const to = { x: m.x + m.w * 0.22, y: m.y + m.h * 0.78 };
+        if (TOUCH) await page.touchscreen.tap(to.x, to.y);
+        else await page.mouse.click(to.x, to.y);
+        await page.waitForTimeout(500);
+        const after = (await state(page)).camera;
+        const moved = before && after ? Math.hypot(after.x - before.x, after.y - before.y) : 0;
+        const nearTarget = after && after.x < (after.worldTiles || 1024) * 0.45 && after.y > (after.worldTiles || 1024) * 0.5;
+        return {
+          pass: moved >= 40 && !!nearTarget,
+          detail: `camera ${before ? `${before.x.toFixed(0)},${before.y.toFixed(0)}` : '-'} -> ${after ? `${after.x.toFixed(0)},${after.y.toFixed(0)}` : '-'} moved=${moved.toFixed(0)} tiles`,
+        };
+      });
 
       // age-advance: a real click on ADVANCE deducts the tier cost and, after
       // the advance settles, raises the age (§4, §9).

@@ -18,13 +18,90 @@ struct Entity { data: [f32; STRIDE], x: i32, y: i32, target: usize, timer: u32, 
 impl Entity {
     const EMPTY: Self = Self { data: [0.; STRIDE], x: 0, y: 0, target: 0, timer: 0, route: 0, origin: [0.;3], destination: [0.;3], active: false };
 }
-struct Sim { entities: [Entity; CAP], snapshot: [f32; CAP*STRIDE], ids: [usize; CAP], terrain: [f32;1024], count: usize, tick: u32, accumulator: f64, rng: u32, selected: usize, alloy: u32, charge: u32, mode: u32, game: Match }
-thread_local! { static SIM: RefCell<Sim> = RefCell::new(Sim { entities:[Entity::EMPTY;CAP], snapshot:[0.;CAP*STRIDE], ids:[0;CAP], terrain:[0.;1024], count:0,tick:0,accumulator:0.,rng:1,selected:CAP,alloy:160,charge:120,mode:0,game:Match::EMPTY }); }
+struct Sim { entities: [Entity; CAP], snapshot: [f32; CAP*STRIDE], ids: [usize; CAP], terrain: [f32;1024], world: Vec<f32>, count: usize, tick: u32, accumulator: f64, rng: u32, selected: usize, alloy: u32, charge: u32, mode: u32, game: Match }
+thread_local! { static SIM: RefCell<Sim> = RefCell::new(Sim { entities:[Entity::EMPTY;CAP], snapshot:[0.;CAP*STRIDE], ids:[0;CAP], terrain:[0.;1024], world:Vec::new(), count:0,tick:0,accumulator:0.,rng:1,selected:CAP,alloy:160,charge:120,mode:0,game:Match::EMPTY }); }
 fn height(x:f32,y:f32)->f32 {
     if (7. ..25.).contains(&x) && (9. ..26.).contains(&y) || (23. ..29.).contains(&x) && (7. ..26.).contains(&y) || (3. ..10.).contains(&x) && (15. ..26.).contains(&y) || x>=24. && y<=14. {0.5}
     else if (7. ..14.).contains(&x) && (3. ..9.).contains(&y) {1.} else if x<2. || y<2. || x>30. || y>30. {-1.} else {0.}
 }
+
+// ---- Expansive world (LARGEMAP_SPEC §2). The showcase scenario above is
+// frozen. This world is built only for a world match (mode 1) and never touches
+// sim_init, its 32x32 terrain buffer, or the legacy height() function.
+const WORLD: usize = 1024;         // tiles per side, 2^10 for cheap indexing
+const METRES_PER_TILE: u32 = 10;   // world is 10.24 km x 10.24 km
+/// Integer hash. Every world value comes from here, so the world is identical
+/// on every platform and in every run of the same seed.
+fn whash(seed:u32,x:i32,y:i32)->u32 {
+    let mut h=seed^(x as u32).wrapping_mul(0x9E37_79B1)^(y as u32).wrapping_mul(0x85EB_CA77);
+    h^=h>>15;h=h.wrapping_mul(0x2545_F491);h^=h>>13;h=h.wrapping_mul(0x27D4_EB2F);h^=h>>16;h
+}
+/// Bilinear value noise with a smoothstep, in 0..1. No transcendentals.
+fn wnoise(seed:u32,x:f32,y:f32)->f32 {
+    let xi=x.floor();let yi=y.floor();let (ix,iy)=(xi as i32,yi as i32);
+    let xf=x-xi;let yf=y-yi;let u=xf*xf*(3.-2.*xf);let v=yf*yf*(3.-2.*yf);
+    let a=whash(seed,ix,iy) as f32/4294967296.;
+    let b=whash(seed,ix+1,iy) as f32/4294967296.;
+    let c=whash(seed,ix,iy+1) as f32/4294967296.;
+    let d=whash(seed,ix+1,iy+1) as f32/4294967296.;
+    let top=a+(b-a)*u;let bottom=c+(d-c)*u;top+(bottom-top)*v
+}
+/// Four octaves of value noise, normalised to 0..1.
+fn wfbm(seed:u32,x:f32,y:f32)->f32 {
+    let mut sum=0.;let mut amp=1.;let mut freq=1.;let mut norm=0.;let mut i=0u32;
+    while i<4 {sum+=amp*wnoise(seed.wrapping_add(i.wrapping_mul(7919)),x*freq,y*freq);norm+=amp;amp*=0.5;freq*=2.;i+=1;}
+    sum/norm
+}
+/// Terrain height for one world tile: -1 void, else the three authored levels.
+/// Land is terraced, never smooth, so the existing art pipeline stays valid.
+fn world_gen(seed:u32,tx:usize,ty:usize)->f32 {
+    let x=tx as f32;let y=ty as f32;
+    let big=wfbm(seed,x/104.,y/104.);
+    let fine=wfbm(seed^0x51ED_2701,x/19.,y/19.);
+    let h=big*0.70+fine*0.30;
+    if h<0.436 {-1.} else if h<0.472 {0.} else if h<0.524 {0.5} else {1.}
+}
 impl Sim {
+ /// Height under a point, from the world heightfield in a world match and from
+ /// the frozen showcase function otherwise.
+ fn ground(&self,x:f32,y:f32)->f32 {
+  if self.mode==1 {let tx=x.floor();let ty=y.floor();if tx<0.||ty<0.||tx>=WORLD as f32||ty>=WORLD as f32 {return -1.;}self.world[ty as usize*WORLD+tx as usize]} else {height(x,y)}
+ }
+ fn side(&self)->u32 {if self.mode==1 {WORLD as u32}else{32}}
+ /// Is the 11x11 patch around a tile one flat land level? Used to place starts.
+ fn patch_flat(&self,cx:i32,cy:i32)->bool {
+  if cx<7||cy<7||cx>=WORLD as i32-7||cy>=WORLD as i32-7 {return false;}
+  let z=self.world[cy as usize*WORLD+cx as usize];
+  if z<0. {return false;}
+  for y in (cy-6)..=(cy+6) {for x in (cx-6)..=(cx+6) {if self.world[y as usize*WORLD+x as usize]!=z {return false;}}}
+  true
+ }
+ /// Nearest land tile, searched ring by ring. Used to anchor world deposits.
+ fn land_near(&self,cx:i32,cy:i32,max:i32)->Option<(f32,f32)> {
+  for ring in 0..max {
+   let mut step=-ring;
+   while step<=ring {
+    for (x,y) in [(cx+step,cy-ring),(cx+step,cy+ring),(cx-ring,cy+step),(cx+ring,cy+step)] {
+     if x>=2&&y>=2&&x<WORLD as i32-2&&y<WORLD as i32-2&&self.world[y as usize*WORLD+x as usize]>=0. {return Some((x as f32+0.5,y as f32+0.5));}
+    }
+    step+=1;
+   }
+  }
+  None
+ }
+ /// Nearest flat site, searched ring by ring from a target tile. Deterministic.
+ fn flat_site(&self,tx:i32,ty:i32)->Option<(f32,f32)> {
+  for ring in 0..220i32 {
+   let mut step=-ring;
+   while step<=ring {
+    for (cx,cy) in [(tx+step,ty-ring),(tx+step,ty+ring),(tx-ring,ty+step),(tx+ring,ty+step)] {
+     if self.patch_flat(cx,cy) {return Some((cx as f32+0.5,cy as f32+0.5));}
+    }
+    step+=1;
+   }
+  }
+  None
+ }
  fn random(&mut self)->u32 { let mut x=self.rng; x^=x<<13;x^=x>>17;x^=x<<5;self.rng=x;x }
  // The legacy initializer always adds slot zero first. Reset its mode here so
  // sim_init itself stays byte-identical, including when called after a match.
@@ -243,13 +320,13 @@ enum Order { Idle, Gather, Build(usize), Defend, Raid(u32), Return }
 struct Match {
     player: usize, sides: [Side; 2], jobs: [Production; CAP], orders: [Order; CAP],
     homes: [(f32, f32); CAP], cooldowns: [u32; CAP], generations: [u32; CAP],
-    defenders: [usize; 2], next_raid: u32, waves: u32,
+    defenders: [usize; 2], next_raid: u32, waves: u32, base: [(f32, f32); 2],
 }
 impl Match {
     const EMPTY: Self = Self { player: 0, sides: [Side::START; 2],
         jobs: [Production::EMPTY; CAP], orders: [Order::Idle; CAP],
         homes: [(0., 0.); CAP], cooldowns: [0; CAP], generations: [0; CAP],
-        defenders: [CAP; 2], next_raid: 150 * 60, waves: 0 };
+        defenders: [CAP; 2], next_raid: 150 * 60, waves: 0, base: [(0., 0.); 2] };
 }
 impl Sim {
     fn match_add(&mut self, id: usize, kind: u32, x: f32, y: f32, faction: usize) {
@@ -258,7 +335,7 @@ impl Sim {
         e.x = (x * 1024.) as i32;
         e.y = (y * 1024.) as i32;
         e.target = CAP;
-        e.data = [x, y, height(x, y), 0., kind as f32, 0., 0., 1., 0., faction as f32, 1., 0.];
+        e.data = [x, y, self.ground(x, y), 0., kind as f32, 0., 0., 1., 0., faction as f32, 1., 0.];
         if worker(kind) || carrier(kind) { e.data[10] = 0.; }
         if aircraft(kind) { e.data[2] += 3.; }
         self.entities[id] = e;
@@ -280,41 +357,97 @@ impl Sim {
         self.game = Match::EMPTY;
         // The void ABI maps invalid faction inputs to Dawnward.
         self.game.player = usize::from(faction == 1);
+        // The showcase's own 32x32 terrain buffer stays filled, so the legacy
+        // read-only terrain ABI keeps answering in both modes.
         for y in 0..32 { for x in 0..32 {
             self.terrain[y * 32 + x] = height(x as f32 + 0.5, y as f32 + 0.5);
         } }
+        // Build the 10.24 km world from the seed (LARGEMAP_SPEC §4). It is a pure
+        // function of (seed, tile), so every run agrees tile for tile.
+        let world_seed = self.rng ^ 0x5F35_6B21;
+        // A 4 MB heap buffer, not a stack temporary: an inline array of this size
+        // overflows the wasm stack while the thread-local initialises.
+        self.world = vec![0.; WORLD * WORLD];
+        for ty in 0..WORLD { for tx in 0..WORLD {
+            self.world[ty * WORLD + tx] = world_gen(world_seed, tx, ty);
+        } }
+        // Close one-tile pinholes: a void tile ringed by land takes the lowest
+        // level of its land neighbours, so a base apron never shows a crack.
+        // Two passes reach pinholes that touch each other; real canyons stay.
+        for _ in 0..2 {
+            for ty in 1..WORLD - 1 { for tx in 1..WORLD - 1 {
+                if self.world[ty * WORLD + tx] >= 0. { continue; }
+                let mut land = 0; let mut lowest = 1.5f32;
+                for dy in -1i32..=1 { for dx in -1i32..=1 {
+                    if dx == 0 && dy == 0 { continue; }
+                    let v = self.world[(ty as i32 + dy) as usize * WORLD + (tx as i32 + dx) as usize];
+                    if v >= 0. { land += 1; if v < lowest { lowest = v; } }
+                } }
+                if land >= 6 { self.world[ty * WORLD + tx] = lowest; }
+            } }
+        }
+        // Both starts belong on flat land, far apart: opposite thirds of the map.
+        let targets = [(WORLD as i32 / 5, WORLD as i32 / 3), (WORLD as i32 * 4 / 5, WORLD as i32 * 2 / 3)];
+        for side in 0..2 {
+            self.game.base[side] = self.flat_site(targets[side].0, targets[side].1)
+                .unwrap_or((targets[side].0 as f32 + 0.5, targets[side].1 as f32 + 0.5));
+        }
         for side in 0..2 {
             let f = if side == 0 { self.game.player } else { 1 - self.game.player };
             let base = side * 13;
-            let buildings = if side == 0 { [(12.,18.), (7.,23.), (10.,12.)] }
-                else { [(27.,11.), (27.,17.), (29.,6.)] };
+            let (hx, hy) = self.game.base[side];
             let kinds = if f == 0 { [10,11,12,20,21,22,24] } else { [60,61,62,32,33,30,35] };
+            // The authored start package, anchored on the world site and mirrored
+            // so each faction builds away from the map edge. Every offset below
+            // stays inside the 13x13 flat patch flat_site guarantees.
+            let m = if side == 0 { 1. } else { -1. };
+            let buildings = [(hx, hy), (hx - 4. * m, hy + 4.), (hx - 2. * m, hy - 4.)];
             for j in 0..3 { self.match_add(base + j, kinds[j], buildings[j].0, buildings[j].1, f); }
             for j in 0..6 {
-                let (x, y) = if side == 0 {
-                    if j < 4 { (4. + (j % 2) as f32, 19. + (j / 2) as f32 * 2.) }
-                    else { (9.4, 17. + (j - 4) as f32 * 2.) }
-                } else if j < 4 { (26. + (j % 2) as f32, 23. + (j / 2) as f32) }
-                else { (24.4, 10. + (j - 4) as f32 * 2.) };
+                // Every worker stays on the open west apron. A worker inside the
+                // Keep's own silhouette cannot be tapped, because the building's
+                // art is nearer to the camera along the pick ray.
+                // Workers stand on the south apron. A tall building projects its
+                // art upwards on screen, so a worker west of the Keep is hidden
+                // behind it and cannot be tapped; south of it (larger x+y) the
+                // worker is in front and stays reachable.
+                let (x, y) = if j < 4 { (hx - 1. + (j % 2) as f32 * 2., hy + 4.5 + (j / 2) as f32 * 1.8) }
+                    else { (hx + 3. + (j - 4) as f32, hy + 4.5 + (j - 4) as f32 * 1.5) };
                 self.match_add(base + 3 + j, kinds[3], x, y, f);
                 if j < 4 { self.game.orders[base + 3 + j] = Order::Gather; }
             }
-            self.match_add(base + 9, kinds[4], buildings[1].0 + 1.9, buildings[1].1, f);
+            self.match_add(base + 9, kinds[4], buildings[1].0 + 1.5 * m, buildings[1].1, f);
             for j in 0..2 {
-                let (x, y) = if side == 0 { (18., 17. + j as f32 * 4.) }
-                    else { (24.8, 18. + j as f32 * 3.) };
+                let (x, y) = (hx + 4. * m, hy - 2. + j as f32 * 4.);
                 self.match_add(base + 10 + j, kinds[5], x, y, f);
                 self.game.orders[base + 10 + j] = Order::Defend;
                 if side == 1 { self.game.defenders[j] = base + 10 + j; }
             }
             self.match_add(base + 12, kinds[6], buildings[0].0, buildings[0].1, f);
         }
+        // Crystal fields: two base aprons feed the early economy, then sixteen
+        // deposits spread over the whole world so 10 km is not an empty plain.
         for j in 0..12 {
             let jitter = (self.random() % 200) as f32 / 1000.;
-            let (x, y) = if j < 6 { (3.4 + (j % 2) as f32 * 1.5 + jitter, 19. + (j / 2) as f32 * 2.3) }
-                else { (26. + (j % 2) as f32 * 1.5 + jitter, 23. + ((j - 6) / 2) as f32) };
+            let holder = if j < 6 { 0 } else { 1 };
+            let (hx, hy) = self.game.base[holder];
+            // Mirror the seam the same way the base itself is mirrored.
+            let m = if holder == 0 { 1. } else { -1. };
+            let k = j % 6;
+            // A north-south seam one tile west of the workers: the gather walk
+            // never crosses the base buildings.
+            let x = hx - 6. * m;
+            let y = hy - 3.4 + k as f32 * 1.35 + jitter * 0.2;
             self.match_add(26 + j, 40, x, y, 2);
             self.entities[26 + j].data[10] = 160.;
+        }
+        for j in 0..16 {
+            let ax = (whash(world_seed, j as i32 * 7 + 3, 11) % WORLD as u32) as i32;
+            let ay = (whash(world_seed, 29, j as i32 * 13 + 5) % WORLD as u32) as i32;
+            if let Some((x, y)) = self.land_near(ax, ay, 40) {
+                self.match_add(38 + j, 40, x, y, 2);
+                self.entities[38 + j].data[10] = 160.;
+            }
         }
         self.pack();
     }
@@ -382,17 +515,18 @@ impl Sim {
             && self.ready_builder(f, selected) && self.free_actor().is_some()
     }
     fn placeable(&self, k: &Kind, tile: u32) -> bool {
-        if tile >= 1024 { return false; }
-        let x = (tile % 32) as f32 + 0.5;
-        let y = (tile / 32) as f32 + 0.5;
+        let side = self.side();
+        if tile >= side * side { return false; }
+        let x = (tile % side) as f32 + 0.5;
+        let y = (tile / side) as f32 + 0.5;
         let (left, right, top, bottom) = (x - k.width / 2., x + k.width / 2., y - k.depth / 2., y + k.depth / 2.);
-        if left < 2. || right > 30. || top < 2. || bottom > 30. { return false; }
-        let z = height(x, y);
+        if left < 2. || right > side as f32 - 2. || top < 2. || bottom > side as f32 - 2. { return false; }
+        let z = self.ground(x, y);
         if z < 0. { return false; }
         // Check every terrain cell touched by the entire footprint, not just its center.
         for ty in top.floor() as u32..bottom.ceil() as u32 {
             for tx in left.floor() as u32..right.ceil() as u32 {
-                if height(tx as f32 + 0.5, ty as f32 + 0.5) != z { return false; }
+                if self.ground(tx as f32 + 0.5, ty as f32 + 0.5) != z { return false; }
             }
         }
         for e in &self.entities[..MATCH_ACTORS] {
@@ -422,7 +556,8 @@ impl Sim {
         if !self.can_build(f, kind, selected) { return false; }
         let k = roster(kind).unwrap();
         if !self.placeable(k, tile) { return false; }
-        let (x, y) = ((tile % 32) as f32 + 0.5, (tile / 32) as f32 + 0.5);
+        let side = self.side();
+        let (x, y) = ((tile % side) as f32 + 0.5, (tile / side) as f32 + 0.5);
         let Some(builder) = self.nearest_builder(f, x, y) else { return false; };
         let id = self.free_actor().unwrap();
         self.game.sides[f].alloy -= k.alloy;
@@ -723,7 +858,7 @@ impl Sim {
                 }
                 Order::Idle => if worker(k.kind) { self.repair(id, k.faction); },
             }
-            if aircraft(k.kind) { self.entities[id].data[2] = height(self.entities[id].data[0], self.entities[id].data[1]) + 3.; }
+            if aircraft(k.kind) { self.entities[id].data[2] = self.ground(self.entities[id].data[0], self.entities[id].data[1]) + 3.; }
         }
     }
     fn match_damage(&mut self, target: usize, damage: f32) {
@@ -923,6 +1058,14 @@ impl Sim {
 }
 
 #[no_mangle] pub extern "C" fn sim_match_init(seed: u32, faction: u32) { SIM.with(|s| s.borrow_mut().match_init(seed, faction)); }
+// ---- Expansive-world read-only surface (LARGEMAP_SPEC §4) ------------------
+/// 1024 while a world match is live, 0 when the showcase is running.
+#[no_mangle] pub extern "C" fn sim_world_size() -> u32 { SIM.with(|s| { let s = s.borrow(); if s.mode == 1 { WORLD as u32 } else { 0 } }) }
+#[no_mangle] pub extern "C" fn sim_world_ptr() -> *const f32 { SIM.with(|s| s.borrow().world.as_ptr()) }
+#[no_mangle] pub extern "C" fn sim_metres_per_tile() -> u32 { METRES_PER_TILE }
+/// Base site of a faction, so the camera can open on the player's own start.
+#[no_mangle] pub extern "C" fn sim_base_x(f: u32) -> f32 { SIM.with(|s| { let s = s.borrow(); if s.mode == 1 { s.game.base[usize::from(f == 1)].0 } else { 16. } }) }
+#[no_mangle] pub extern "C" fn sim_base_y(f: u32) -> f32 { SIM.with(|s| { let s = s.borrow(); if s.mode == 1 { s.game.base[usize::from(f == 1)].1 } else { 16. } }) }
 #[no_mangle] pub extern "C" fn sim_mode() -> u32 { SIM.with(|s| s.borrow().mode) }
 #[no_mangle] pub extern "C" fn sim_player() -> u32 { SIM.with(|s| { let s = s.borrow(); if s.mode == 1 { s.game.player as u32 } else { 0 } }) }
 #[no_mangle] pub extern "C" fn sim_age() -> u32 { SIM.with(|s| { let s = s.borrow(); if s.mode == 1 { s.game.sides[s.game.player].age } else { 0 } }) }

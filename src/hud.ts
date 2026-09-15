@@ -39,6 +39,12 @@ export interface SimAbi {
   sim_roster_ptr?(): number;
   sim_can_train?(kind: number): number;
   sim_can_build?(kind: number): number;
+  /** Expansive world (LARGEMAP_SPEC §4): 0 when the showcase is running. */
+  sim_world_size?(): number;
+  sim_world_ptr?(): number;
+  sim_metres_per_tile?(): number;
+  sim_base_x?(faction: number): number;
+  sim_base_y?(faction: number): number;
 }
 
 /** One roster row, docs/MATCH_SPEC.md §3. */

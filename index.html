@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"><meta name="theme-color" content="#10121C"><link rel="icon" href="data:,"><title>Starhold — The Vesper March</title></head>
 <body><main id="viewport"><canvas id="world" width="960" height="540" aria-label="Starhold colony. Click a building or unit to inspect it."></canvas><nav aria-label="Camera controls"><button id="rotate-left" aria-label="Rotate left 90 degrees" title="Rotate left"><canvas class="glyph" width="12" height="12" aria-hidden="true"></canvas></button><button id="rotate-right" aria-label="Rotate right 90 degrees" title="Rotate right"><canvas class="glyph" width="12" height="12" aria-hidden="true"></canvas></button><button id="zoom-out" aria-label="Zoom out" title="Zoom out"><canvas class="glyph" width="12" height="12" aria-hidden="true"></canvas></button><button id="zoom-in" aria-label="Zoom in" title="Zoom in"><canvas class="glyph" width="12" height="12" aria-hidden="true"></canvas></button></nav><output id="selection" aria-live="polite" hidden></output></main>
+<aside id="minimap" aria-label="Minimap"><canvas id="minimap-canvas" width="256" height="256" aria-hidden="true"></canvas><button id="minimap-close" type="button" aria-label="Close the minimap" title="Close the minimap">×</button></aside>
 <div id="hud-bar" role="region" aria-label="Starhold command bar">
 <div id="hud-resources" role="group" aria-label="Resources">
 <span class="m" id="hud-alloy">ALLOY <span class="v" id="hud-alloy-value">0</span></span>
@@ -19,6 +20,7 @@
 <button id="hud-reset" type="button" class="off" data-action="reset" data-kind="0" aria-label="Reset to the showcase scenario" title="Reset to the showcase scenario" disabled><span class="n">RESET</span></button>
 </div>
 <div id="hud-actions" role="toolbar" aria-label="Context actions">
+<button id="hud-minimap" type="button" data-action="minimap" aria-label="Toggle the minimap" title="Toggle the minimap"><span class="n">MAP</span></button>
 <button id="hud-prev" type="button" class="off" data-page="-1" aria-label="Previous actions" title="Previous actions" disabled>◀</button>
 <div id="hud-action-list"></div>
 <span id="hud-status">MATCH UNAVAILABLE</span>
