@@ -1,5 +1,5 @@
 PASS  boots-ready — entities=55
-PASS  instance-budget — triangles=116245 saturated=false
+PASS  instance-budget — triangles=116257 saturated=false
 PASS  touch-layout — body="touch" touch=true
 PASS  no-scroll — doc=1024x768 client=1024x768 scroll=0,0
 PASS  canvas-fits — rect=960.0x540.0@32.0,82.0 aspect=1.778 backing=960x540
@@ -13,7 +13,7 @@ PASS  tap-select — selected=0
 PASS  pinch-zoom — zoom 1 -> 0.8 (idx 1 -> 2)
 PASS  pinch-keeps-selection — 0 -> 0
 PASS  tap-after-pinch — clear=null select=0
-PASS  fps>=59-vsync-locked — fps=60.3 p95=16.9ms max=17.4ms
+PASS  fps>=59-vsync-locked — fps=60.3 p95=16.9ms max=21.3ms
 PASS  hud-skirmish-entry — showcaseMode=0 skirmishLabel=true dawnward=69x44 cinderwake=82x44 dawnwardClick=mode 1 player 0 reset->mode 0 cinderwakeClick=mode 1 player 1
 PASS  match-boot — mode=1 player=0 age=0 alloy=80 charge=40 pop=11/15 entities=38 (standard start 80/40, 11/15, 3 buildings + 10 units) factionLabel=true resetControl="Reset to the showcase scenar" resetShowcase->mode 0
 PASS  hud-bar — bar=1024x64@0,704 visible=true tall>=44=true covers=none insets44=44..980 of 1024, h=64

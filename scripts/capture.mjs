@@ -314,33 +314,13 @@ const MATCH_GATE_NAMES = [
   'age-advance', 'train-unit', 'build-site',
 ];
 const MATCH_APP_API = ['startMatch', 'resetShowcase', 'command', 'fastForward', 'getState'];
-// Kinds the exact-tap probe asks for first: the tier-0 producers (train actions)
-// and the two workers (build actions). The spot scan below stays as the fallback
-// for builds that predate the entityScreen probe.
+// Kinds the exact-tap probe asks for: the tier-0 producers (train actions) and
+// the two workers (build actions). The app reports each one's live screen
+// centre, so a gate makes exactly one tap. Guessed fraction lists are gone: a
+// constant cannot follow a unit that moves, and a scan can hide a broken
+// projection behind a lucky hit.
 const PRODUCER_KINDS = [10, 11, 12, 60, 61, 62];
 const WORKER_KINDS = [20, 32];
-// Canvas points tried when selecting player entities in match mode: centre-out
-// and west-biased (the player base occupies the west settlement, §6).
-const MATCH_SPOTS = [
-  // Exact yaw-0 body projections for the six west-base workers, plus nearby
-  // ground projections. Workers move during the 450 ms DOM settle, so include a
-  // narrow 2-D spread around the body rather than one fragile pixel.
-  [0.3100, 0.3710], [0.3074, 0.3634], [0.3110, 0.3634], [0.3040, 0.3634],
-  [0.3074, 0.3571], [0.3074, 0.3697],
-  [0.3125, 0.355], [0.300, 0.355], [0.325, 0.355],
-  [0.3250, 0.368], [0.313, 0.368], [0.337, 0.368],
-  [0.2875, 0.381], [0.276, 0.381], [0.299, 0.381],
-  [0.3000, 0.394], [0.288, 0.394], [0.312, 0.394],
-  [0.4050, 0.399], [0.393, 0.399], [0.417, 0.399],
-  [0.3800, 0.425], [0.368, 0.425], [0.392, 0.425],
-  [0.3125, 0.3754], [0.3250, 0.3882], [0.2875, 0.4011],
-  [0.3000, 0.4139], [0.4050, 0.4190], [0.3800, 0.4447],
-  [0.5, 0.5], [0.46, 0.52], [0.54, 0.48], [0.42, 0.5], [0.58, 0.5],
-  [0.5, 0.6], [0.5, 0.4], [0.38, 0.54], [0.62, 0.46], [0.34, 0.5],
-  [0.46, 0.62], [0.54, 0.38], [0.3, 0.56], [0.66, 0.44], [0.38, 0.42],
-  [0.62, 0.58], [0.26, 0.5], [0.7, 0.5], [0.5, 0.68], [0.5, 0.32],
-  [0.42, 0.6], [0.58, 0.4], [0.45, 0.5], [0.55, 0.5],
-];
 
 /** Run a gate body; a thrown error fails that gate instead of skipping the run. */
 async function guarded(name, fn) {
@@ -461,17 +441,7 @@ async function clickControl(page, control) {
   await page.waitForTimeout(220);
 }
 
-/** A real click (or tap) on a canvas point given as canvas fractions. */
-async function clickCanvas(page, box, fx, fy) {
-  if (!box) return;
-  const x = box.x + box.width * fx;
-  const y = box.y + box.height * fy;
-  if (TOUCH) await page.touchscreen.tap(x, y);
-  else await page.mouse.click(x, y);
-  await page.waitForTimeout(TOUCH ? 300 : 200);
-}
-
-/** A real tap on an absolute CSS point, using the same input path as clickCanvas. */
+/** A real tap on an absolute CSS point: a touch tap on touch layouts, else a mouse click. */
 async function clickPoint(page, x, y) {
   if (TOUCH) await page.touchscreen.tap(x, y);
   else await page.mouse.click(x, y);
@@ -978,16 +948,16 @@ function gate(name, pass, detail) {
         else await guarded(name, domDriven[name]);
       }
     } else {
-      const canvasBox = await page.locator('canvas#world').boundingBox();
       const roster = await wasmRoster(0).catch(() => null);
       const freshMatch = async (faction = 0) => {
         await page.evaluate((f) => window.__APP.startMatch(f), faction);
         await page.waitForTimeout(450);
       };
       const selectFirst = async (matcher, kinds = []) => {
-        // Prefer one exact tap on a live position the app reports for the kind
-        // the gate needs (read-only probe, no mutation). The point comes from
-        // the same projection the renderer submits, so no guessed fractions.
+        // One exact tap per candidate: the app reports the live screen centre of
+        // a kind it holds, from the same projection the renderer submits. No
+        // guessed fractions and no scan, so a broken projection cannot hide
+        // behind a lucky hit.
         const player = (await state(page)).player ?? 0;
         for (const faction of [player, 1 - player]) {
           for (const kind of kinds) {
@@ -1003,13 +973,6 @@ function gate(name, pass, detail) {
               return { snap, found, how: `exact tap kind ${kind} f${faction} @${pt.x.toFixed(0)},${pt.y.toFixed(0)}` };
             }
           }
-        }
-        // Fallback for builds that predate the probe: scan the known spots.
-        for (const [fx, fy] of MATCH_SPOTS) {
-          await clickCanvas(page, canvasBox, fx, fy);
-          const snap = await hudSnapshot(page);
-          const found = snap.controls.filter((c) => c.visible && matcher(c));
-          if (found.length) return { snap, found, how: `spot scan ${fx},${fy}` };
         }
         return null;
       };
@@ -1135,7 +1098,7 @@ function gate(name, pass, detail) {
       await guarded('train-unit', async () => {
         await freshMatch(0);
         const found = await selectFirst((c) => c.visible && isTrainControl(c), PRODUCER_KINDS);
-        if (!found) return { pass: false, detail: `no train action for any of ${MATCH_SPOTS.length} canvas selections (selectedKind=${(await state(page)).selectedKind ?? 'null'})` };
+        if (!found) return { pass: false, detail: `no train action after ${PRODUCER_KINDS.length} exact taps (selectedKind=${(await state(page)).selectedKind ?? 'null'})` };
         const button = found.found.find((c) => !c.disabled) || found.found[0];
         if (button.disabled) return { pass: false, detail: `all ${found.found.length} train actions disabled for selectedKind=${found.snap.st.selectedKind}` };
         const row = roster ? roster.find((r) => Number(button.kind) === r.kind) : null;
@@ -1165,7 +1128,7 @@ function gate(name, pass, detail) {
       await guarded('build-site', async () => {
         await freshMatch(0);
         const found = await selectFirst((c) => c.visible && isBuildControl(c), WORKER_KINDS);
-        if (!found) return { pass: false, detail: `no build action for any of ${MATCH_SPOTS.length} canvas selections (selectedKind=${(await state(page)).selectedKind ?? 'null'})` };
+        if (!found) return { pass: false, detail: `no build action after ${WORKER_KINDS.length} exact taps (selectedKind=${(await state(page)).selectedKind ?? 'null'})` };
         const button = found.found.find((c) => !c.disabled) || found.found[0];
         if (button.disabled) return { pass: false, detail: `all ${found.found.length} build actions disabled for selectedKind=${found.snap.st.selectedKind}` };
         const row = roster ? roster.find((r) => Number(button.kind) === r.kind) : null;

@@ -8,7 +8,7 @@
     {
       "name": "instance-budget",
       "pass": true,
-      "detail": "triangles=116281 saturated=false"
+      "detail": "triangles=116293 saturated=false"
     },
     {
       "name": "portrait-playable",
@@ -88,7 +88,7 @@
     {
       "name": "fps>=59-vsync-locked",
       "pass": true,
-      "detail": "fps=60.3 p95=16.9ms max=17.0ms"
+      "detail": "fps=60.3 p95=16.9ms max=18.0ms"
     },
     {
       "name": "hud-skirmish-entry",
@@ -172,10 +172,10 @@
   "fps": {
     "fps": 60.25,
     "frames": 241,
-    "mean_ms": 16.63195020727102,
+    "mean_ms": 16.634854771784234,
     "p50_ms": 16.699999809265137,
     "p95_ms": 16.899999856948853,
-    "max_ms": 17
+    "max_ms": 18
   },
   "matchErrors": []
 }

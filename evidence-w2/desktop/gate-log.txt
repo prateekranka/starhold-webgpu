@@ -1,6 +1,6 @@
 PASS  boots-ready — entities=55
-PASS  instance-budget — triangles=117949 saturated=false
-PASS  fps>=59-vsync-locked — fps=60.3 p95=17.1ms max=18.7ms
+PASS  instance-budget — triangles=117913 saturated=false
+PASS  fps>=59-vsync-locked — fps=60.3 p95=17.2ms max=18.6ms
 PASS  rotate-button — 0 -> 1
 PASS  zoom-buttons — zoom 1 -> 0.8 -> 1
 PASS  click-select — selected=0
@@ -18,6 +18,6 @@ PASS  match-determinism — a7b9e906 vs a7b9e906 entities=39/39 age=1/1
 PASS  no-webgpu-error-path — ready=false error="WebGPU is unavailable. Starhold requires a WebGPU-capable browser with hardware accelerati" overlays=error:"WebGPU is unavailable. Starhold requires a WebGPU-capable br"
 
 18/18 gates passed
-fps mean=60.3  p50=16.7ms  p95=17.1ms
-shots -> /home/bobbyranka/Cowork/starhold/evidence-w2/desktop
+fps mean=60.3  p50=16.7ms  p95=17.2ms
+shots -> /home/bobbyranka/Cowork/starhold/evidence-desktop
 EXIT=0

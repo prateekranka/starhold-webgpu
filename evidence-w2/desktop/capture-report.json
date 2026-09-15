@@ -8,12 +8,12 @@
     {
       "name": "instance-budget",
       "pass": true,
-      "detail": "triangles=117949 saturated=false"
+      "detail": "triangles=117913 saturated=false"
     },
     {
       "name": "fps>=59-vsync-locked",
       "pass": true,
-      "detail": "fps=60.3 p95=17.1ms max=18.7ms"
+      "detail": "fps=60.3 p95=17.2ms max=18.6ms"
     },
     {
       "name": "rotate-button",
@@ -110,10 +110,10 @@
   "fps": {
     "fps": 60.25,
     "frames": 241,
-    "mean_ms": 16.632365145623933,
-    "p50_ms": 16.700000047683716,
-    "p95_ms": 17.09999990463257,
-    "max_ms": 18.700000047683716
+    "mean_ms": 16.643153526970956,
+    "p50_ms": 16.699999809265137,
+    "p95_ms": 17.199999809265137,
+    "max_ms": 18.59999990463257
   },
   "matchErrors": []
 }

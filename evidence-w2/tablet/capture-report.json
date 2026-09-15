@@ -8,7 +8,7 @@
     {
       "name": "instance-budget",
       "pass": true,
-      "detail": "triangles=116245 saturated=false"
+      "detail": "triangles=116257 saturated=false"
     },
     {
       "name": "touch-layout",
@@ -78,7 +78,7 @@
     {
       "name": "fps>=59-vsync-locked",
       "pass": true,
-      "detail": "fps=60.3 p95=16.9ms max=17.4ms"
+      "detail": "fps=60.3 p95=16.9ms max=21.3ms"
     },
     {
       "name": "hud-skirmish-entry",
@@ -160,10 +160,10 @@
   "fps": {
     "fps": 60.25,
     "frames": 241,
-    "mean_ms": 16.640248963447032,
+    "mean_ms": 16.639419086741214,
     "p50_ms": 16.699999809265137,
     "p95_ms": 16.90000009536743,
-    "max_ms": 17.40000009536743
+    "max_ms": 21.299999952316284
   },
   "matchErrors": []
 }
