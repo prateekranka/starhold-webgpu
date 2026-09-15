@@ -147,6 +147,18 @@ crystal presence, then re-judge. Do not raise the instance counts by more than 1
 do not touch the palette's 32 entries, and keep the showcase and world hashes
 identical.
 
+### How the round-2 gate is run (learned the hard way)
+
+Two independent runs on the *same* round-1 frames disagreed — PASS from a before/after
+contact sheet, FAIL from the AFTER frames alone — because the sheet changed the
+question from "does this ship" to "did it improve". A gate that shows a baseline is
+not blind to improvement.
+
+So the acceptance gate for this piece is: the candidate frames only, no baseline
+column, no labels naming the pass, and an absolute question about what a player can
+tell from the pixels. Contact sheets are for humans. The full rule is recorded in the
+`deepseek-blind-critic` skill.
+
 ## Non-goals
 
 New units, buildings, mechanics or costs; unit art; camera, controls or interface
