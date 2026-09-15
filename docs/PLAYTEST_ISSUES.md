@@ -81,12 +81,14 @@ and no confirmation. Note the positive: it never fails, and Rust still enforces
 footprints, level ground and collisions. Suggestion: a placement mode with a
 ghost footprint and a confirm tap.
 
-### A4 — the action bar pages, and the page hides build actions — needs design
-With four build actions plus train actions the bar shows one page and puts the
-rest behind `◀ ▶`. A test that indexes the fourth build control got `null`
-because it sat on page two. Worth checking on a phone: how many taps to reach the
-Hearth? Suggestion: keep build actions on the first page, or widen the desktop
-bar.
+### A4 — action-bar paging — checked, not a defect (kept as a record)
+`PAGE_SIZE` is 4 and a worker's build set is exactly four actions
+(Keep 10, Court 11, Well 12, Hearth 15), measured as four visible controls of
+63x44 CSS px with nothing behind `◀ ▶`. A building's train set is one to three
+actions. So the paging chevrons are never needed for the current rosters; the
+`null` my first playtest saw was a timing artifact (it read the bar before the
+HUD had rebuilt for the new selection), not a hidden button. Re-check this entry
+if a roster ever offers more than four actions for one selection.
 
 ### A5 — units walk over canyons — open
 Direct movement means units cross void gaps; they now hold their height instead
