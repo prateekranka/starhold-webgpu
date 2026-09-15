@@ -88,11 +88,27 @@ Build: **PASS** (`npm run wasm && tsc --noEmit && vite build`). Capture
    detail so a silent fallback stays visible.
 2. No independent critic clears the wave-2 match frame, so the release stays
    frozen on pass 15. The DeepSeek vision critic names grounded richness and
-   readability as the biggest gap — the same parked structural residual — and the
-   second opinion route is unavailable: `cursor-agent --model
-   cursor-grok-4.6-xhigh` returns `ActionRequiredError: Named models unavailable
-   Free plans can only use Auto.` and the local bridge returns HTTP 502 for that
-   model.
+   readability as the biggest gap — the same parked structural residual. The
+   second-opinion route is unavailable on this account:
+   `cursor-agent --model cursor-grok-4.6-xhigh` returns `ActionRequiredError:
+   Named models unavailable Free plans can only use Auto.`, and the local cursor
+   bridge lists every model id but answers **HTTP 502** on
+   `/v1/chat/completions` for `cursor-grok-4.6-xhigh`, `gpt-5.6-sol-xhigh`,
+   `claude-opus-5-thinking-xhigh` and `gemini-3.7-flash-high` alike. Treat the
+   DeepSeek script as the only working independent eye until a route is proven
+   with one cheap call.
+
+### Next three actions
+
+1. Prove a second independent vision route with one cheap call. Until then the
+   DeepSeek script (`tasks/vision-critic.py`) is the only working eye, and the
+   release cannot be promoted on one opinion.
+2. Write the spec for the match-frame readability piece the critic named: scale
+   up unit and building silhouettes and separate the ground mids so both
+   settlements read at normal zoom. Stay inside the frozen contracts — 32
+   colours, locked map, camera, and controls.
+3. Delete `MATCH_SPOTS` from `scripts/capture.mjs` once no gate can regress to
+   it, and keep the `[exact tap ...]` prefix so a silent fallback stays visible.
 
 **Lighting loop parked at pass 30 (`45212d0`). Every pass 25-30 passed all
 objective gates; the independent visual gate is still open — each fresh critic
