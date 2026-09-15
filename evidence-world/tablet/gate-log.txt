@@ -1,5 +1,5 @@
 PASS  boots-ready — entities=55
-PASS  instance-budget — triangles=116281 saturated=false
+PASS  instance-budget — triangles=116257 saturated=false
 PASS  touch-layout — body="touch" touch=true
 PASS  no-scroll — doc=1024x768 client=1024x768 scroll=0,0
 PASS  canvas-fits — rect=960.0x540.0@32.0,82.0 mode=contain aspect=1.778 backing=960x540
@@ -13,7 +13,7 @@ PASS  tap-select — selected=0
 PASS  pinch-zoom — zoom 1 -> 0.8 (idx 1 -> 2)
 PASS  pinch-keeps-selection — 0 -> 0
 PASS  tap-after-pinch — clear=null select=0
-PASS  fps>=59-vsync-locked — fps=60.3 p95=17.0ms max=27.6ms
+PASS  fps>=59-vsync-locked — fps=60.3 p95=16.9ms max=17.4ms
 PASS  hud-skirmish-entry — showcaseMode=0 skirmishLabel=true dawnward=69x44 cinderwake=82x44 dawnwardClick=mode 1 player 0 reset->mode 0 cinderwakeClick=mode 1 player 1
 PASS  match-boot — mode=1 player=0 age=0 alloy=80 charge=40 pop=11/15 entities=68 (standard start 80/40, 11/15, 3 buildings + 10 units) factionLabel=true resetControl="Reset to the showcase scenar" resetShowcase->mode 0
 PASS  hud-bar — bar=1024x64@0,704 visible=true tall>=44=true covers=none insets44=44..980 of 1024, h=64
@@ -22,7 +22,7 @@ PASS  hud-age — label="FOUNDING 60A 30C ADVANCE" state.age=0(Founding) otherAg
 PASS  world-scale — worldTiles=1024 worldMeters=10240 (10.24 km) camera=205,342
 PASS  world-terrain — side=1024 samples=16384 landShare=74.5% levelsOutside=none
 PASS  camera-pan — camera 205,342 -> 214,341 moved=9 tiles inside=true saturated=false
-PASS  lod-budget — instances per zoom 0.67:3364(60.3fps,p95=16.9ms) 0.80:4113(60.3fps,p95=16.9ms) 1.00:5683(60.3fps,p95=17.0ms) 1.33:9440(60.3fps,p95=16.9ms)
+PASS  lod-budget — instances per zoom 0.67:3364(60.3fps,p95=17.3ms) 0.80:4113(60.3fps,p95=17.3ms) 1.00:5683(60.3fps,p95=17.4ms) 1.33:9440(60.3fps,p95=17.5ms)
 PASS  minimap-present — rect=128x128@886,510 backing=256x256 drawnPx=48774
 PASS  minimap-move — moved 90 px left, 50 px up (drag -90,-50)
 PASS  minimap-close — off false -> true state.open=false
@@ -30,16 +30,17 @@ PASS  minimap-reopen — off true -> false drawnPx=48774 state.open=true
 PASS  minimap-jump — camera 205,342 -> 196,828 moved=487 tiles
 PASS  worker-tap — tap @436,376 selectedKind=20 (workers alive=6)
 PASS  bar-hit-test — visible controls=9 mis-hits=0 advanceCentre->hud-advance
+PASS  placement-preview — entryUnpaid=true drawn=true readOnly=true moved=true invalid=true invalidUnpaid=true valid=true budget=true commit=true targets=true replaced=true cancel=true escape=true selection=true reset=true ai=true builderLost=true cost=24a/0c preview=60.3fps,p95=17.1ms
 PASS  cancel-order — FREIGHT COURT24A site k11 refund=24a alloy 56->80 control=120x44 siteGone=true
 PASS  match-end — sim_outcome()=1 tick=168470 live=0 sticky=true modal="DEFEAT All your units and buildings have been destroyed. NEW MATCH" target=144x48 hit=true fits=true restart=true hash=bbd279e5/bbd279e5 economy=80/40 showcase sim_outcome()=0 noModal=true noneGuard=true
 PASS  age-advance — cost=60a/30c drop=60a/29c drift=0/0 age 0->1 label=March labelShown=true
 PASS  train-unit — [exact tap kind 10 f0 @512,330] action="Train RIVETER, 4 alloy, 1 population RIVETER4A" kind=20 roster=4a/0c pop 1 drop=4a/0c drift=0/1 pop 11->12 entities 68->70
-PASS  build-site — [exact tap kind 20 f0 @443,373] action="Build FREIGHT COURT, 24 alloy FREIGHT COURT24A" kind=11 roster=24a/0c sitePlaced=true entities 68->69 alloy 80->56 charge 40->41 costSpent=true
+PASS  build-site — [exact tap kind 20 f0 @444,373] action="Build FREIGHT COURT, 24 alloy FREIGHT COURT24A" kind=11 roster=24a/0c sitePlaced=true entities 68->69 alloy 80->56 charge 40->41 costSpent=true
 PASS  no-console-errors
 PASS  determinism — {"n":55,"alloy":247,"charge":199,"hash":"20b89f84"} vs {"n":55,"alloy":247,"charge":199,"hash":"20b89f84"}
 PASS  match-determinism — 39ee7d97 vs 39ee7d97 entities=69/69 age=1/1
 PASS  no-webgpu-error-path — ready=false error="WebGPU is unavailable. Starhold requires a WebGPU-capable browser with hardware accelerati" overlays=error:"WebGPU is unavailable. Starhold requires a WebGPU-capable br"
 
-41/41 gates passed
-fps mean=60.3  p50=16.7ms  p95=17.0ms
-shots -> /tmp/aff-ev/tablet
+42/42 gates passed
+fps mean=60.3  p50=16.7ms  p95=16.9ms
+shots -> /tmp/place-ev2/tablet

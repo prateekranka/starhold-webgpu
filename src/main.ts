@@ -1,5 +1,5 @@
 import './style.css';
-import {Renderer, RENDER_WIDTH, RENDER_HEIGHT, buttonGlyphPixels} from './renderer';
+import {Renderer, RENDER_WIDTH, RENDER_HEIGHT, buttonGlyphPixels, type PlacementPreview} from './renderer';
 import {State, names, jobs} from './kinds';
 import {Hud, HQ_POP_CAP, isBuildingKind, isUnitKind, type HudView, type SimAbi} from './hud';
 import {palette} from './kinds';
@@ -24,6 +24,8 @@ interface App {
   * Read-only: it never selects, moves, or mutates simulation state. */
  entityScreen(kind:number,faction:number):{x:number;y:number}|null;
  tileScreen(tx:number,ty:number):{x:number;y:number}|null;
+ /** A detached, read-only snapshot of the world footprint; never issues orders. */
+ placement():PlacementPreview;
 }
 declare global {interface Window {__APP:App}}
 let yawSteps=0,zoomIndex=1,sim:SimExports|undefined,entities=new Float32Array(0),entityCount=0,selected:number|null=null,fps:number|null=null;
@@ -33,7 +35,7 @@ const renderer=new Renderer();
 const touchLayout=navigator.maxTouchPoints>0||matchMedia('(pointer: coarse)').matches;
 document.body.classList.add(touchLayout?'touch':'mouse');
 renderer.hudButtons=!touchLayout;
-const hud=new Hud({command:(op,a,b)=>command(op,a,b),build:(kind)=>buildNearest(kind),startMatch:(faction)=>startMatch(faction),resetShowcase:()=>resetShowcase()});
+const hud=new Hud({command:(op,a,b)=>command(op,a,b),build:(kind)=>beginPlacement(kind),startMatch:(faction)=>startMatch(faction),resetShowcase:()=>resetShowcase()});
 // ---- Floating minimap (LARGEMAP_SPEC §6) ----------------------------------
 const minimap=document.getElementById('minimap') as HTMLElement;
 const minimapCanvas=document.getElementById('minimap-canvas') as HTMLCanvasElement;
@@ -103,7 +105,7 @@ function minimapJump(clientX:number,clientY:number):void {
  const rect=minimapCanvas.getBoundingClientRect();
  if(!rect.width||!rect.height)return;
  renderer.setView((clientX-rect.left)/rect.width*worldSide,(clientY-rect.top)/rect.height*worldSide);
- camX=renderer.viewX;camY=renderer.viewY;minimapDraw(true);
+ camX=renderer.viewX;camY=renderer.viewY;reprojectPlacement();minimapDraw(true);
 }
 minimap.addEventListener('pointerdown',e=>{
  if((e.target as HTMLElement).id==='minimap-close')return;
@@ -130,7 +132,7 @@ minimap.addEventListener('pointercancel',()=>{minimapDrag=null;});
 document.getElementById('minimap-close')!.addEventListener('click',()=>setMinimapOpen(false));
 document.getElementById('hud-minimap')!.addEventListener('click',()=>setMinimapOpen(minimap.classList.contains('off')));
 
-function rotate(dir:1|-1) {yawSteps=(yawSteps+(dir===-1?-1:1)+4)%4;}
+function rotate(dir:1|-1) {yawSteps=(yawSteps+(dir===-1?-1:1)+4)%4;reprojectPlacement();}
 /** Drag the world under the pointer. Screen pixels in, world tiles out, using
  *  the same quarter-turn rotation and magnification the shader applies. */
 function panBy(dxCss:number,dyCss:number):boolean {
@@ -146,7 +148,7 @@ function panBy(dxCss:number,dyCss:number):boolean {
  camX=renderer.viewX;camY=renderer.viewY;
  return true;
 }
-function zoomBy(delta:1|-1) {zoomIndex=Math.max(0,Math.min(3,zoomIndex+(delta===-1?-1:1)));}
+function zoomBy(delta:1|-1) {zoomIndex=Math.max(0,Math.min(3,zoomIndex+(delta===-1?-1:1)));reprojectPlacement();}
 function selectAt(x:number,y:number) {
  if(!sim||!window.__APP.ready)return;
  const rect=canvas.getBoundingClientRect();
@@ -231,10 +233,11 @@ function buildTile():number {
  for(const tile of tiles)if(!tileOccupied(tile,selected))return tile;
  return tileOf(x,y);
 }
-const view:HudView={ready:false,match:false,mode:0,outcome:0,player:0,age:0,ageProgress:1,ageCost:0,ageCostCharge:0,alloy:0,charge:0,popUsed:0,popCap:0,selected:null,selectedKind:null,selectedState:-1,tile:0};
+const view:HudView={ready:false,match:false,mode:0,outcome:0,player:0,age:0,ageProgress:1,ageCost:0,ageCostCharge:0,alloy:0,charge:0,popUsed:0,popCap:0,selected:null,selectedKind:null,selectedState:-1,tile:0,placementKind:null,placementValid:false};
 /** Push the current sim/selection state into the DOM bar. The view object is
  *  reused, so the bar never allocates per frame. */
 function syncHud() {
+ refreshPlacement();
  view.ready=window.__APP.ready;
  view.match=matchAbi();
  view.mode=simMode();
@@ -252,10 +255,13 @@ function syncHud() {
  view.selectedKind=currentKind();
  view.selectedState=selected===null||selected*12+5>=entities.length?-1:entities[selected*12+5];
  view.tile=buildTile();
+ view.placementKind=placementState.active?placementState.kind:null;
+ view.placementValid=placementState.valid;
  hud.update(sim,view);
 }
 function startMatch(faction:0|1) {
  if(!sim||typeof sim.sim_match_init!=='function')return;
+ cancelPlacement();
  sim.sim_match_init(seed>>>0,faction===1?1:0);
  yawSteps=0;zoomIndex=1;
  worldTerrain=new Float32Array(0);
@@ -270,19 +276,101 @@ function startMatch(faction:0|1) {
 }
 function resetShowcase() {
  if(!sim)return;
+ cancelPlacement();
  worldSide=0;worldTerrain=new Float32Array(0);showcaseTerrain=new Float32Array(0);camX=16;camY=16;renderer.setShowcase();minimapInvalidate();
  sim.sim_init(seed>>>0);
  resetClock();selectDefault();
 }
 function command(op:number,a:number,b:number):number {
+ if(placementState.active){
+  cancelPlacement();
+  if(op===3){syncHud();return 1;}
+ }
  if(!sim||typeof sim.sim_command!=='function')return 0;
  const accepted=sim.sim_command(op>>>0,a>>>0,b>>>0);
  refreshEntities();updateSelection();syncHud();
  return accepted?1:0;
 }
-/** Place one HUD-requested building on the nearest simulation-approved tile.
- * Rejected probes are side-effect-free in the frozen command ABI; Rust remains
- * authoritative for full footprints, level terrain, bounds, and collisions. */
+/** One unpaid player intent. All acceptance, extents and builder ownership come
+ * from Rust. Nothing here steps the sim or issues a speculative build command. */
+const placementState:PlacementPreview={active:false,kind:null,tx:-1,ty:-1,valid:false};
+let placementSelection=0,placementBuilder=0,placementWidth=0,placementDepth=0,placementTick=-1;
+let placementPointerX:number|null=null,placementPointerY=0;
+function cancelPlacement():void {
+ placementState.active=false;placementState.kind=null;placementState.tx=-1;placementState.ty=-1;placementState.valid=false;
+ placementSelection=0;placementBuilder=0;placementPointerX=null;placementTick=-1;
+ renderer.setPlacement(placementState);
+}
+function placementTile():number {
+ const {tx,ty}=placementState,side=sideOf();
+ return tx<0||ty<0||tx>=side||ty>=side?side*side:tx+ty*side;
+}
+function refreshPlacement(force=false):void {
+ if(!placementState.active||!sim)return;
+ if(simMode()!==1||simOutcome()!==0||sim.sim_selected_token?.()!==placementSelection||
+  !sim.sim_builder_ready?.(placementSelection)||(placementBuilder!==0&&!sim.sim_builder_ready?.(placementBuilder))){cancelPlacement();return;}
+ if(!force&&placementTick===tick)return;
+ placementTick=tick;
+ const valid=sim.sim_can_place?.(placementState.kind!,placementTile())===1;
+ const changed=placementState.valid!==valid;placementState.valid=valid;
+ if(force||changed)renderer.setPlacement(placementState,placementWidth,placementDepth);
+}
+function setPlacementTile(tx:number,ty:number):void {
+ if(!placementState.active||!sim)return;
+ const changed=placementState.tx!==tx||placementState.ty!==ty;
+ placementState.tx=tx;placementState.ty=ty;
+ if(changed)placementBuilder=sim.sim_build_builder?.(placementTile())??0;
+ refreshPlacement(true);
+}
+function beginPlacement(kind:number):number {
+ cancelPlacement();
+ if(!sim||selected===null||simMode()!==1||simOutcome()!==0||!sim.sim_can_build?.(kind)){syncHud();return 0;}
+ // Older wasm keeps the original fallback. Current wasm always previews first.
+ if(!sim.sim_can_place||!sim.sim_build_extent||!sim.sim_selected_token||!sim.sim_build_builder||!sim.sim_builder_ready)return buildNearest(kind);
+ const sx=Math.floor(entities[selected*12]),sy=Math.floor(entities[selected*12+1]),side=sideOf();
+ let initial=-1;
+ // Ask the simulation for a nearby starting candidate (usable without hover).
+ for(let radius=0;radius<=26&&initial<0;radius++)for(let dy=-radius;dy<=radius&&initial<0;dy++)for(let dx=-radius;dx<=radius;dx++){
+  if(Math.max(Math.abs(dx),Math.abs(dy))!==radius)continue;
+  const x=sx+dx,y=sy+dy;
+  if(x>=0&&y>=0&&x<side&&y<side&&sim.sim_can_place(kind,x+y*side)){initial=x+y*side;break;}
+ }
+ // Preserve the old bounded fallback when Rust reports no nearby candidate.
+ if(initial<0)return buildNearest(kind);
+ placementState.active=true;placementState.kind=kind;
+ placementSelection=sim.sim_selected_token();
+ placementWidth=sim.sim_build_extent(kind,0);placementDepth=sim.sim_build_extent(kind,1);
+ setPlacementTile(initial%side,Math.floor(initial/side));syncHud();return 1;
+}
+/** Inverse of the orthographic tile projection. Intersect terrain caps from
+ * high to low; actor art never diverts a placement onto a building's roof. */
+function movePlacement(x:number,y:number):void {
+ if(!placementState.active)return;
+ placementPointerX=x;placementPointerY=y;
+ const rect=canvas.getBoundingClientRect();
+ if(x<rect.left||y<rect.top||x>=rect.right||y>=rect.bottom){setPlacementTile(-1,-1);return;}
+ const px=(x-rect.left)*RENDER_WIDTH/rect.width,py=(y-rect.top)*RENDER_HEIGHT/rect.height;
+ const diff=(px/2-240)*zooms[zoomIndex]/6,base=(py/2-136)*zooms[zoomIndex]/3.4641016;
+ const c=Math.round(Math.cos(yawSteps*Math.PI/2)),s=Math.round(Math.sin(yawSteps*Math.PI/2)),side=sideOf();
+ for(const z of [1,.5,0]){
+  const a=(base+2*z+diff)/2,b=(base+2*z-diff)/2;
+  const tx=Math.floor(camX+c*a+s*b),ty=Math.floor(camY-s*a+c*b);
+  if(z===0||(tx>=0&&ty>=0&&tx<side&&ty<side&&terrainAt(tx+ty*side)===z)){setPlacementTile(tx,ty);return;}
+ }
+}
+function reprojectPlacement():void {
+ if(placementPointerX!==null)movePlacement(placementPointerX,placementPointerY);
+}
+function worldTap(x:number,y:number):void {
+ if(!placementState.active){selectAt(x,y);return;}
+ movePlacement(x,y);
+ if(!placementState.active||!placementState.valid||!sim)return;
+ const accepted=sim.sim_command?.(1,placementState.kind!,placementTile());
+ if(accepted)cancelPlacement();
+ refreshEntities();updateSelection();syncHud();
+}
+/** Legacy nearest-site path remains available for old ABI/no-site fallback.
+ * The simulation's AI still uses its own unchanged nearest-site planner. */
 function buildNearest(kind:number):number {
  if(!sim||typeof sim.sim_command!=='function'||selected===null)return 0;
  const sx=entities[selected*12],sy=entities[selected*12+1];
@@ -389,7 +477,7 @@ function tileScreen(tx:number,ty:number):{x:number;y:number}|null {
  if(!rect.width||!rect.height)return null;
  const zoom=zooms[zoomIndex],c=Math.round(Math.cos(yawSteps*Math.PI/2)),s=Math.round(Math.sin(yawSteps*Math.PI/2));
  const side=sideOf();
- const z=worldSide>0&&tx>=0&&ty>=0&&tx<side&&ty<side?Math.max(0,worldTerrain[ty*side+tx]):1;
+ const z=worldSide>0&&tx>=0&&ty>=0&&tx<side&&ty<side?Math.max(0,worldView()[Math.floor(ty)*side+Math.floor(tx)]):1;
  const dx=tx-camX,dy=ty-camY;
  const rx=dx*c-dy*s,ry=dx*s+dy*c;
  const px=2*(240+6*(rx-ry)/zoom),py=2*(136+3.4641016*(rx+ry)/zoom-6.9282032*z/zoom);
@@ -400,7 +488,7 @@ window.__APP={ready:false,error:null,getState:()=>({touch:touchLayout,yawSteps,z
  mode:simMode(),outcome:simOutcome(),outcomeTick:simOutcomeTick(),player:simPlayer(),age:simAge(),ageProgress:simAgeProgress(),popUsed:simPopUsed(),popCap:simPopCap(),
  alloy:sim?sim.sim_alloy():0,charge:sim?sim.sim_charge():0,selectedKind:currentKind(),actions:hud.actions(),
  worldTiles:worldSide,worldMeters:worldSide*(sim&&typeof sim.sim_metres_per_tile==='function'?sim.sim_metres_per_tile():10),camera:{x:camX,y:camY},minimap:{open:!minimap.classList.contains('off')}}),
- rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,command,selectEntity,selectKind,kinds,entityScreen,tileScreen,terrainSample,entityProbe};
+ rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,command,selectEntity,selectKind,kinds,entityScreen,tileScreen,terrainSample,entityProbe,placement:()=>({...placementState})};
 const canvas=document.querySelector<HTMLCanvasElement>('#world')!;
 const viewport=document.querySelector<HTMLElement>('#viewport')!;
 const selection=document.querySelector<HTMLOutputElement>('#selection')!;
@@ -459,13 +547,16 @@ document.getElementById('rotate-left')!.addEventListener('click',()=>rotate(-1))
 document.getElementById('rotate-right')!.addEventListener('click',()=>rotate(1));
 document.getElementById('zoom-out')!.addEventListener('click',()=>zoomBy(-1));
 document.getElementById('zoom-in')!.addEventListener('click',()=>zoomBy(1));
-canvas.addEventListener('click',e=>{if(mousePanned){mousePanned=false;return;}selectAt(e.clientX,e.clientY);});
+window.addEventListener('keydown',e=>{if(e.key==='Escape'&&placementState.active){e.preventDefault();cancelPlacement();syncHud();}});
+canvas.addEventListener('click',e=>{if(mousePanned){mousePanned=false;return;}worldTap(e.clientX,e.clientY);});
 let mouseDown=false,mousePanned=false,mouseX=0,mouseY=0;
 canvas.addEventListener('pointerdown',e=>{
  if(e.pointerType!=='mouse')return;
+ if(placementState.active){movePlacement(e.clientX,e.clientY);return;}
  mouseDown=true;mousePanned=false;mouseX=e.clientX;mouseY=e.clientY;
 });
 window.addEventListener('pointermove',e=>{
+ if(e.pointerType==='mouse'&&placementState.active){movePlacement(e.clientX,e.clientY);return;}
  if(!mouseDown||e.pointerType!=='mouse')return;
  const dx=e.clientX-mouseX,dy=e.clientY-mouseY;mouseX=e.clientX;mouseY=e.clientY;
  if(!mousePanned&&Math.abs(dx)+Math.abs(dy)>3)mousePanned=true;
@@ -489,6 +580,7 @@ canvas.addEventListener('pointerdown',e=>{
  if(activePointers.size===0){resetGesture();downX=e.clientX;downY=e.clientY;downAt=e.timeStamp;}
  activePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
  canvas.setPointerCapture(e.pointerId);
+ if(placementState.active&&activePointers.size===1)movePlacement(e.clientX,e.clientY);
  if(activePointers.size===2){
   pinched=true;pinchStartZoom=zoomIndex;
   const distance=pointerDistance();pinchStartDist=distance<20?0:distance;
@@ -501,18 +593,19 @@ canvas.addEventListener('pointermove',e=>{
  // A one-finger drag past the tap threshold pans the world; a short touch that
  // stays inside the threshold still selects (MATCH_SPEC §7).
  const moveX=e.clientX-point.x,moveY=e.clientY-point.y;
- if(activePointers.size===1&&!pinched&&(panning||Math.hypot(e.clientX-downX,e.clientY-downY)>12)){panning=panBy(moveX,moveY);}
+ if(!placementState.active&&activePointers.size===1&&!pinched&&(panning||Math.hypot(e.clientX-downX,e.clientY-downY)>12)){panning=panBy(moveX,moveY);}
  point.x=e.clientX;point.y=e.clientY;
+ if(placementState.active&&activePointers.size===1&&!pinched)movePlacement(e.clientX,e.clientY);
  if(activePointers.size===2&&pinched&&pinchStartDist>=20){
   const ratio=pointerDistance()/pinchStartDist;
   const steps=Math.round(Math.log(ratio)/Math.log(1.4));
-  zoomIndex=Math.max(0,Math.min(3,pinchStartZoom+steps));
+  zoomIndex=Math.max(0,Math.min(3,pinchStartZoom+steps));reprojectPlacement();
  }
 });
 canvas.addEventListener('pointerup',e=>{
  if(e.pointerType==='mouse'||!activePointers.has(e.pointerId))return;
  e.preventDefault();
- if(activePointers.size===1&&!pinched&&!panning&&Math.hypot(e.clientX-downX,e.clientY-downY)<=12&&e.timeStamp-downAt<=400)selectAt(e.clientX,e.clientY);
+ if(activePointers.size===1&&!pinched&&!panning&&Math.hypot(e.clientX-downX,e.clientY-downY)<=12&&e.timeStamp-downAt<=400)worldTap(e.clientX,e.clientY);
  activePointers.delete(e.pointerId);
  if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId);
  if(activePointers.size===0)resetGesture();

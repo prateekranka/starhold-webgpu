@@ -8,7 +8,7 @@
     {
       "name": "instance-budget",
       "pass": true,
-      "detail": "triangles=116293 saturated=false"
+      "detail": "triangles=116281 saturated=false"
     },
     {
       "name": "touch-layout",
@@ -78,7 +78,7 @@
     {
       "name": "fps>=59-vsync-locked",
       "pass": true,
-      "detail": "fps=60.3 p95=16.9ms max=17.6ms"
+      "detail": "fps=60.3 p95=17.0ms max=17.5ms"
     },
     {
       "name": "hud-skirmish-entry",
@@ -123,7 +123,7 @@
     {
       "name": "lod-budget",
       "pass": true,
-      "detail": "instances per zoom 0.67:3364(60.3fps,p95=16.9ms) 0.80:4114(60.3fps,p95=17.0ms) 1.00:5683(60.3fps,p95=16.9ms) 1.33:9440(60.3fps,p95=17.0ms)"
+      "detail": "instances per zoom 0.67:3364(60.3fps,p95=17.6ms) 0.80:4114(60.3fps,p95=18.3ms) 1.00:5683(60.3fps,p95=17.3ms) 1.33:9440(60.3fps,p95=17.3ms)"
     },
     {
       "name": "minimap-present",
@@ -159,6 +159,11 @@
       "name": "bar-hit-test",
       "pass": true,
       "detail": "visible controls=9 mis-hits=0 advanceCentre->hud-advance"
+    },
+    {
+      "name": "placement-preview",
+      "pass": true,
+      "detail": "entryUnpaid=true drawn=true readOnly=true moved=true invalid=true invalidUnpaid=true valid=true budget=true commit=true targets=true replaced=true cancel=true escape=true selection=true reset=true ai=true builderLost=true cost=24a/0c preview=60.3fps,p95=17.2ms"
     },
     {
       "name": "cancel-order",
@@ -212,6 +217,8 @@
     "shot-main.png",
     "shot-rotated.png",
     "shot-match-hud.png",
+    "placement-invalid.png",
+    "placement-valid.png",
     "shot-match-end.png"
   ],
   "errors": [],
@@ -226,10 +233,18 @@
   "fps": {
     "fps": 60.25,
     "frames": 241,
-    "mean_ms": 16.645643154120545,
+    "mean_ms": 16.653526970954356,
     "p50_ms": 16.699999809265137,
-    "p95_ms": 16.90000009536743,
-    "max_ms": 17.600000143051147
+    "p95_ms": 17,
+    "max_ms": 17.5
+  },
+  "placementFps": {
+    "fps": 60.25,
+    "frames": 241,
+    "mean_ms": 16.62448132780083,
+    "p50_ms": 16.699999809265137,
+    "p95_ms": 17.200000047683716,
+    "max_ms": 23
   },
   "matchErrors": []
 }

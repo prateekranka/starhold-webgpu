@@ -41,6 +41,11 @@ export interface SimAbi {
   sim_roster_ptr?(): number;
   sim_can_train?(kind: number): number;
   sim_can_build?(kind: number): number;
+  sim_can_place?(kind: number, tile: number): number;
+  sim_build_extent?(kind: number, axis: number): number;
+  sim_selected_token?(): number;
+  sim_build_builder?(tile: number): number;
+  sim_builder_ready?(token: number): number;
   /** Expansive world (LARGEMAP_SPEC §4): 0 when the showcase is running. */
   sim_world_size?(): number;
   sim_world_ptr?(): number;
@@ -81,6 +86,8 @@ export interface HudView {
   selectedKind: number | null;
   selectedState: number;
   tile: number;                // placement tile for a build command
+  placementKind: number | null;
+  placementValid: boolean;
 }
 
 export interface HudWiring {
@@ -256,7 +263,7 @@ export class Hud {
     }
     this.view = {
       ready: false, match: false, mode: 0, outcome: 0, player: 0, age: 0, ageProgress: 1, ageCost: 0, ageCostCharge: 0,
-      alloy: 0, charge: 0, popUsed: 0, popCap: 0, selected: null, selectedKind: null, selectedState: -1, tile: 0,
+      alloy: 0, charge: 0, popUsed: 0, popCap: 0, selected: null, selectedKind: null, selectedState: -1, tile: 0, placementKind: null, placementValid: false,
     };
     // One delegated listener: the action buttons are rebuilt per selection.
     pick('hud-bar').addEventListener('click', (event) => this.click(event));
@@ -331,12 +338,12 @@ export class Hud {
     // Right: context actions for the current selection, from the roster table.
     // A construction site in progress also offers CANCEL, so the cancel flag is
     // part of the key that decides whether the button set must be rebuilt.
-    const cancelable = inMatch && view.selectedState === State.Construct;
-    const key = `${match ? 1 : 0}|${inMatch ? 1 : 0}|${view.player}|${view.selected ?? -1}|${view.selectedKind ?? -1}|${view.selectedState}`;
+    const cancelable = inMatch && (view.selectedState === State.Construct || view.placementKind !== null);
+    const key = `${match ? 1 : 0}|${inMatch ? 1 : 0}|${view.player}|${view.selected ?? -1}|${view.selectedKind ?? -1}|${view.selectedState}|${view.placementKind}`;
     if (key !== this.key || cancelable !== this.cancelable) {
       this.key = key;
       this.cancelable = cancelable;
-      this.rows = inMatch ? candidates(sim, view) : EMPTY;
+      this.rows = inMatch ? candidates(sim, view).filter((row) => row.kind !== view.placementKind) : EMPTY;
       this.page = 0;
       this.build();
     }
@@ -349,6 +356,7 @@ export class Hud {
   private statusText(match: boolean, inMatch: boolean): string {
     if (!match) return 'MATCH UNAVAILABLE';
     if (!inMatch) return '';
+    if (this.view.placementKind !== null) return this.view.placementValid ? 'TAP TO BUILD' : 'BLOCKED';
     if (this.view.selectedKind === null) return 'NO SELECTION';
     if (this.cancelable) return 'UNDER CONSTRUCTION';
     return this.rows.length === 0 ? 'NO ACTIONS' : '';
@@ -374,14 +382,16 @@ export class Hud {
       name.textContent = 'CANCEL';
       const cost = document.createElement('span');
       cost.className = 'c';
-      cost.textContent = 'REFUND';
+      cost.textContent = this.view.placementKind !== null ? 'NO COST' : 'REFUND';
       cancel.append(name, cost);
-      cancel.setAttribute('aria-label', 'Cancel this construction, full refund');
-      cancel.title = 'Cancel this construction, full refund';
+      const cancelLabel = this.view.placementKind !== null ? 'Cancel placement, no cost' : 'Cancel this construction, full refund';
+      cancel.setAttribute('aria-label', cancelLabel);
+      cancel.title = cancelLabel;
       this.list.append(cancel);
     }
-    const start = this.page * PAGE_SIZE;
-    const stop = Math.min(start + PAGE_SIZE, this.rows.length);
+    const pageSize = this.pageSize();
+    const start = this.page * pageSize;
+    const stop = Math.min(start + pageSize, this.rows.length);
     for (let i = start; i < stop; i++) {
       const row = this.rows[i];
       const build = row.klass === 0;
@@ -406,7 +416,7 @@ export class Hud {
       this.buildFlags.push(build);
       this.enabledFlags.push(false);
     }
-    const pages = Math.max(1, Math.ceil(this.rows.length / PAGE_SIZE));
+    const pages = Math.max(1, Math.ceil(this.rows.length / this.pageSize()));
     this.setOff(this.prev, pages <= 1);
     this.setOff(this.next, pages <= 1);
     this.prev.disabled = pages <= 1 || this.page <= 0;
@@ -429,8 +439,10 @@ export class Hud {
     }
   }
 
+  private pageSize(): number { return this.cancelable ? PAGE_SIZE - 1 : PAGE_SIZE; }
+
   private turn(delta: number): void {
-    const pages = Math.max(1, Math.ceil(this.rows.length / PAGE_SIZE));
+    const pages = Math.max(1, Math.ceil(this.rows.length / this.pageSize()));
     const page = Math.min(pages - 1, Math.max(0, this.page + delta));
     if (page === this.page) return;
     this.page = page;

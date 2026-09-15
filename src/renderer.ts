@@ -12,6 +12,7 @@ const wave2Units=new Set([25,26,30,32,33,34,35,36]);
 const combatUnits=new Set([21,22,23,25,26,30,31,34,36]);
 const effectKinds=new Set([50,51,52]);
 const maxHealth:Readonly<Record<number,number>>={10:1500,11:600,12:600,13:600,14:600,15:600,16:900,17:600,20:70,21:180,22:180,23:110,24:150,25:100,26:360,30:80,31:240,32:60,33:150,34:150,35:120,36:90,60:1350,61:525,62:500,65:450,63:525,64:650,66:750,67:550};
+export interface PlacementPreview {active:boolean;kind:number|null;tx:number;ty:number;valid:boolean}
 export const RENDER_WIDTH=960, RENDER_HEIGHT=540;
 const GRID=2;
 const CONTOUR_TILE=16, CONTOUR_COLUMNS=Math.ceil(RENDER_WIDTH/CONTOUR_TILE), CONTOUR_ROWS=Math.ceil(RENDER_HEIGHT/CONTOUR_TILE);
@@ -116,6 +117,9 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  }
  if screen == -3. || screen == -4. {o.color=palette[u32(pigment)];}
  if screen == -4. {o.unit=1.;o.rim=vec2f(0.);}
+ // Placement is a world-projected, stippled overlay, not an actor. Keep it
+ // visible over occupied sites; the ordinary HUD still has nearer depth.
+ if screen == -12. {o.position.z=.0002;o.color=palette[u32(pigment)];o.unit=1.;}
  } return o;
 }
 struct Fragment { @location(0) color:vec4f, @location(1) mask:vec4f }
@@ -250,9 +254,42 @@ export class Renderer {
  private actorData=new Float32Array(MAX*4);
  private actorBuffer:any;
  readonly camera=new Float32Array([1,0,1,0,16,16,0,0]);
- readonly stats={drawCalls:2,triangles:0,saturated:false,degraded:false};
+ readonly stats={drawCalls:2,triangles:0,saturated:false,degraded:false,placementTiles:0};
  time=0;count=0;staticCount=0;worldCount=0;selected:number|null=null;
  private emissiveCount=0;private staticEmissiveCount=0;private dropped=0;
+ private placementKey='';private placementCount=0;private placementTileCount=0;
+ private placementData=new Float32Array(512*STRIDE);
+ /** Cache footprint instances on change. No per-frame geometry rebuild or allocation. */
+ setPlacement(preview:PlacementPreview,width=0,depth=0) {
+  const key=preview.active?`${preview.kind}:${preview.tx}:${preview.ty}:${preview.valid}:${width}:${depth}`:'';
+  if(key===this.placementKey)return;
+  this.placementKey=key;this.placementCount=0;this.placementTileCount=0;
+  if(!preview.active||width<=0||depth<=0)return;
+  const left=preview.tx+.5-width/2,right=left+width,top=preview.ty+.5-depth/2,bottom=top+depth;
+  for(let y=Math.floor(top);y<Math.ceil(bottom);y++)for(let x=Math.floor(left);x<Math.ceil(right);x++){
+   this.placementTileCount++;
+   const x0=Math.max(left,x),x1=Math.min(right,x+1),y0=Math.max(top,y),y1=Math.min(bottom,y+1);
+   const w=x1-x0,d=y1-y0,z=Math.max(0,this.ground(x,y))+.06;
+   const plane=(cx:number,cy:number,sx:number,sy:number)=>{
+    const q=this.placementCount++*STRIDE;
+    this.placementData[q]=cx;this.placementData[q+1]=cy;this.placementData[q+2]=z;
+    this.placementData[q+3]=sx;this.placementData[q+4]=sy;this.placementData[q+5]=0;
+    this.placementData[q+6]=preview.valid?14:25;this.placementData[q+7]=-12;
+   };
+   // Open tile windows provide translucency through geometry, not fragment
+   // discard (which would disable early depth rejection for the entire scene).
+   plane((x0+x1)/2,y0+.08,w,.16);plane((x0+x1)/2,y1-.08,w,.16);
+   plane(x0+.08,(y0+y1)/2,.16,d);plane(x1-.08,(y0+y1)/2,.16,d);
+   if(preview.valid){
+    for(const a of [.3,.7])for(const b of [.3,.7])plane(x0+w*a,y0+d*b,w*.24,d*.24);
+   }else{
+    for(let j=0;j<5;j++){
+     const t=.2+j*.15;plane(x0+w*t,y0+d*t,w*.18,d*.18);
+     if(j!==2)plane(x0+w*t,y1-d*t,w*.18,d*.18);
+    }
+   }
+  }
+ }
   // Expansive-world view state. The showcase keeps side 32 and centre (16,16),
   // so every projection stays byte-identical for it.
   private terrainSide=32;
@@ -1556,7 +1593,15 @@ export class Renderer {
   // supplies its one-pixel ink gap. Small segments now retain endpoint 22.
   if(this.selected!==null){const o=this.selected*12,r=buildingFootprints[e[o+4]]?(cinderBuildings.has(e[o+4])?Math.max(...buildingFootprints[e[o+4]])/2+.3:e[o+4]===10?2.5:e[o+4]===16?1.5:1.8):e[o+4]===20?.65:e[o+4]===31?1.65:1.35;for(let j=0;j<24;j++){if(j%3===Math.floor(this.time/.6)%2)continue;const a=j*Math.PI/12;this.box(e[o]+Math.cos(a)*r,e[o+1]+Math.sin(a)*r,this.ground(e[o],e[o+1])+.08,.2,.2,.035,54);}}
   this.ambient(this.time);
-  this.worldCount=this.count;this.hud(e,alloy,charge);
+  this.worldCount=this.count;
+  const previewCount=Math.min(this.placementCount,MAX-this.count);
+  this.stats.placementTiles=previewCount?this.placementTileCount:0;
+  if(previewCount){
+   for(let i=0;i<previewCount*STRIDE;i++)this.data[this.count*STRIDE+i]=this.placementData[i];
+   this.owners.fill(-1,this.count,this.count+previewCount);this.count+=previewCount;
+  }
+  this.dropped+=this.placementCount-previewCount;
+  this.hud(e,alloy,charge);
   this.markContours(yaw,zoom);
   this.camera[0]=Math.round(Math.cos(yaw*Math.PI/2));this.camera[1]=Math.round(Math.sin(yaw*Math.PI/2));this.camera[2]=1/zoom;this.camera[4]=this.camX;this.camera[5]=this.camY;
   const d=this.device;d.queue.writeBuffer(this.uniform,0,this.camera);d.queue.writeBuffer(this.buffer,0,this.data.buffer,0,this.count*32);d.queue.writeBuffer(this.actorBuffer,0,this.actorData.buffer,0,this.count*16);

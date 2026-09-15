@@ -8,7 +8,7 @@
     {
       "name": "instance-budget",
       "pass": true,
-      "detail": "triangles=116281 saturated=false"
+      "detail": "triangles=116257 saturated=false"
     },
     {
       "name": "portrait-playable",
@@ -128,7 +128,7 @@
     {
       "name": "lod-budget",
       "pass": true,
-      "detail": "instances per zoom 0.67:3364(60.3fps,p95=16.9ms) 0.80:4113(60.3fps,p95=16.9ms) 1.00:5683(60.3fps,p95=17.0ms) 1.33:9440(60.3fps,p95=17.0ms)"
+      "detail": "instances per zoom 0.67:3364(60.3fps,p95=17.1ms) 0.80:4113(60.3fps,p95=17.2ms) 1.00:5683(60.3fps,p95=17.3ms) 1.33:9440(60.3fps,p95=17.5ms)"
     },
     {
       "name": "minimap-present",
@@ -166,6 +166,11 @@
       "detail": "visible controls=9 mis-hits=0 advanceCentre->hud-advance"
     },
     {
+      "name": "placement-preview",
+      "pass": true,
+      "detail": "entryUnpaid=true drawn=true readOnly=true moved=true invalid=true invalidUnpaid=true valid=true budget=true commit=true targets=true replaced=true cancel=true escape=true selection=true reset=true ai=true builderLost=true cost=24a/0c preview=60.3fps,p95=17.4ms"
+    },
+    {
       "name": "cancel-order",
       "pass": true,
       "detail": "FREIGHT COURT24A site k11 refund=24a alloy 56->80 control=76x44 siteGone=true"
@@ -188,7 +193,7 @@
     {
       "name": "build-site",
       "pass": true,
-      "detail": "[exact tap kind 20 f0 @362,256] action=\"Build FREIGHT COURT, 24 alloy FREIGHT COURT24A\" kind=11 roster=24a/0c sitePlaced=true entities 68->69 alloy 80->56 charge 40->41 costSpent=true"
+      "detail": "[exact tap kind 20 f0 @362,255] action=\"Build FREIGHT COURT, 24 alloy FREIGHT COURT24A\" kind=11 roster=24a/0c sitePlaced=true entities 68->69 alloy 80->56 charge 40->41 costSpent=true"
     },
     {
       "name": "no-console-errors",
@@ -219,6 +224,8 @@
     "shot-main.png",
     "shot-rotated.png",
     "shot-match-hud.png",
+    "placement-invalid.png",
+    "placement-valid.png",
     "shot-match-end.png"
   ],
   "errors": [],
@@ -233,10 +240,18 @@
   "fps": {
     "fps": 60.25,
     "frames": 241,
-    "mean_ms": 16.62406639043721,
-    "p50_ms": 16.700000047683716,
+    "mean_ms": 16.646058091484164,
+    "p50_ms": 16.699999809265137,
     "p95_ms": 16.90000009536743,
     "max_ms": 17.40000009536743
+  },
+  "placementFps": {
+    "fps": 60.25,
+    "frames": 241,
+    "mean_ms": 16.631535269907403,
+    "p50_ms": 16.700000047683716,
+    "p95_ms": 17.399999856948853,
+    "max_ms": 22.700000047683716
   },
   "matchErrors": []
 }

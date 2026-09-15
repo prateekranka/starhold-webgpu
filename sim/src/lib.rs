@@ -658,10 +658,13 @@ impl Sim {
         }
         nearest
     }
+    // Read-only preview shares the complete acceptance path with build().
+    fn can_place(&self, f: usize, kind: u32, tile: u32, selected: usize) -> bool {
+        self.can_build(f, kind, selected) && roster(kind).is_some_and(|k| self.placeable(k, tile))
+    }
     fn build(&mut self, f: usize, kind: u32, tile: u32, selected: usize) -> bool {
-        if !self.can_build(f, kind, selected) { return false; }
+        if !self.can_place(f, kind, tile, selected) { return false; }
         let k = roster(kind).unwrap();
-        if !self.placeable(k, tile) { return false; }
         let side = self.side();
         let (x, y) = ((tile % side) as f32 + 0.5, (tile / side) as f32 + 0.5);
         let Some(builder) = self.nearest_builder(f, x, y) else { return false; };
@@ -1253,6 +1256,26 @@ impl Sim {
 #[no_mangle] pub extern "C" fn sim_command(op: u32, a: u32, b: u32) -> u32 { SIM.with(|s| s.borrow_mut().command(op, a, b) as u32) }
 #[no_mangle] pub extern "C" fn sim_roster_count() -> u32 { KINDS.len() as u32 }
 #[no_mangle] pub extern "C" fn sim_roster_ptr() -> *const f32 { ROSTER.as_ptr() }
+// Placement readbacks never pack, step, select or spend. Tokens are stable actor
+// slots + 1 (zero = none), unlike the compact snapshot indices used by the HUD.
+#[no_mangle] pub extern "C" fn sim_selected_token() -> u32 { SIM.with(|s| {
+    let s = s.borrow(); if s.selected < CAP && s.entities[s.selected].active { s.selected as u32 + 1 } else { 0 }
+}) }
+#[no_mangle] pub extern "C" fn sim_can_place(kind: u32, tile: u32) -> u32 { SIM.with(|s| {
+    let s = s.borrow(); (s.mode == 1 && s.can_place(s.game.player, kind, tile, s.selected)) as u32
+}) }
+#[no_mangle] pub extern "C" fn sim_build_extent(kind: u32, axis: u32) -> f32 {
+    roster(kind).filter(|k| k.klass == 0).map_or(0., |k| if axis == 0 { k.width } else { k.depth })
+}
+#[no_mangle] pub extern "C" fn sim_build_builder(tile: u32) -> u32 { SIM.with(|s| {
+    let s = s.borrow(); let side = s.side();
+    if s.mode != 1 || tile >= side * side || !s.ready_builder(s.game.player, s.selected) { return 0; }
+    s.nearest_builder(s.game.player, (tile % side) as f32 + 0.5, (tile / side) as f32 + 0.5)
+        .map_or(0, |id| id as u32 + 1)
+}) }
+#[no_mangle] pub extern "C" fn sim_builder_ready(token: u32) -> u32 { SIM.with(|s| {
+    let s = s.borrow(); (s.mode == 1 && token > 0 && s.ready_builder(s.game.player, token.wrapping_sub(1) as usize)) as u32
+}) }
 #[no_mangle] pub extern "C" fn sim_can_train(kind: u32) -> u32 { SIM.with(|s| {
     let s = s.borrow(); (s.mode == 1 && s.can_train(s.game.player, kind, s.selected)) as u32
 }) }
