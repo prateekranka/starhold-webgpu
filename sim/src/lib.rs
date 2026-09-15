@@ -52,14 +52,29 @@ fn wfbm(seed:u32,x:f32,y:f32)->f32 {
     while i<4 {sum+=amp*wnoise(seed.wrapping_add(i.wrapping_mul(7919)),x*freq,y*freq);norm+=amp;amp*=0.5;freq*=2.;i+=1;}
     sum/norm
 }
-/// Terrain height for one world tile: -1 void, else the three authored levels.
-/// Land is terraced, never smooth, so the existing art pipeline stays valid.
+/// The wild country retains its seeded coast and terrace variety. Fine detail
+/// modulates broad landforms, rather than cutting an equal amount everywhere.
 fn world_gen(seed:u32,tx:usize,ty:usize)->f32 {
     let x=tx as f32;let y=ty as f32;
     let big=wfbm(seed,x/104.,y/104.);
-    let fine=wfbm(seed^0x51ED_2701,x/19.,y/19.);
-    let h=big*0.70+fine*0.30;
+    let fine=wnoise(seed^0x51ED_2701,x/19.,y/19.);
+    let h=big*0.82+fine*0.18;
     if h<0.436 {-1.} else if h<0.472 {0.} else if h<0.524 {0.5} else {1.}
+}
+/// Composition anchors index starting slots, never factions. Prepare these
+/// sites before flat_site searches them. Renderer.worldRoutes shares this layout.
+fn world_start(side:usize)->(i32,i32) {
+    if side==0 {(WORLD as i32/5,WORLD as i32/3)}else{(WORLD as i32*4/5,WORLD as i32*2/3)}
+}
+fn world_route(side:usize,lane:usize)->[(f32,f32);6] {
+    let (x,y)=world_start(side);let (x,y)=(x as f32,y as f32);
+    let m=if side==0 {1.}else{-1.};let mid=WORLD as f32/2.;
+    if lane==0 {[(x,y),(x,y-38.*m),(x+90.*m,y-32.*m),(mid,mid-64.*m),(mid,mid-24.*m),(mid,mid)]}
+    else {[(x,y),(x-38.*m,y),(x-48.*m,y+70.*m),(x+52.*m,y+83.*m),(mid-64.*m,mid+64.*m),(mid,mid)]}
+}
+fn world_outcrop(side:usize,group:usize)->(i32,i32) {
+    let (x,y)=world_start(side);let m=if side==0 {1}else{-1};
+    let (dx,dy)=[(0,-44),(-48,70),(-44,0)][group];(x+dx*m,y+dy*m)
 }
 impl Sim {
  /// Height under a point, from the world heightfield in a world match and from
@@ -101,6 +116,70 @@ impl Sim {
    }
   }
   None
+ }
+ /// Bounded landform stamps, built only at match init. No runtime terrain work.
+ fn world_ridge(&mut self,cx:i32,cy:i32,length:i32,vertical:bool,seed:u32) {
+  // Long unbroken core, two terraces per flank, tapered asymmetric ends. The
+  // little end variation comes from the seed, not per-tile edge pinholes.
+  let half=length/2;let tip=4+(seed%5) as i32;
+  for along in -half-8..=half+8 {for across in -9..=9i32 {
+   let end=(along.abs()-half).max(0);
+   let d=across.abs()+end*2+if along < -half+tip {1}else{0};
+   if d>9 {continue;}
+   let (x,y)=if vertical {(cx+across,cy+along)}else{(cx+along,cy+across)};
+   if x<1||y<1||x>=WORLD as i32-1||y>=WORLD as i32-1 {continue;}
+   self.world[y as usize*WORLD+x as usize]=if d<=2 {1.}else if d<=5 {0.5}else{0.};
+  }}
+ }
+ fn world_corridor(&mut self,a:(f32,f32),b:(f32,f32),radius:f32) {
+  let (dx,dy)=(b.0-a.0,b.1-a.1);let len=dx*dx+dy*dy;
+  let x0=(a.0.min(b.0)-radius).max(0.) as usize;let x1=(a.0.max(b.0)+radius).min((WORLD-1) as f32) as usize;
+  let y0=(a.1.min(b.1)-radius).max(0.) as usize;let y1=(a.1.max(b.1)+radius).min((WORLD-1) as f32) as usize;
+  for y in y0..=y1 {for x in x0..=x1 {
+   let t=(((x as f32-a.0)*dx+(y as f32-a.1)*dy)/len).clamp(0.,1.);
+   let d=(x as f32-a.0-t*dx).powi(2)+(y as f32-a.1-t*dy).powi(2);
+   // The road and its shoulders have the SAME height. Shade, not a raised
+   // ribbon of geometry, tracks the 3-tile-wide travelled core in the renderer.
+   if d<=radius*radius {self.world[y*WORLD+x]=0.5;}
+  }}
+ }
+ fn compose_world(&mut self,seed:u32) {
+  for side in 0..2 {
+   let (bx,by)=world_start(side);let m=if side==0 {1}else{-1};
+   // No canyon in the entire 121x121 opening box, including its corners.
+   // Outside the quiet core this preserves the existing terraces and rises.
+   for y in by-64..=by+64 {for x in bx-64..=bx+64 {
+    let i=y as usize*WORLD+x as usize;self.world[i]=self.world[i].max(0.);
+   }}
+   for (j,(dx,dy,len,vertical)) in [(0,-36,54,false),(-36,0,48,true),(38,22,54,true)].iter().enumerate() {
+    self.world_ridge(bx+dx*m,by+dy*m,*len,*vertical,whash(seed,side as i32,j as i32));
+   }
+   // Ore outcrops occupy a low shelf at a ridge foot, not isolated crystals
+   // floating over whatever noise happened to land under a random coordinate.
+   for group in 0..3 {
+    let (x,y)=world_outcrop(side,group);
+    self.world_ridge(x+7*m,y,28,true,whash(seed,x,y));
+   }
+   // A 62–68 tile clearing, not a square terrace filling the whole camera.
+   // A radius-31 disc is guaranteed flat; noise only moves its outer boundary.
+   for y in by-34..=by+34 {for x in bx-34..=bx+34 {
+    let d=((x-bx)*(x-bx)+(y-by)*(y-by)) as f32;
+    let radius=31.+3.*wnoise(seed,x as f32/12.,y as f32/12.);
+    if d<=radius*radius {
+     self.world[y as usize*WORLD+x as usize]=0.5;
+    }
+   }}
+  }
+  // Two contested middle outcrops and two remote provinces, all clustered.
+  for (j,(x,y)) in [(488,472),(544,550),(128,800),(896,224)].iter().enumerate() {
+   self.world_ridge(*x+7,*y,40,true,whash(seed,j as i32,73));
+  }
+  // Stamp the connected network last: neither ridges nor ore can sever it.
+  // Broad shoulders bridge canyons; a three-tile core is visibly distinct.
+  for side in 0..2 {for lane in 0..2 {
+   let points=world_route(side,lane);
+   for j in 0..points.len()-1 {self.world_corridor(points[j],points[j+1],7.);}
+  }}
  }
  fn random(&mut self)->u32 { let mut x=self.rng; x^=x<<13;x^=x>>17;x^=x<<5;self.rng=x;x }
  // The legacy initializer always adds slot zero first. Reset its mode here so
@@ -242,6 +321,7 @@ s.pack();});}
 // Match mode. The showcase tick and initializer above are deliberately frozen.
 const MATCH_ACTORS: usize = 120; // Remaining slots are bounded projectiles/wrecks.
 const ROSTER_STRIDE: usize = 8;
+const OUTCOME_GRACE: u32 = 60; // One full second of continuous absence, at 60 Hz.
 #[derive(Clone, Copy)]
 struct Kind {
     kind: u32, faction: usize, tier: u32, klass: u32, producer: u32,
@@ -333,12 +413,14 @@ struct Match {
     player: usize, sides: [Side; 2], jobs: [Production; CAP], orders: [Order; CAP],
     homes: [(f32, f32); CAP], cooldowns: [u32; CAP], generations: [u32; CAP],
     defenders: [usize; 2], next_raid: u32, waves: u32, base: [(f32, f32); 2],
+    outcome: u32, outcome_tick: u32, empty_since: [u32; 2],
 }
 impl Match {
     const EMPTY: Self = Self { player: 0, sides: [Side::START; 2],
         jobs: [Production::EMPTY; CAP], orders: [Order::Idle; CAP],
         homes: [(0., 0.); CAP], cooldowns: [0; CAP], generations: [0; CAP],
-        defenders: [CAP; 2], next_raid: 150 * 60, waves: 0, base: [(0., 0.); 2] };
+        defenders: [CAP; 2], next_raid: 150 * 60, waves: 0, base: [(0., 0.); 2],
+        outcome: 0, outcome_tick: 0, empty_since: [0; 2] };
 }
 impl Sim {
     fn match_add(&mut self, id: usize, kind: u32, x: f32, y: f32, faction: usize) {
@@ -398,8 +480,9 @@ impl Sim {
                 if land >= 6 { self.world[ty * WORLD + tx] = lowest; }
             } }
         }
-        // Both starts belong on flat land, far apart: opposite thirds of the map.
-        let targets = [(WORLD as i32 / 5, WORLD as i32 / 3), (WORLD as i32 * 4 / 5, WORLD as i32 * 2 / 3)];
+        self.compose_world(world_seed);
+        // Both starts belong in prepared clearings, far apart on opposite thirds.
+        let targets = [world_start(0), world_start(1)];
         for side in 0..2 {
             // Base consumers and the ABI index by faction, not starting slot.
             let f = if side == 0 { self.game.player } else { 1 - self.game.player };
@@ -430,7 +513,8 @@ impl Sim {
                 self.match_add(base + 3 + j, kinds[3], x, y, f);
                 if j < 4 { self.game.orders[base + 3 + j] = Order::Gather; }
             }
-            self.match_add(base + 9, kinds[4], buildings[1].0 + 1.5 * m, buildings[1].1, f);
+            // Haulers load on the outer Court apron, away from the worker seam.
+            self.match_add(base + 9, kinds[4], buildings[1].0 - 1.5 * m, buildings[1].1, f);
             for j in 0..2 {
                 let (x, y) = (hx + 4. * m, hy - 2. + j as f32 * 4.);
                 self.match_add(base + 10 + j, kinds[5], x, y, f);
@@ -439,8 +523,8 @@ impl Sim {
             }
             self.match_add(base + 12, kinds[6], buildings[0].0, buildings[0].1, f);
         }
-        // Crystal fields: two base aprons feed the early economy, then sixteen
-        // deposits spread over the whole world so 10 km is not an empty plain.
+        // Opening stock stays six nodes per base at the same capacity; additional
+        // deposits are compact groups on the composed route/ridge-foot shelves.
         for j in 0..12 {
             let jitter = (self.random() % 200) as f32 / 1000.;
             let holder = if j < 6 { 0 } else { 1 };
@@ -451,18 +535,24 @@ impl Sim {
             let k = j % 6;
             // South-apron seam beside the workers, not behind the Court and not
             // inside its 3x3 footprint (x hx-5.5..hx-2.5 at y hy+2.5..hy+5.5).
-            // Offsets stay inside the 13x13 flat patch the site search guarantees.
-            let x = hx + (-1. + k as f32 * 1.2) * m;
-            let y = hy + 5.5 + jitter * 0.2;
+            // The composed clearing, not a tiny site-search patch, holds this pocket.
+            // The outer loading pocket gives the hauler a separate mine stop.
+            // Keep the five south-seam stops fixed so worker approaches remain
+            // familiar and small silhouettes do not merge with the hauler.
+            let (dx,dy)=if k<5 {(-1.+k as f32*1.2,5.5)}else{(-7.,4.)};
+            let x = hx + dx * m;
+            let y = hy + dy + jitter * 0.2;
             self.match_add(26 + j, 40, x, y, 2);
             self.entities[26 + j].data[10] = 160.;
         }
-        for j in 0..16 {
-            let ax = (whash(world_seed, j as i32 * 7 + 3, 11) % WORLD as u32) as i32;
-            let ay = (whash(world_seed, 29, j as i32 * 13 + 5) % WORLD as u32) as i32;
-            if let Some((x, y)) = self.land_near(ax, ay, 40) {
-                self.match_add(38 + j, 40, x, y, 2);
-                self.entities[38 + j].data[10] = 160.;
+        for group in 0..10 {
+            let (ax,ay)=if group<6 {world_outcrop(group/3,group%3)}
+                else {[(488,472),(544,550),(128,800),(896,224)][group-6]};
+            for (j,(dx,dy)) in [(-2,-3),(1,0),(-1,4)].iter().enumerate() {
+                if let Some((x,y))=self.land_near(ax+dx,ay+dy,12) {
+                    let id=38+group*3+j;
+                    self.match_add(id,40,x,y,2);self.entities[id].data[10]=160.;
+                }
             }
         }
         self.pack();
@@ -1055,6 +1145,30 @@ impl Sim {
             self.game.next_raid += 90 * 60;
         }
     }
+    // Count only live roster actors, including unfinished sites. Neutral ore,
+    // projectiles and lingering wrecks cannot keep a defeated side alive. Read
+    // after production and damage, so a spawn/death within one tick is atomic.
+    fn match_outcome(&mut self) {
+        if self.mode != 1 || self.game.outcome != 0 { return; }
+        let mut live = [false; 2];
+        for e in &self.entities[..MATCH_ACTORS] {
+            if e.active && e.data[7] > 0. && e.data[5] != 4. && e.data[9] < 2.
+                && roster(e.data[4] as u32).is_some() {
+                live[e.data[9] as usize] = true;
+                if live[0] && live[1] { break; }
+            }
+        }
+        // Player-first is the deterministic tie break for a simultaneous wipe.
+        for f in [self.game.player, 1 - self.game.player] {
+            if live[f] { self.game.empty_since[f] = 0; }
+            else if self.game.empty_since[f] == 0 { self.game.empty_since[f] = self.tick; }
+            else if self.tick - self.game.empty_since[f] >= OUTCOME_GRACE {
+                self.game.outcome = if f == self.game.player { 1 } else { 2 };
+                self.game.outcome_tick = self.tick;
+                break;
+            }
+        }
+    }
     fn match_tick(&mut self) {
         self.tick += 1;
         for side in &mut self.game.sides {
@@ -1087,6 +1201,7 @@ impl Sim {
         self.opponent();
         self.match_orders();
         self.match_combat();
+        self.match_outcome();
         for id in 0..MATCH_ACTORS {
             if !self.entities[id].active { continue; }
             let state = self.entities[id].data[5] as u32;
@@ -1107,6 +1222,10 @@ impl Sim {
 #[no_mangle] pub extern "C" fn sim_base_x(f: u32) -> f32 { SIM.with(|s| { let s = s.borrow(); if s.mode == 1 { s.game.base[usize::from(f == 1)].0 } else { 16. } }) }
 #[no_mangle] pub extern "C" fn sim_base_y(f: u32) -> f32 { SIM.with(|s| { let s = s.borrow(); if s.mode == 1 { s.game.base[usize::from(f == 1)].1 } else { 16. } }) }
 #[no_mangle] pub extern "C" fn sim_mode() -> u32 { SIM.with(|s| s.borrow().mode) }
+/// Match-end report: 0 none, 1 player defeat, 2 player victory. Sticky until init.
+#[no_mangle] pub extern "C" fn sim_outcome() -> u32 { SIM.with(|s| { let s = s.borrow(); if s.mode == 1 { s.game.outcome } else { 0 } }) }
+/// Decision tick (60 Hz), or 0 while undecided / in the frozen showcase.
+#[no_mangle] pub extern "C" fn sim_outcome_tick() -> u32 { SIM.with(|s| { let s = s.borrow(); if s.mode == 1 { s.game.outcome_tick } else { 0 } }) }
 #[no_mangle] pub extern "C" fn sim_player() -> u32 { SIM.with(|s| { let s = s.borrow(); if s.mode == 1 { s.game.player as u32 } else { 0 } }) }
 #[no_mangle] pub extern "C" fn sim_age() -> u32 { SIM.with(|s| { let s = s.borrow(); if s.mode == 1 { s.game.sides[s.game.player].age } else { 0 } }) }
 #[no_mangle] pub extern "C" fn sim_age_progress() -> f32 { SIM.with(|s| {

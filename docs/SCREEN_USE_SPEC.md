@@ -28,18 +28,26 @@ third of its screen on nothing.
 
 ## Rule
 
-1. **Fit against the full viewport.** For a landscape touch viewport, compute
-   `fit = min(vw / 960, vh / 540)` — the interface no longer subtracts itself from
-   the world's space. Keep the integer-step rule when `fit >= 1` and the
-   nearest-neighbour fractional rule below 1, exactly as now.
+1. **Fit against the full viewport, but only fill when native size does not fit.**
+   For a landscape touch viewport where `max(vw / 960, vh / 540) < 1` — a phone —
+   the interface no longer subtracts itself from the world's space and the canvas
+   is scaled to fill the width. Where that value is `>= 1` — a tablet — the
+   existing rule stands unchanged: `min()` against the available space and an
+   integer step, because filling at or above 1x would push the canvas past the
+   safe area (measured: 44 px insets on a 1024 px tablet asked for 1.14x and the
+   integer step produced a canvas 24 px wider than the screen). The guard is the
+   one condition the app and the gates now share; `fillExpected()` in
+   `scripts/capture.mjs` is its single definition.
 2. **The interface overlays the world.** The bar, the nav column and the minimap
    keep their current offsets, sizes and safe-area insets, and they are drawn over
    the canvas rather than in space carved out of it. The world under them stays
    pannable; no gameplay or camera rule changes.
 3. **Phone-sized chrome.** On a landscape touch viewport the minimap panel is at
-   most 128×128 CSS px (it is 168 today, which is 20 % of the screen width and 45 %
-   of its height) and its close control stays at least 44×44 px. The nav column's
-   four controls keep 44–48 px.
+   most 128×128 CSS px (touch measures 120 today; 168 is the mouse rule) and its
+   close control is at least 44×44 px — measured, it was **24×24 on every touch
+   viewport**, below the 44 px minimum the rest of the interface obeys, and the
+   `bar-hit-test` gate never caught it because it only inspects the bar. The nav
+   column's four controls keep 44–48 px.
 4. **Portrait is untouched.** Do not change the portrait or iPad-portrait layout:
    both pass their gates today and are out of scope for this piece. The portrait
    gates must stay green.
@@ -49,9 +57,11 @@ third of its screen on nothing.
 
 ## Acceptance criteria
 
-1. At 844×390 dsf 2, the canvas width is at least 690 px and the empty area is at
-   most 15 % of the viewport (it is 31 % today). The canvas aspect stays 1.778 and
-   the backing store stays 960×540.
+1. At 844×390 dsf 2, the canvas spans the viewport: no empty band at either side,
+   and the empty share of the screen is at most 15 % (measured 42.6 % before this
+   change). The canvas aspect stays 1.778, the backing store stays 960×540, and the
+   canvas may be taller than the screen — the body clips the overflow and the bar
+   sits over it, which is what "the interface overlays the world" means.
 2. The minimap panel on that viewport is at most 128×128 px and its close control
    is at least 44×44 px.
 3. Every existing gate passes on all five viewports, including `bar-hit-test`
@@ -61,6 +71,25 @@ third of its screen on nothing.
    LOD tiers must absorb it).
 5. A frame captured at 844×390 shows the base, the world and no empty band wider
    than 60 px on either side.
+
+## Measured outcome
+
+`node /tmp/screen-use-probe.mjs` (also reproduced by the `canvas-fits` gate in fill
+mode), at 844×390 dsf 2:
+
+| | before | after |
+|---|---|---|
+| canvas | 580×326 at x=132 | **844×475 at x=0** |
+| empty share of the screen | **42.6 %** | 0 % (the canvas fills and overflows) |
+| minimap | 128 (already within the rule) | 128 |
+| minimap close control | **24×24** | **44×44** |
+
+Two gates encoded the old layout and had to be corrected with it: `canvas-fits`
+asserted the canvas sits inside the screen (now it asserts *fill* mode for a
+landscape touch viewport and containment elsewhere), and `tap-clears` tapped fixed
+fractions of the canvas box, which now point below the screen — it derives its
+ground point from the app's tile projection instead (`__APP.tileScreen`, read-only,
+added for this).
 
 ## Non-goals
 

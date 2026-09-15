@@ -6,7 +6,7 @@
 // Labs live outside the production build: `npm run build` emits index.html only,
 // because vite only builds the entries it is given. Opening lab.html on a dev
 // server is the only way in.
-import { palette, names, factionNames, ageNames } from '../kinds.ts';
+import { palette, names, factionNames, ageNames } from '../kinds';
 
 if (!import.meta.env.DEV) throw new Error('The Starhold lab requires the local development server (npm run dev).');
 

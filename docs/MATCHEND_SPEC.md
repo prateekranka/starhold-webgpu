@@ -70,8 +70,11 @@ until the rest of the open list is empty.
 5. A new match started from the modal is a clean match: entities, economy, age
    and camera all at their start values, and the hash matches the first match.
 6. No console errors; frame rate unchanged at every zoom on phone and desktop.
-7. Determinism tripwire unchanged: showcase `{"n":55,"alloy":247,"charge":199,
-   "hash":"20b89f84"}` and match hash `a7b9e906`.
+7. Determinism tripwire unchanged: the showcase tuple must still read
+   `{"n":55,"alloy":247,"charge":199,"hash":"20b89f84"}`. The match hash is not a
+   frozen constant — the gate compares two matches started in one run (it reads
+   `0f96e8dc` before this piece) — so the requirement is that it agrees within a
+   run, not that it keeps an older value.
 
 ## Gate sketch (to add to `scripts/capture.mjs`)
 

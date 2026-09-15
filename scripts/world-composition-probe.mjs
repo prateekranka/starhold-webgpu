@@ -184,3 +184,105 @@ for (let y = 0; y < side; y += 1) {
   }
 }
 console.log(`void: ${(100 * voidTiles / world.length).toFixed(1)}% of the world, ${(100 * voidNearBase / Math.max(1, boxTiles)).toFixed(2)}% inside 121x121 boxes at the bases`);
+
+// -------------------------------------------------------- strict local floors
+// A connected terrace's bounding box can span the whole map through a thin
+// road. Measure the actual flat disc under each base as well, not that envelope.
+let compositionOK = true;
+for (const b of bases) {
+  const bx = Math.floor(b.x), by = Math.floor(b.y), h = at(bx, by);
+  let radius = 0, voids = 0;
+  for (let y = by - 60; y <= by + 60; y++) for (let x = bx - 60; x <= bx + 60; x++) if (at(x, y) < 0) voids++;
+  outer: for (let r = 1; r <= 60; r++) {
+    for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) {
+      if (x * x + y * y <= r * r && at(bx + x, by + y) !== h) break outer;
+    }
+    radius = r;
+  }
+  const ok = h >= 0 && radius * 2 >= 60 && voids === 0;
+  compositionOK &&= ok;
+  console.log(`base ${b.f}: flat disc diameter=${radius * 2} tiles; exact 121x121 box void=${voids}/14641 ${ok ? 'OK' : 'FAIL'}`);
+}
+
+// Erode by a full 3x3 flat footprint before walking. A path in this mask proves
+// a >=3-tile-wide low-gradient corridor, not a one-cell land bridge. Gate its
+// departure through two separated arcs of the clearing, not two adjacent walks
+// down the same road. The arcs are defined by direction, not generator waypoints.
+const wide = new Uint8Array(side * side);
+for (let y = 1; y < side - 1; y++) for (let x = 1; x < side - 1; x++) {
+  const h = at(x, y);
+  if (h < 0) continue;
+  let flat = true;
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (at(x + dx, y + dy) !== h) flat = false;
+  if (flat) wide[y * side + x] = 1;
+}
+function widePath(b, lane) {
+  const bx = Math.floor(b.x), by = Math.floor(b.y), sign = bx < mid ? 1 : -1;
+  const start = by * side + bx, parents = new Int32Array(side * side).fill(-1), queue = new Int32Array(side * side);
+  let head = 0, tail = 1;
+  queue[0] = start; parents[start] = start;
+  while (head < tail) {
+    const i = queue[head++], x = i % side, y = Math.floor(i / side);
+    if (Math.hypot(x - mid, y - mid) <= 100) {
+      let length = 0, gradient = 0, exit = null;
+      for (let j = i; j !== start; j = parents[j]) {
+        const px = j % side, py = Math.floor(j / side);
+        gradient = Math.max(gradient, Math.abs(world[j] - world[parents[j]])); length++;
+        if (Math.hypot(px - bx, py - by) >= 32) exit = [px - bx, py - by];
+      }
+      return { length, gradient, exit };
+    }
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, ny = y + dy, j = ny * side + nx;
+      if (nx < 1 || ny < 1 || nx >= side - 1 || ny >= side - 1 || !wide[j] || parents[j] !== -1 || Math.abs(world[j] - world[i]) > .5) continue;
+      const u = (nx - bx) * sign, v = (ny - by) * sign, r = Math.hypot(u, v);
+      // Two non-touching exit arcs at radius 32..40: around opposite ridge
+      // flanks before the corridors turn inward toward the contested middle.
+      if (r >= 32 && r <= 40 && (lane === 0 ? v > -24 || Math.abs(u) > 16 : u > -24 || Math.abs(v) > 16)) continue;
+      parents[j] = i; queue[tail++] = j;
+    }
+  }
+  return null;
+}
+for (const b of bases) {
+  for (let lane = 0; lane < 2; lane++) {
+    const p = widePath(b, lane);
+    compositionOK &&= !!p;
+    console.log(`base ${b.f}: wide route ${lane + 1} ${p ? `OK width>=3 length=${p.length} max-gradient=${p.gradient} clearing-exit=(${p.exit})` : 'NO'} -> within 100 tiles of centre`);
+  }
+}
+
+// Count actual consecutive ridge faces, not unrelated steps in a 100x100 box.
+// Each cell in a run must show 1 -> .5 -> 0 on the SAME monotone land flank.
+// Restrict the second drop to twelve tiles and require twelve adjacent faces.
+for (const b of bases) {
+  const runs = [];
+  const bx = Math.floor(b.x), by = Math.floor(b.y);
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const tx = dy ? 1 : 0, ty = dx ? 1 : 0;
+    const flank = (x, y) => {
+      if (Math.hypot(x - bx, y - by) > 200 || at(x, y) !== 1 || at(x + dx, y + dy) !== .5) return false;
+      for (let d = 2; d <= 12; d++) {
+        const h = at(x + dx * d, y + dy * d);
+        if (h === 0) return true;
+        if (h !== .5) return false;
+      }
+      return false;
+    };
+    for (let y = Math.max(1, by - 200); y <= Math.min(side - 2, by + 200); y++) {
+      for (let x = Math.max(1, bx - 200); x <= Math.min(side - 2, bx + 200); x++) {
+        if (!flank(x, y) || flank(x - tx, y - ty)) continue;
+        let length = 1;
+        while (flank(x + tx * length, y + ty * length)) length++;
+        if (length >= 12) runs.push({ x, y, length });
+      }
+    }
+  }
+  runs.sort((a, b) => b.length - a.length);
+  const ok = runs.length >= 3;
+  compositionOK &&= ok;
+  console.log(`base ${b.f}: ridge runs of 12+ two-step faces within 200 tiles=${runs.length} lengths=${runs.map(r => r.length).join(',')} ${ok ? 'OK' : 'SHORT (spec wants 3)'}`);
+}
+for (const b of bases) compositionOK &&= groups.filter(g => g.size >= 3 && g.spread <= 30 && Math.hypot(g.cx - b.x, g.cy - b.y) <= 120).length >= 4;
+console.log(`world-composition: ${compositionOK ? 'PASS' : 'FAIL'}`);
+if (!compositionOK) process.exitCode = 1;

@@ -13,7 +13,7 @@
     {
       "name": "fps>=59-vsync-locked",
       "pass": true,
-      "detail": "fps=60.3 p95=17.2ms max=18.0ms"
+      "detail": "fps=60.3 p95=17.2ms max=18.2ms"
     },
     {
       "name": "rotate-button",
@@ -38,7 +38,7 @@
     {
       "name": "match-boot",
       "pass": true,
-      "detail": "mode=1 player=0 age=0 alloy=80 charge=40 pop=11/15 entities=54 (standard start 80/40, 11/15, 3 buildings + 10 units) factionLabel=true resetControl=\"Reset to the showcase scenar\" resetShowcase->mode 0"
+      "detail": "mode=1 player=0 age=0 alloy=80 charge=40 pop=11/15 entities=68 (standard start 80/40, 11/15, 3 buildings + 10 units) factionLabel=true resetControl=\"Reset to the showcase scenar\" resetShowcase->mode 0"
     },
     {
       "name": "hud-bar",
@@ -63,7 +63,7 @@
     {
       "name": "world-terrain",
       "pass": true,
-      "detail": "side=1024 samples=16384 landShare=74.9% levelsOutside=none"
+      "detail": "side=1024 samples=16384 landShare=74.5% levelsOutside=none"
     },
     {
       "name": "camera-pan",
@@ -73,12 +73,12 @@
     {
       "name": "lod-budget",
       "pass": true,
-      "detail": "instances per zoom 0.67:4732 0.80:5941 1.00:8372 1.33:13548"
+      "detail": "instances per zoom 0.67:3661(60.3fps,p95=16.9ms) 0.80:4403(60.3fps,p95=16.9ms) 1.00:5901(60.3fps,p95=16.9ms) 1.33:9428(60.3fps,p95=17.1ms)"
     },
     {
       "name": "minimap-present",
       "pass": true,
-      "detail": "rect=168x168@782,252 backing=256x256 drawnPx=48983"
+      "detail": "rect=168x168@782,252 backing=256x256 drawnPx=48774"
     },
     {
       "name": "minimap-move",
@@ -93,7 +93,7 @@
     {
       "name": "minimap-reopen",
       "pass": true,
-      "detail": "off true -> false drawnPx=48983 state.open=true"
+      "detail": "off true -> false drawnPx=48774 state.open=true"
     },
     {
       "name": "minimap-jump",
@@ -103,7 +103,7 @@
     {
       "name": "worker-tap",
       "pass": true,
-      "detail": "tap @431,253 selectedKind=20 (workers alive=6)"
+      "detail": "tap @413,259 selectedKind=20 (workers alive=6)"
     },
     {
       "name": "bar-hit-test",
@@ -116,19 +116,24 @@
       "detail": "FREIGHT COURT24A site k11 refund=24a alloy 56->80 control=119x44 siteGone=true"
     },
     {
+      "name": "match-end",
+      "pass": true,
+      "detail": "sim_outcome()=1 tick=168470 live=0 sticky=true modal=\"DEFEAT All your units and buildings have been destroyed. NEW MATCH\" target=144x48 hit=true fits=true restart=true hash=bbd279e5/bbd279e5 economy=80/40 showcase sim_outcome()=0 noModal=true noneGuard=true"
+    },
+    {
       "name": "age-advance",
       "pass": true,
-      "detail": "cost=60a/30c drop=60a/30c drift=0/1 age 0->1 label=March labelShown=true"
+      "detail": "cost=60a/30c drop=60a/29c drift=0/0 age 0->1 label=March labelShown=true"
     },
     {
       "name": "train-unit",
       "pass": true,
-      "detail": "[exact tap kind 10 f0 @480,220] action=\"Train RIVETER, 4 alloy, 1 population RIVETER4A\" kind=20 roster=4a/0c pop 1 drop=4a/0c drift=0/1 pop 11->12 entities 54->56"
+      "detail": "[exact tap kind 10 f0 @480,219] action=\"Train RIVETER, 4 alloy, 1 population RIVETER4A\" kind=20 roster=4a/0c pop 1 drop=4a/0c drift=0/1 pop 11->12 entities 68->70"
     },
     {
       "name": "build-site",
       "pass": true,
-      "detail": "[exact tap kind 20 f0 @451,260] action=\"Build FREIGHT COURT, 24 alloy FREIGHT COURT24A\" kind=11 roster=24a/0c sitePlaced=true entities 54->55 alloy 80->56 charge 40->41 costSpent=true"
+      "detail": "[exact tap kind 20 f0 @416,258] action=\"Build FREIGHT COURT, 24 alloy FREIGHT COURT24A\" kind=11 roster=24a/0c sitePlaced=true entities 68->69 alloy 80->56 charge 40->41 costSpent=true"
     },
     {
       "name": "no-console-errors",
@@ -143,7 +148,7 @@
     {
       "name": "match-determinism",
       "pass": true,
-      "detail": "0f96e8dc vs 0f96e8dc entities=55/55 age=1/1"
+      "detail": "39ee7d97 vs 39ee7d97 entities=69/69 age=1/1"
     },
     {
       "name": "no-webgpu-error-path",
@@ -156,7 +161,8 @@
     "shot-rotated.png",
     "shot-selected.png",
     "shot-later.png",
-    "shot-match-hud.png"
+    "shot-match-hud.png",
+    "shot-match-end.png"
   ],
   "errors": [],
   "viewport": {
@@ -170,10 +176,10 @@
   "fps": {
     "fps": 60.25,
     "frames": 241,
-    "mean_ms": 16.621161825924,
+    "mean_ms": 16.654356846670886,
     "p50_ms": 16.699999809265137,
-    "p95_ms": 17.199999809265137,
-    "max_ms": 18
+    "p95_ms": 17.200000047683716,
+    "max_ms": 18.200000047683716
   },
   "matchErrors": []
 }

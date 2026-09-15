@@ -16,7 +16,7 @@ import unitDoc from '../../docs/UNIT_DESIGN.md?raw';
 import {
   names, factionNames, palette, el, docTables, bold, downloadJSON, loadSim,
   drawSchematic, type DocTable, type RosterRow,
-} from './common.ts';
+} from './common';
 
 type Group = 'building' | 'unit' | 'prop' | 'effect';
 

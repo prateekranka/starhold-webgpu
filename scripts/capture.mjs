@@ -316,7 +316,7 @@ const WORLD_GATE_NAMES = [
 ];
 const MATCH_GATE_NAMES = [
   'hud-skirmish-entry', 'match-boot', 'hud-bar', 'hud-resources', 'hud-age',
-  'age-advance', 'train-unit', 'build-site',
+  'age-advance', 'train-unit', 'build-site', 'match-end',
 ];
 // These run next to the match gates and share their live match.
 MATCH_GATE_NAMES.push(...WORLD_GATE_NAMES);
@@ -449,6 +449,76 @@ async function clickControl(page, control) {
 }
 
 /** A real tap on an absolute CSS point: a touch tap on touch layouts, else a mouse click. */
+/**
+ * The part of the world canvas a player can actually touch. A landscape touch
+ * viewport fills with the world and the interface overlays it (SCREEN_USE_SPEC),
+ * so the canvas is taller than the screen and the body clips the overflow; tap
+ * points must come from the visible overlap, not from the canvas box.
+ */
+/**
+ * Taps empty ground and returns what the selection became. Ground points come
+ * from the app's own tile projection (`__APP.tileScreen`), never from fixed
+ * fractions of the canvas: when the world fills a phone screen the bottom of the
+ * canvas is off-screen, so fixed fractions land on actors or behind the bar.
+ */
+async function tapEmptyGround(page) {
+  const candidates = await page.evaluate(() => {
+    const app = window.__APP;
+    if (typeof app.tileScreen !== 'function') return null;
+    const s = app.getState();
+    const near = app.entityProbe().map((e) => ({ x: e.x, y: e.y }));
+    const out = [];
+    for (let r = 5; r <= 26 && out.length < 12; r += 3) {
+      for (let a = 0; a < 16; a += 1) {
+        const tx = Math.floor(s.camera.x + Math.cos((a * Math.PI) / 8) * r);
+        const ty = Math.floor(s.camera.y + Math.sin((a * Math.PI) / 8) * r);
+        if (near.some((e) => Math.hypot(e.x - tx, e.y - ty) < 4)) continue;
+        const p = app.tileScreen(tx + 0.5, ty + 0.5);
+        if (!p || p.y > innerHeight - 80 || p.y < 8 || p.x < 8 || p.x > innerWidth - 8) continue;
+        out.push({ tx, ty, x: p.x, y: p.y });
+      }
+    }
+    return out;
+  });
+  if (candidates && candidates.length) {
+    let selected = 'no-tap';
+    for (const c of candidates) {
+      await tapAt(page, c.x, c.y);
+      selected = (await state(page)).selected;
+      if (selected === null) break;
+    }
+    return selected;
+  }
+  const box = await visibleCanvas(page);
+  let selected = 'no-canvas';
+  for (const [fx, fy] of [[0.04, 0.96], [0.96, 0.96], [0.5, 0.97]]) {
+    if (!box) break;
+    await tapAt(page, box.x + box.width * fx, box.y + box.height * fy);
+    selected = (await state(page)).selected;
+    if (selected === null) break;
+  }
+  return selected;
+}
+/**
+ * True when a landscape touch viewport must be *filled* rather than contained:
+ * the 960x540 target cannot be shown at native size, so the world fills the
+ * screen and the interface overlays it (SCREEN_USE_SPEC). Insets only shrink the
+ * available space, so testing the raw viewport agrees with the app either way.
+ */
+function fillExpected(L) {
+  return L.bodyClass.includes('touch') && L.innerWidth > L.innerHeight
+    && Math.max(L.innerWidth / 960, L.innerHeight / 540) < 1;
+}
+async function visibleCanvas(page) {
+  const box = await page.locator('canvas#world').boundingBox();
+  if (!box) return null;
+  const vp = page.viewportSize() || { width: 0, height: 0 };
+  const x0 = Math.max(box.x, 0);
+  const y0 = Math.max(box.y, 0);
+  const x1 = Math.min(box.x + box.width, vp.width);
+  const y1 = Math.min(box.y + box.height, vp.height);
+  return { x: x0, y: y0, width: Math.max(0, x1 - x0), height: Math.max(0, y1 - y0) };
+}
 async function clickPoint(page, x, y) {
   if (TOUCH) await page.touchscreen.tap(x, y);
   else await page.mouse.click(x, y);
@@ -724,7 +794,12 @@ function gate(name, pass, detail) {
       await page.waitForTimeout(600);
       const R = await layout(page);
       const noticeHidden = !R.notice || R.notice.display === 'none';
-      const canvasOk = !!R.canvasCss && R.canvasCss.right <= R.innerWidth + 0.5 && R.canvasCss.bottom <= R.innerHeight + 0.5;
+      // After the rotation this IS a landscape touch viewport, so the fill rule
+      // applies exactly as it does in the main layout gates.
+      const rotated = fillExpected(R);
+      const canvasOk = !!R.canvasCss && (rotated
+        ? R.canvasCss.x <= 0.5 && R.canvasCss.right >= R.innerWidth - 0.5
+        : R.canvasCss.right <= R.innerWidth + 0.5 && R.canvasCss.bottom <= R.innerHeight + 0.5);
       gate('portrait-clears-on-rotate', noticeHidden && canvasOk && R.buttons.every((b) => b.w >= 44 && b.h >= 44),
         `notice=${R.notice ? R.notice.display : 'none'} canvas=${R.canvasCss ? `${R.canvasCss.w.toFixed(0)}x${R.canvasCss.h.toFixed(0)}` : '-'} btns=${R.buttons.map((b) => `${b.w.toFixed(0)}x${b.h.toFixed(0)}`).join(' ')}`);
       await page.screenshot({ path: join(OUT, 'shot-portrait-rotated.png') });
@@ -741,11 +816,19 @@ function gate(name, pass, detail) {
       }
       const c = L.canvasCss;
       const aspect = c ? c.w / c.h : 0;
-      gate('canvas-fits', !!c && c.x >= -0.5 && c.y >= -0.5 && c.right <= L.innerWidth + 0.5 && c.bottom <= L.innerHeight + 0.5 && Math.abs(aspect - 16 / 9) < 0.01 && c.backingW === 960 && c.backingH === 540,
-        c ? `rect=${c.w.toFixed(1)}x${c.h.toFixed(1)}@${c.x.toFixed(1)},${c.y.toFixed(1)} aspect=${aspect.toFixed(3)} backing=${c.backingW}x${c.backingH}` : 'no canvas');
+      // SCREEN_USE_SPEC: a landscape touch viewport fills with the world and the
+      // interface overlays it, so there the canvas must span the whole viewport
+      // and be at least as tall as the screen (the body clips the overflow, and
+      // the black-band waste this replaced measured 42.6% of a phone screen).
+      // Every other viewport still requires the canvas to sit inside the screen.
+      const fillMode = fillExpected(L);
+      const contained = c ? c.x >= -0.5 && c.y >= -0.5 && c.right <= L.innerWidth + 0.5 && c.bottom <= L.innerHeight + 0.5 : false;
+      const fills = c ? c.x <= 0.5 && c.y <= 0.5 && c.right >= L.innerWidth - 0.5 && c.bottom >= L.innerHeight - 0.5 : false;
+      gate('canvas-fits', !!c && (fillMode ? fills : contained) && Math.abs(aspect - 16 / 9) < 0.01 && c.backingW === 960 && c.backingH === 540,
+        c ? `rect=${c.w.toFixed(1)}x${c.h.toFixed(1)}@${c.x.toFixed(1)},${c.y.toFixed(1)} mode=${fillMode ? 'fill' : 'contain'} aspect=${aspect.toFixed(3)} backing=${c.backingW}x${c.backingH}` : 'no canvas');
 
       const outside = L.buttons.filter((b) => b.x < -0.5 || b.y < -0.5 || b.right > L.innerWidth + 0.5 || b.bottom > L.innerHeight + 0.5);
-      gate('hud-unclipped', !!c && c.x >= -0.5 && c.right <= L.innerWidth + 0.5 && outside.length === 0,
+      gate('hud-unclipped', !!c && (fillMode || (c.x >= -0.5 && c.right <= L.innerWidth + 0.5)) && outside.length === 0,
         `buttons=${L.buttons.length} outside=${outside.map((b) => b.id).join(',') || 'none'}`);
 
       const small = L.buttons.filter((b) => b.w < 44 || b.h < 44);
@@ -800,17 +883,11 @@ function gate(name, pass, detail) {
       const zC = (await state(page)).zoom;
       gate('zoom-touch', zoomIndex(zB) === Math.min(3, zoomIndex(zA) + 1) && Math.abs(zC - zA) < 1e-6, `zoom ${zA} -> ${zB} -> ${zC}`);
 
-      const box = await page.locator('canvas#world').boundingBox();
+      const box = await visibleCanvas(page);
       const spots = [[0.5, 0.5], [0.5, 0.55], [0.45, 0.5], [0.55, 0.5], [0.5, 0.62], [0.4, 0.45], [0.6, 0.58], [0.35, 0.55], [0.65, 0.45]];
       // 1. A tap on empty terrain clears the selection. The sim boots with a
       // default selection, so this gate is what proves touch events arrive.
-      let cleared = 'no-canvas';
-      for (const [fx, fy] of [[0.04, 0.96], [0.96, 0.96], [0.5, 0.97]]) {
-        if (!box) break;
-        await tapAt(page, box.x + box.width * fx, box.y + box.height * fy);
-        cleared = (await state(page)).selected;
-        if (cleared === null) break;
-      }
+      const cleared = await tapEmptyGround(page);
       gate('tap-clears', cleared === null, `boot=${bootSel} afterClear=${cleared}`);
 
       // 2. A tap on the settlement selects a unit or building.
@@ -840,13 +917,7 @@ function gate(name, pass, detail) {
       results.shots.push('shot-pinch.png');
 
       // 4. A tap after a pinch still clears and still selects.
-      let clearAfter = (await state(page)).selected;
-      for (const [fx, fy] of [[0.04, 0.96], [0.96, 0.96], [0.5, 0.97]]) {
-        if (!box) break;
-        await tapAt(page, box.x + box.width * fx, box.y + box.height * fy);
-        clearAfter = (await state(page)).selected;
-        if (clearAfter === null) break;
-      }
+      const clearAfter = await tapEmptyGround(page);
       let sel2 = null;
       for (const [fx, fy] of spots) {
         if (!box) break;
@@ -948,7 +1019,7 @@ function gate(name, pass, detail) {
       // surface; the bar gates are DOM-only, so they still report the real UI
       // state instead (a stale build has no #hud-bar either).
       const why = `window.__APP.${missingApi[0]} is ${matchApi[missingApi[0]]}, not a function`;
-      const apiDriven = new Set(['hud-skirmish-entry', 'match-boot', 'age-advance', 'train-unit', 'build-site']);
+      const apiDriven = new Set(['hud-skirmish-entry', 'match-boot', 'age-advance', 'train-unit', 'build-site', 'match-end']);
       const domDriven = { 'hud-bar': () => checkHudBar(page), 'hud-resources': () => checkHudResources(page), 'hud-age': () => checkHudAge(page) };
       for (const name of MATCH_GATE_NAMES) {
         if (apiDriven.has(name)) gate(name, false, why);
@@ -1096,7 +1167,7 @@ function gate(name, pass, detail) {
       // and the centre stays inside the map (LARGEMAP_SPEC §5).
       await guarded('camera-pan', async () => {
         await freshMatch(0);
-        const box = await page.locator('canvas#world').boundingBox();
+        const box = await visibleCanvas(page);
         const before = (await state(page)).camera;
         const from = { x: box.x + box.width * 0.5, y: box.y + box.height * 0.5 };
         if (TOUCH) {
@@ -1143,8 +1214,9 @@ function gate(name, pass, detail) {
           const g = await state(page);
           const saturated = g.frameStats ? g.frameStats.saturated === true : false;
           const degraded = g.frameStats ? g.frameStats.degraded === true : false;
-          if (saturated || degraded) ok = false;
-          rows.push(`${g.zoom.toFixed(2)}:${Math.round((g.frameStats ? g.frameStats.triangles : 0) / 12)}${degraded ? 'D' : ''}${saturated ? 'S' : ''}`);
+          const fps = await sampleFps(page, FPS_SECONDS);
+          if (saturated || degraded || fps.fps < MIN_FPS - 1.0 || fps.p95_ms > 20) ok = false;
+          rows.push(`${g.zoom.toFixed(2)}:${Math.round((g.frameStats ? g.frameStats.triangles : 0) / 12)}${degraded ? 'D' : ''}${saturated ? 'S' : ''}(${fps.fps.toFixed(1)}fps,p95=${fps.p95_ms.toFixed(1)}ms)`);
         }
         return { pass: ok, detail: `instances per zoom ${rows.join(' ')}` };
       });
@@ -1347,6 +1419,107 @@ function gate(name, pass, detail) {
           detail: `${placed.label} site k${placed.kind} refund=${refund}a alloy ${mid.alloy}->${after.alloy} ` +
             `control=${control.w.toFixed(0)}x${control.h.toFixed(0)} siteGone=${gone}`,
         };
+      });
+
+      // match-end: no injected deaths or outcome flags. Let the paid AI raids
+      // eliminate an idle player's real match, then tap the modal's NEW MATCH.
+      await guarded('match-end', async () => {
+        try {
+          const opening = await page.evaluate(() => {
+            const app = window.__APP;
+            app.startMatch(0);
+            const snapshot = () => {
+              const s = app.getState();
+              return { mode: s.mode, player: s.player, outcome: s.outcome, outcomeTick: s.outcomeTick,
+                alloy: s.alloy, charge: s.charge, age: s.age, ageProgress: s.ageProgress,
+                popUsed: s.popUsed, popCap: s.popCap, selected: s.selected, selectedKind: s.selectedKind,
+                actions: s.actions, yawSteps: s.yawSteps, zoom: s.zoom, camera: s.camera,
+                entities: app.entityProbe() };
+            };
+            // Harness-only readback, captured in the real button's click event
+            // after the app listener but before a rAF can advance the new sim.
+            window.__captureMatchEnd = { snapshot, after: null };
+            const start = snapshot();
+            app.fastForward(5);
+            const before = JSON.stringify(snapshot());
+            document.getElementById('match-end-new').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            const noRestart = before === JSON.stringify(snapshot());
+            const noModal = !document.querySelector('#match-end[open]');
+            // Exercise reset of age/economy as well as the default camera.
+            app.command(2, 0, 0);
+            app.rotate(1); app.zoomBy(1);
+            return { start, noRestart, noModal };
+          });
+          const map = await rect(page, '#minimap-canvas');
+          if (map) await clickPoint(page, map.x + map.w * 0.22, map.y + map.h * 0.78);
+          const panned = await state(page);
+          const panDirty = panned.camera.x !== opening.start.camera.x || panned.camera.y !== opening.start.camera.y;
+          Object.assign(opening, await page.evaluate(() => {
+            const app = window.__APP;
+            let elapsed = 5;
+            while (app.getState().outcome === 0 && elapsed < 7200) {
+              app.fastForward(30); elapsed += 30;
+            }
+            const ended = app.getState();
+            const live = app.entityProbe().filter((e) => e.faction === ended.player && e.health > 0 && e.state !== 4 && e.kind !== 50 && e.kind !== 51 && e.kind !== 52).length;
+            app.fastForward(2);
+            const later = app.getState();
+            return { elapsed, live, outcome: ended.outcome,
+              outcomeTick: ended.outcomeTick, sticky: later.outcome === ended.outcome && later.outcomeTick === ended.outcomeTick };
+          }));
+          if (opening.outcome !== 1 || opening.live !== 0) return {
+            pass: false, detail: `idle match at ${opening.elapsed}s: sim_outcome()=${opening.outcome} live=${opening.live}`,
+          };
+          const modal = await page.evaluate(() => {
+            const dialog = document.getElementById('match-end');
+            const button = document.getElementById('match-end-new');
+            if (!dialog || !button) return null;
+            const r = dialog.getBoundingClientRect(), b = button.getBoundingClientRect();
+            const hit = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
+            button.addEventListener('click', () => {
+              window.__captureMatchEnd.after = window.__captureMatchEnd.snapshot();
+            }, { once: true });
+            return { visible: dialog.open && dialog.matches(':modal') && r.width > 0 && r.height > 0,
+              text: dialog.innerText.replace(/\s+/g, ' ').trim(), hit: !!hit && button.contains(hit),
+              inside: r.x >= 0 && r.y >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
+              fits: dialog.scrollWidth <= dialog.clientWidth && dialog.scrollHeight <= dialog.clientHeight,
+              x: b.x, y: b.y, w: b.width, h: b.height, disabled: button.disabled };
+          });
+          await page.screenshot({ path: join(OUT, 'shot-match-end.png') });
+          results.shots.push('shot-match-end.png');
+          if (!modal || !modal.visible) return { pass: false, detail: 'sim defeat has no visible modal' };
+          await clickControl(page, modal);
+          const restart = await page.evaluate(() => window.__captureMatchEnd.after);
+          const sameStart = JSON.stringify(restart) === JSON.stringify(opening.start);
+          const hash = (value) => {
+            let h = 0x811c9dc5;
+            for (const byte of Buffer.from(JSON.stringify(value))) h = Math.imul(h ^ byte, 0x01000193) >>> 0;
+            return h.toString(16).padStart(8, '0');
+          };
+          const live = await state(page);
+          const negative = await page.evaluate(() => {
+            const app = window.__APP;
+            const hiddenAfterRestart = !document.querySelector('#match-end[open]');
+            app.resetShowcase(); app.fastForward(108);
+            const before = window.__captureMatchEnd.snapshot();
+            document.getElementById('match-end-new').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            const s = app.getState();
+            return { hiddenAfterRestart, noModal: !document.querySelector('#match-end[open]'),
+              mode: s.mode, outcome: s.outcome, outcomeTick: s.outcomeTick,
+              noRestart: JSON.stringify(before) === JSON.stringify(window.__captureMatchEnd.snapshot()) };
+          });
+          const pass = panDirty && opening.noRestart && opening.noModal && opening.sticky && opening.outcomeTick > 0 &&
+            modal.visible && /DEFEAT/.test(modal.text) && /NEW MATCH/.test(modal.text) && modal.hit && modal.inside && modal.fits &&
+            !modal.disabled && modal.w >= 44 && modal.h >= 44 && sameStart &&
+            live.mode === 1 && live.outcome === 0 && live.popUsed === 11 && live.popCap === 15 &&
+            negative.hiddenAfterRestart && negative.noModal && negative.mode === 0 && negative.outcome === 0 && negative.outcomeTick === 0 && negative.noRestart;
+          return { pass, detail: `sim_outcome()=${opening.outcome} tick=${opening.outcomeTick} live=${opening.live} sticky=${opening.sticky} ` +
+            `modal="${modal.text}" target=${modal.w.toFixed(0)}x${modal.h.toFixed(0)} hit=${modal.hit} fits=${modal.fits} ` +
+            `restart=${sameStart} hash=${hash(opening.start)}/${hash(restart)} economy=${restart ? `${restart.alloy}/${restart.charge}` : 'missing'} ` +
+            `showcase sim_outcome()=${negative.outcome} noModal=${negative.noModal} noneGuard=${opening.noRestart && negative.noRestart}` };
+        } finally {
+          await page.evaluate(() => { delete window.__captureMatchEnd; window.__APP.resetShowcase(); });
+        }
       });
 
       // age-advance: a real click on ADVANCE deducts the tier cost and, after

@@ -1,0 +1,12 @@
+VERDICT: FAIL
+
+WHAT WORKS:
+- The central keep/settlement reads immediately as the player’s base; adjacent teal/yellow structure anchors scale.
+- Pixel-art palette is cohesive and clean at both desktop and phone sizes; UI framing, minimap, and buttons are legible.
+- Gray path/ridge masses are visible as geometry, and two corridors can be seen above the settlement area—but not clearly as exits from it.
+
+SINGLE BIGGEST GAP:
+- No readable resource/buildability language. At this zoom, resource outcrops are absent or indistinguishable—the scattered dark ground tiles read as debris/noise, not harvestable nodes. Buildable ground is a large purple void with no calm boundary, and the gray cliffs do not telegraph flanks or choke routes. A player cannot identify where to build, what to harvest, or how to attack around terrain.
+
+NEXT PASS:
+- Highest-impact visual fix: make the terrain affordances obvious—resource nodes need distinct silhouettes/hues, buildable ground must read as the quietest surface, and the settlement must visibly connect to two exit routes. Without that, the map fails as an RTS read.

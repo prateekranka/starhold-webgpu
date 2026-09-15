@@ -8,7 +8,7 @@
     {
       "name": "instance-budget",
       "pass": true,
-      "detail": "triangles=116245 saturated=false"
+      "detail": "triangles=116281 saturated=false"
     },
     {
       "name": "portrait-playable",
@@ -28,12 +28,12 @@
     {
       "name": "portrait-clears-on-rotate",
       "pass": true,
-      "detail": "notice=none canvas=580x326 btns=48x48 48x48 48x48 48x48"
+      "detail": "notice=none canvas=844x475 btns=48x48 48x48 48x48 48x48"
     },
     {
       "name": "canvas-fits",
       "pass": true,
-      "detail": "rect=579.5x326.0@132.2,0.0 aspect=1.778 backing=960x540"
+      "detail": "rect=844.0x474.8@0.0,0.0 mode=fill aspect=1.778 backing=960x540"
     },
     {
       "name": "hud-unclipped",
@@ -48,7 +48,7 @@
     {
       "name": "safe-area-respected",
       "pass": true,
-      "detail": "canvas=132.2..711.8 firstBtn=574.0 lastBtn=790.0"
+      "detail": "canvas=44.0..800.0 firstBtn=574.0 lastBtn=790.0"
     },
     {
       "name": "rotate-touch",
@@ -88,7 +88,7 @@
     {
       "name": "fps>=59-vsync-locked",
       "pass": true,
-      "detail": "fps=60.3 p95=16.9ms max=17.1ms"
+      "detail": "fps=60.3 p95=16.9ms max=20.0ms"
     },
     {
       "name": "hud-skirmish-entry",
@@ -98,7 +98,7 @@
     {
       "name": "match-boot",
       "pass": true,
-      "detail": "mode=1 player=0 age=0 alloy=80 charge=40 pop=11/15 entities=54 (standard start 80/40, 11/15, 3 buildings + 10 units) factionLabel=true resetControl=\"Reset to the showcase scenar\" resetShowcase->mode 0"
+      "detail": "mode=1 player=0 age=0 alloy=80 charge=40 pop=11/15 entities=68 (standard start 80/40, 11/15, 3 buildings + 10 units) factionLabel=true resetControl=\"Reset to the showcase scenar\" resetShowcase->mode 0"
     },
     {
       "name": "hud-bar",
@@ -123,22 +123,22 @@
     {
       "name": "world-terrain",
       "pass": true,
-      "detail": "side=1024 samples=16384 landShare=74.9% levelsOutside=none"
+      "detail": "side=1024 samples=16384 landShare=74.5% levelsOutside=none"
     },
     {
       "name": "camera-pan",
       "pass": true,
-      "detail": "camera 205,342 -> 220,341 moved=15 tiles inside=true saturated=false"
+      "detail": "camera 205,342 -> 215,341 moved=11 tiles inside=true saturated=false"
     },
     {
       "name": "lod-budget",
       "pass": true,
-      "detail": "instances per zoom 0.67:4593 0.80:5803 1.00:8234 1.33:13410"
+      "detail": "instances per zoom 0.67:3523(60.3fps,p95=17.0ms) 0.80:4265(60.3fps,p95=16.9ms) 1.00:5763(60.3fps,p95=16.9ms) 1.33:9290(60.3fps,p95=17.0ms)"
     },
     {
       "name": "minimap-present",
       "pass": true,
-      "detail": "rect=120x120@714,140 backing=256x256 drawnPx=48983"
+      "detail": "rect=128x128@706,132 backing=256x256 drawnPx=48774"
     },
     {
       "name": "minimap-move",
@@ -153,17 +153,17 @@
     {
       "name": "minimap-reopen",
       "pass": true,
-      "detail": "off true -> false drawnPx=48983 state.open=true"
+      "detail": "off true -> false drawnPx=48774 state.open=true"
     },
     {
       "name": "minimap-jump",
       "pass": true,
-      "detail": "camera 205,342 -> 193,831 moved=489 tiles"
+      "detail": "camera 205,342 -> 196,828 moved=487 tiles"
     },
     {
       "name": "worker-tap",
       "pass": true,
-      "detail": "tap @388,174 selectedKind=20 (workers alive=6)"
+      "detail": "tap @355,259 selectedKind=20 (workers alive=6)"
     },
     {
       "name": "bar-hit-test",
@@ -176,19 +176,24 @@
       "detail": "FREIGHT COURT24A site k11 refund=24a alloy 56->80 control=76x44 siteGone=true"
     },
     {
+      "name": "match-end",
+      "pass": true,
+      "detail": "sim_outcome()=1 tick=168470 live=0 sticky=true modal=\"DEFEAT All your units and buildings have been destroyed. NEW MATCH\" target=144x48 hit=true fits=true restart=true hash=bbd279e5/bbd279e5 economy=80/40 showcase sim_outcome()=0 noModal=true noneGuard=true"
+    },
+    {
       "name": "age-advance",
       "pass": true,
-      "detail": "cost=60a/30c drop=60a/30c drift=0/1 age 0->1 label=March labelShown=true"
+      "detail": "cost=60a/30c drop=60a/29c drift=0/0 age 0->1 label=March labelShown=true"
     },
     {
       "name": "train-unit",
       "pass": true,
-      "detail": "[exact tap kind 10 f0 @422,150] action=\"Train RIVETER, 4 alloy, 1 population RIVETER4A\" kind=20 roster=4a/0c pop 1 drop=4a/0c drift=0/0 pop 11->12 entities 54->56"
+      "detail": "[exact tap kind 10 f0 @422,218] action=\"Train RIVETER, 4 alloy, 1 population RIVETER4A\" kind=20 roster=4a/0c pop 1 drop=4a/0c drift=0/1 pop 11->12 entities 68->70"
     },
     {
       "name": "build-site",
       "pass": true,
-      "detail": "[exact tap kind 20 f0 @402,178] action=\"Build FREIGHT COURT, 24 alloy FREIGHT COURT24A\" kind=11 roster=24a/0c sitePlaced=true entities 54->55 alloy 80->56 charge 41->41 costSpent=true"
+      "detail": "[exact tap kind 20 f0 @358,257] action=\"Build FREIGHT COURT, 24 alloy FREIGHT COURT24A\" kind=11 roster=24a/0c sitePlaced=true entities 68->69 alloy 80->56 charge 40->41 costSpent=true"
     },
     {
       "name": "no-console-errors",
@@ -203,7 +208,7 @@
     {
       "name": "match-determinism",
       "pass": true,
-      "detail": "0f96e8dc vs 0f96e8dc entities=55/55 age=1/1"
+      "detail": "39ee7d97 vs 39ee7d97 entities=69/69 age=1/1"
     },
     {
       "name": "no-webgpu-error-path",
@@ -218,7 +223,8 @@
     "shot-pinch.png",
     "shot-main.png",
     "shot-rotated.png",
-    "shot-match-hud.png"
+    "shot-match-hud.png",
+    "shot-match-end.png"
   ],
   "errors": [],
   "viewport": {
@@ -232,10 +238,10 @@
   "fps": {
     "fps": 60.25,
     "frames": 241,
-    "mean_ms": 16.61410788381743,
-    "p50_ms": 16.700000047683716,
+    "mean_ms": 16.643153526970956,
+    "p50_ms": 16.699999809265137,
     "p95_ms": 16.90000009536743,
-    "max_ms": 17.100000143051147
+    "max_ms": 20
   },
   "matchErrors": []
 }

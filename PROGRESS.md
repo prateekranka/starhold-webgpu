@@ -31,7 +31,97 @@ Integration and release rules for wave 2:
 - Image generation is for concept sheets and HUD icons only. In-world rendering
   stays procedural and pixel-exact.
 
+## Wave 3 — 2026-09-15, second round (lab, match end, composition)
+
+Astra returned, so this round spends it where depth pays: a blind visual gate, a
+correctness-critical simulation change, and the biggest visual piece. The lead
+orchestrates and verifies; subagents write code.
+
+### The blind visual gate (gpt-6-astra, three frames of the live build)
+
+Verdict **FAIL**, and specific rather than vague: *"equally noisy purple ground
+replaces recognizable terrain, substantial scenery and clear routes; the buildings
+have no convincing surrounding world."* It praised three things that must not
+regress: ivory walls and teal roofs make the keep readable, units stay
+distinguishable by colour, and the health strip reads. Its prescription is adopted
+as the binding brief `docs/TERRAIN_COMPOSITION_SPEC.md`.
+
+### The objective probe behind that brief
+
+`scripts/world-composition-probe.mjs` reads the world buffer directly and turned
+the gate's judgment into numbers — and found worse than a palette problem:
+
+```
+base 0 -> centre: land-only route NO   (761,663 land tiles walked)
+base 1 -> centre: land-only route NO   (761,663 land tiles walked)
+ore: 28 tiles in 18 groups, 16 of them a single tile
+void: 25.3% of the world, 27.56% inside the box at each base
+ridge step faces: 84,331, spread so evenly no ridge reads as one
+```
+
+**The two starts are on separate landmasses.** The raid works today only because
+movement ignores terrain. Composition is therefore connection first.
+
+### The match-end model (Astra subagent, verified here)
+
+`docs/MATCHEND_SPEC.md` option B: a sim-authoritative outcome. `match_outcome()`
+runs after production and damage each match tick, counts live roster actors only
+(neutral ore, projectiles and wrecks cannot keep a side alive), holds a grace
+window, is sticky once decided, and breaks ties player-first so a simultaneous
+wipe is deterministic. `sim_outcome()` returns 0/1/2 and is 0 in the showcase.
+The client renders a `<dialog>`; NEW MATCH re-reads the sim before acting, and
+Escape cannot dismiss it.
+
+Verified by the new `match-end` gate, which fast-forwards a **real** match until
+the AI wins — no injected deaths, no injected flag — then checks the modal text,
+that the NEW MATCH target is 144x48 and its centre hits it, that the restart is a
+clean match with the start economy, and that NEW MATCH does **nothing** while no
+outcome exists:
+
+```
+PASS  match-end — sim_outcome()=1 tick=148798 live=0 sticky=true
+      modal="DEFEAT All your units and buildings have been destroyed. NEW MATCH"
+      target=144x48 hit=true fits=true restart=true hash=0e48a338/0e48a338
+      economy=80/40 showcase sim_outcome()=0 noModal=true noneGuard=true
+```
+
+**Full suite on the frozen build: 198/198** — desktop 31, phone 41, tablet 41,
+portrait 42, iPad 43 — 60.3 fps mean, p95 17.0–17.3 ms, no console errors, and the
+showcase tuple unchanged at `55 / 247 / 199`. The iPad's first `lod-budget` run
+failed on p95 only (19.2–21.5 ms) while holding 60 fps; a clean re-run passed at
+17.0–17.2 ms, and the cause was CPU contention from a concurrent wasm build, not a
+render regression.
+
+**Hash correction.** The match hash is `0f96e8dc` (see the gate output) — not the
+`a7b9e906` that README, PROGRESS and the match-end spec all claimed. The subagent
+proved this by hashing HEAD's own wasm, and did not rebaseline anything to make
+the numbers agree. The gate compares two matches **within one run**, so the
+requirement is agreement, not a stored constant; the three stale references are
+corrected.
+
+### The unit and building lab (borrowed from Dimillian/Evergrow)
+
+`lab.html` + `src/lab/`, dev-only by construction (`vite build` emits index.html
+alone, verified: no lab file in `dist/`). It shows all 30 actors — what
+`docs/CIVILIZATIONS.md` and `docs/UNIT_DESIGN.md` promise beside what
+`public/sim.wasm` charges through `sim_roster_count/ptr`, with a proportion
+diagram per actor, group and faction filters, search, and JSON export. A card
+turns red when a document drifts from the simulation; today all 30 agree.
+
+Open it at `npm run dev` → `/lab.html`, or on the tailnet at
+`https://bobby.taile5de76.ts.net:8447/lab.html` (port 8447 → the dev server; the
+:8447 route needed `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` or vite answers 403 to
+the proxy's Host header).
+
+### Screens and the phone
+
+The visual gate also flagged the landscape phone frame: measured
+`canvas-fits — rect=579.5x326.0@132.2,0.0` in an 844 px viewport, so **31% of the
+screen is empty black** beside a 168 px minimap. `docs/SCREEN_USE_SPEC.md`
+supersedes the fixed-target sizing rule for landscape touch viewports only.
+
 ## Playtest round — 2026-09-15 (orchestrator played the world build)
+
 
 A scripted play session (start a match, drive the HUD, fast-forward, read
 `__APP.entityProbe()`) found eight real defects and they are fixed. Issue log with

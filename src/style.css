@@ -27,6 +27,22 @@ body.touch #viewport nav button:focus-visible { outline-color:#F3F0D7; }
 body.touch #viewport button canvas.glyph { display:block; width:36px; height:36px; image-rendering:pixelated; }
 body.mouse #viewport canvas.glyph { display:none; }
 
+/* Match outcome lives in the top layer, never in a bar cluster. Opaque palette
+   backdrop avoids introducing blended colours. Native dialog owns focus/inert. */
+#match-end { position:fixed; inset:var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l);
+ width:360px; max-width:calc(100% - var(--safe-l) - var(--safe-r) - 32px);
+ max-height:calc(100% - var(--safe-t) - var(--safe-b) - 32px); margin:auto; padding:24px;
+ border:2px solid #F1CE72; background:#1B1E30; color:#F3F0D7; font:14px/1.5 monospace; text-align:center; }
+#match-end::backdrop { background:#10121C; }
+#match-end h1 { margin:0 0 12px; color:#F1CE72; font:24px/1.2 monospace; letter-spacing:.06em; }
+#match-end p { margin:0 0 20px; }
+#match-end-new { min-width:144px; min-height:48px; padding:8px 16px; border:2px solid #F1CE72;
+ background:#2B2D46; color:#F3F0D7; font:14px/1.2 monospace; cursor:pointer; touch-action:manipulation; }
+#match-end-new:hover { background:#41435E; }
+#match-end-new:active { background:#565B73; }
+#match-end-new:focus-visible { outline:2px solid #F3F0D7; outline-offset:2px; }
+#match-end-new:disabled { color:#565B73; border-color:#41435E; cursor:default; }
+
 /* --- HUD bar (wave 2). DOM only; palette-only; every target >=44x44 CSS px --- */
 #hud-bar { position:fixed; left:var(--safe-l); right:var(--safe-r); bottom:var(--safe-b);
  height:var(--hud-h); z-index:5; overflow:hidden;
@@ -92,7 +108,7 @@ body.mouse #viewport canvas.glyph { display:none; }
 #minimap { position:fixed; z-index:6; right:calc(var(--safe-r) + 10px); bottom:calc(var(--safe-b) + var(--hud-h) + 56px);
  width:168px; height:168px; padding:4px; background:#10121C; border:2px solid #F3F0D7;
  touch-action:none; cursor:move; }
-body.touch #minimap { width:120px; height:120px; bottom:calc(var(--safe-b) + var(--hud-h) + 66px); }
+body.touch #minimap { width:128px; height:128px; bottom:calc(var(--safe-b) + var(--hud-h) + 66px); }
 #minimap.off { display:none; }
 
 /* Narrow landscape phones: the bar has to hold five meters, the age cluster with
@@ -115,4 +131,7 @@ body.touch #minimap { width:120px; height:120px; bottom:calc(var(--safe-b) + var
  display:grid; place-items:center; border:2px solid #F3F0D7; background:#10121C; color:#F3F0D7;
  font:14px/1 monospace; padding:0; cursor:pointer; pointer-events:auto; touch-action:manipulation; }
 #minimap-close:hover { background:#2B2D46; }
+/* MOBILE_SPEC: every touch target is at least 44x44. The close control was 24x24
+ * on every touch viewport until the screen-use probe measured it. */
+body.touch #minimap-close { width:44px; height:44px; top:-2px; right:-2px; font:16px/1 monospace; }
 #hud-bar button[data-action="minimap"] { border-color:#B7C8C6; }

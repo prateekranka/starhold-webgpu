@@ -27,6 +27,8 @@ export interface SimAbi {
   sim_charge(): number;
   sim_match_init?(seed: number, faction: number): void;
   sim_mode?(): number;
+  sim_outcome?(): number;       // 0 none, 1 defeat, 2 victory (sim-authoritative)
+  sim_outcome_tick?(): number;
   sim_player?(): number;
   sim_age?(): number;
   sim_age_progress?(): number;
@@ -65,6 +67,7 @@ export interface HudView {
   ready: boolean;
   match: boolean;              // the wave-2 ABI is present
   mode: number;                // 0 showcase, 1 match
+  outcome: number;             // display only; never derived from entity counts
   player: number;              // 0 Dawnward, 1 Cinderwake
   age: number;
   ageProgress: number;         // 0..1 while a tier advance runs, else 1
@@ -186,6 +189,11 @@ export class Hud {
   private readonly ageCost: HTMLElement;
   private readonly advance: HTMLButtonElement;
   private readonly reset: HTMLButtonElement;
+  private readonly matchEnd: HTMLDialogElement;
+  private readonly endTitle: HTMLElement;
+  private readonly endText: HTMLElement;
+  private readonly newMatch: HTMLButtonElement;
+  private lastOutcome = 0;
   private readonly starts: HTMLButtonElement[];
   private readonly list: HTMLElement;
   private readonly prev: HTMLButtonElement;
@@ -226,6 +234,16 @@ export class Hud {
     this.ageCost = pick('hud-age-cost');
     this.advance = pick('hud-advance') as HTMLButtonElement;
     this.reset = pick('hud-reset') as HTMLButtonElement;
+    this.matchEnd = pick('match-end') as HTMLDialogElement;
+    this.endTitle = pick('match-end-title');
+    this.endText = pick('match-end-text');
+    this.newMatch = pick('match-end-new') as HTMLButtonElement;
+    this.matchEnd.addEventListener('cancel', (event) => event.preventDefault());
+    this.newMatch.addEventListener('click', () => {
+      const outcome = this.sim?.sim_outcome?.();
+      if (this.sim?.sim_mode?.() !== 1 || (outcome !== 1 && outcome !== 2)) return;
+      this.wiring.startMatch(this.sim.sim_player?.() === 1 ? 1 : 0);
+    });
     this.starts = [pick('hud-start-0') as HTMLButtonElement, pick('hud-start-1') as HTMLButtonElement];
     this.list = pick('hud-action-list');
     this.prev = pick('hud-prev') as HTMLButtonElement;
@@ -237,7 +255,7 @@ export class Hud {
       this.texts.set(element, element.textContent ?? '');
     }
     this.view = {
-      ready: false, match: false, mode: 0, player: 0, age: 0, ageProgress: 1, ageCost: 0, ageCostCharge: 0,
+      ready: false, match: false, mode: 0, outcome: 0, player: 0, age: 0, ageProgress: 1, ageCost: 0, ageCostCharge: 0,
       alloy: 0, charge: 0, popUsed: 0, popCap: 0, selected: null, selectedKind: null, selectedState: -1, tile: 0,
     };
     // One delegated listener: the action buttons are rebuilt per selection.
@@ -257,6 +275,21 @@ export class Hud {
     this.sim = sim;
     const match = view.match && !!sim;
     const inMatch = match && view.mode === 1;
+    // Native modality blocks pointer/keyboard input behind the panel without
+    // participating in the bar layout. Only a flag transition touches its DOM.
+    const outcome = inMatch ? view.outcome : 0;
+    if (outcome !== this.lastOutcome) {
+      this.lastOutcome = outcome;
+      const ended = outcome === 1 || outcome === 2;
+      this.newMatch.disabled = !ended;
+      if (ended) {
+        this.setText(this.endTitle, outcome === 1 ? 'DEFEAT' : 'VICTORY');
+        this.setText(this.endText, outcome === 1
+          ? 'All your units and buildings have been destroyed.'
+          : 'All enemy units and buildings have been destroyed.');
+        if (!this.matchEnd.open) this.matchEnd.showModal();
+      } else if (this.matchEnd.open) this.matchEnd.close();
+    }
 
     // Left: ALLOY / CHARGE / POP used/cap.
     if (this.lastAlloy !== view.alloy) { this.lastAlloy = view.alloy; this.setText(this.alloyValue, String(view.alloy)); }

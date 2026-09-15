@@ -100,6 +100,8 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
    o.ground=p.xy;o.material=u32(pigment)+1u;
   }
  }
+ // Match surface roles use -7..-9; the frozen island never uses these modes.
+ if screen<=-7. && screen>=-9. && shade==0. {o.ground=p.xy;o.material=u32(pigment)+33u+u32(-screen-7.)*32u;}
  if screen == -3. || screen == -4. {o.color=palette[u32(pigment)];}
  if screen == -4. {o.unit=1.;o.rim=vec2f(0.);}
  } return o;
@@ -108,6 +110,30 @@ struct Fragment { @location(0) color:vec4f, @location(1) mask:vec4f }
 // Authored plate vocabulary in world space: staggered shoulders, a bent seam,
 // paired chips and a three-step ore fracture. No pixel hash or screen grid.
 fn basalt(world:vec2f, province:u32)->u32 {
+ // Match-only surface roles turn detail up on rock and down in the clearing.
+ // The old showcase branch below stays unchanged, including its sky pool.
+ if province>=96u {
+  // Worn flagstone along the route: pale continuous fill, sparse dark joints.
+  let p=fract(vec2f(world.x+floor(world.y/2.)*.7,world.y)/2.);
+  return select(6u,5u,p.y<.05 || (p.x<.05 && p.y<.6));
+ }
+ if province>=64u {
+  // Sparse linked chips in the cleared soil, not a repeating full-field grid.
+  let cell=floor(world/4.7);let q=fract(world/4.7);
+  let motif=(u32(cell.x)*7u+u32(cell.y)*11u)%19u;
+  if motif<3u && q.x>.15 && q.x<.58 && q.y>.28 && q.y<.44 {return 28u;}
+  if motif==2u && q.x>.48 && q.x<.72 && q.y>.4 && q.y<.51 {return 4u;}
+  return 29u;
+ }
+ if province>=32u {
+  let row=floor(world.y/1.7);
+  let p=vec2f((world.x+select(.2,.85,u32(row)%2u==0u))/2.3,world.y/1.7);
+  let q=fract(p);let motif=(u32(floor(p.x))*3u+u32(row)*5u)%9u;
+  if q.y<.08 || (q.x<.06 && q.y<.7) {return 3u;}
+  if q.x+q.y*.45>.97 && motif<6u {return 4u;}
+  if q.y>.82 && q.x>.2 && q.x<.65 {return 6u;}
+  return select(5u,4u,motif<3u);
+ }
  let rows=array<f32,7>(0.,.43,.17,.68,.29,.81,.52);
  let widths=array<f32,7>(1.18,1.52,1.31,1.67,1.24,1.43,1.59);
  let row=floor(world.y/1.16);
@@ -208,6 +234,9 @@ export class Renderer {
   private camX=16;private camY=16;
   private bakedX=NaN;private bakedY=NaN;private bakedZoom=-1;
   private degraded=false;
+  private worldStarts:number[][]=[];
+  private worldRoutes:number[][]=[];
+  private worldOutcrops:number[][]=[];
  private contourData=new Uint8Array(256*CONTOUR_ROWS);
  private contourUpload:any;
  private contourLayout={bytesPerRow:256,rowsPerImage:CONTOUR_ROWS};
@@ -544,6 +573,19 @@ export class Renderer {
   /** Adopt a generated world: side-length terrain, view centred on a base. */
   setWorld(terrain:Float32Array,side:number,cx:number,cy:number) {
    this.terrain=terrain;this.terrainSide=side;this.setView(cx,cy);
+   // Match-only composition anchors mirror world_start/world_route in the sim.
+   // They are starting slots, not factions; selecting Cinderwake swaps owners,
+   // never geography. Derive once, not inside the per-frame render path.
+   this.worldStarts=[[Math.floor(side/5),Math.floor(side/3)],[Math.floor(side*4/5),Math.floor(side*2/3)]];
+   this.worldRoutes=[];this.worldOutcrops=[[488,472],[544,550],[128,800],[896,224]];
+   for(let slot=0;slot<2;slot++){
+    const [x,y]=this.worldStarts[slot],m=slot===0?1:-1,mid=side/2;
+    for(const [dx,dy] of [[0,-44],[-48,70],[-44,0]])this.worldOutcrops.push([x+dx*m,y+dy*m]);
+    for(const points of [
+     [[x,y],[x,y-38*m],[x+90*m,y-32*m],[mid,mid-64*m],[mid,mid-24*m],[mid,mid]],
+     [[x,y],[x-38*m,y],[x-48*m,y+70*m],[x+52*m,y+83*m],[mid-64*m,mid+64*m],[mid,mid]]
+    ])for(let j=0;j<points.length-1;j++)this.worldRoutes.push([...points[j],...points[j+1]]);
+   }
    this.bakedX=NaN;this.bakedY=NaN;this.bakedZoom=-1;
   }
   /** Back to the authored 32x32 island, baked once at init. */
@@ -563,11 +605,27 @@ export class Renderer {
    if(this.bakedZoom===zoom&&Math.abs(this.camX-this.bakedX)<4&&Math.abs(this.camY-this.bakedY)<4)return;
    this.bakeWorld(yaw,zoom);
   }
-  /** Coarse material provinces, so plateau tops read as authored bands. */
-  private province(x:number,y:number):number {
-   const c=((Math.floor(x/24)*73856093)^(Math.floor(y/24)*19349663))>>>0;
-   const v=c%7;
-   return v<3?29:v<5?28:4;
+  /** Composition is baked into the existing tile cap, not overlaid geometry.
+   * Quiet soil, travelled stone and exposed rock use the same palette at ALL
+   * tiers. World caps deliberately bypass the showcase's high-volume basalt. */
+  private worldMaterial(x:number,y:number,h:number):number {
+   let near=Infinity;
+   for(const [bx,by] of this.worldStarts)near=Math.min(near,Math.hypot(x-bx,y-by));
+   if(h===.5){
+    let road=Infinity;
+    for(const r of this.worldRoutes){
+     if(x<Math.min(r[0],r[2])-5||x>Math.max(r[0],r[2])+5||y<Math.min(r[1],r[3])-5||y>Math.max(r[1],r[3])+5)continue;
+     const dx=r[2]-r[0],dy=r[3]-r[1],t=Math.max(0,Math.min(1,((x-r[0])*dx+(y-r[1])*dy)/(dx*dx+dy*dy)));
+     road=Math.min(road,(x-r[0]-t*dx)**2+(y-r[1]-t*dy)**2);
+    }
+    if(near>8&&road<=6.25)return road>2.25?5:6;
+    // Quiet ground has no repeating tile motif. Wear belongs at its edge.
+    if(near<31)return 29;
+   }
+   const shoulder=this.ground(x-5,y)!==h||this.ground(x+5,y)!==h||this.ground(x,y-5)!==h||this.ground(x,y+5)!==h;
+   if(h===1)return shoulder?5:4;
+   if(shoulder)return h===.5?4:28;
+   return 28;
   }
   /** Bake the visible window in three detail tiers, nearest first. */
   private bakeWorld(yaw:number,zoom:number) {
@@ -589,65 +647,58 @@ export class Renderer {
      const d=Math.hypot(px-mx,py-my);
      if((d<=170?0:d<=380?1:2)!==tier)continue;
      if(this.count>=BAKE_LIMIT){this.degraded=true;break;}
-     if(tier===2)this.box(x+.5,y+.5,h-.16,1,1,.16,this.province(x,y));
-     else this.worldTile(x,y,h,tier===0);
+     this.worldTile(x,y,h,tier,this.worldMaterial(x,y,h));
     }
     if(this.degraded)break;
    }
    for(let i=0;i<this.count;i++)if(this.data[i*8+7]===0)this.data[i*8+7]=-6;
+   // Mineral country has a static outcrop silhouette behind the mineable
+   // shards: no new actors, textures or per-frame scenery work. These clumps
+   // remain in every LOD, unlike the little ridge chips that disappear far out.
+   for(const [x,y] of this.worldOutcrops){
+    const h=this.ground(x-4,y),u=x-cx,v=y-cy,rx=u*c-v*s,ry=u*s+v*c;
+    const px=mx+hx*(rx-ry),py=my+hy*(rx+ry)-hz*h;
+    if(h<0||px<-32||px>RENDER_WIDTH+32||py<-32||py>RENDER_HEIGHT+32||this.count+6>=BAKE_LIMIT)continue;
+    this.box(x-4,y,h,1.5,1.3,2.5,30,-1,-2);
+    this.box(x-2.8,y+.5,this.ground(x-2.8,y+.5),1.1,1.2,1.5,29,-1,-2);
+    this.box(x-4.7,y+.8,this.ground(x-4.7,y+.8),.8,.9,1.2,30,-1,-2);
+    this.box(x-4.3,y+.05,h+1.8,.18,.2,.6,31,-1,-2);
+   }
    this.staticCount=this.count;this.staticEmissiveCount=this.emissiveCount;
    this.bakedX=cx;this.bakedY=cy;this.bakedZoom=zoom;
   }
-  /** One land tile of the generated world. Full detail at tier 0, column and
-   *  cap with a rim lip at tier 1; the far tier is a flat plate in bakeWorld. */
-  private worldTile(x:number,y:number,h:number,detail:boolean) {
+  /** Every tier keeps closed caps AND step faces. Only exposed faces need
+   * columns; interior tiles used to submit buried volumes and basalt noise.
+   * Detail tiers now spend that saved budget on ridge flanks, not flat ground. */
+  private worldTile(x:number,y:number,h:number,tier:number,cap:number) {
    const hash=((x*374761393+y*668265263)^(x*y*1274126177))>>>0;
-   const bottom=-3.5-(hash%5)*.35;
-   this.cliffBottom=bottom;this.cliffTop=h;
-   const lowN=!this.land(x+1,y)||this.ground(x+1,y)<h;
-   const lowE=!this.land(x,y+1)||this.ground(x,y+1)<h;
-   const edge=!this.land(x-1,y)||!this.land(x,y-1);
-   const rim=lowN||lowE||edge;
-   this.terrainBox(x+.5,y+.5,bottom,rim?.84:1,rim?.88:1,h-bottom-.16,2,rim||!this.land(x+1,y)||!this.land(x,y+1));
-   const cap=this.province(x,y);
-   this.terrainBox(x+.5,y+.5,h-.16,rim?.94:1,rim?.96:1,.16,cap);
-   if(rim) {
-    this.terrainBox(x+.5,y+.5,h-.22,1.04,1.02,.22,cap);
-    this.terrainBox(x+.78,y+.84,bottom+.2,.18,.12,h-bottom-.5,3);
-    if(hash%2===0)this.terrainBox(x+.5,y+.5,h-1.2,.94,.96,.18,4);
+   const west=this.land(x-1,y)?this.ground(x-1,y):-3.5;
+   const north=this.land(x,y-1)?this.ground(x,y-1):-3.5;
+   const east=this.land(x+1,y)?this.ground(x+1,y):-3.5;
+   const south=this.land(x,y+1)?this.ground(x,y+1):-3.5;
+   const low=Math.min(west,north,east,south),rim=low<h;
+   // One full-width cap prevents little dark fissures in otherwise quiet land.
+   // Mode -6 is the pre-existing exact-palette hard face table, no new shader.
+   this.box(x+.5,y+.5,h-.12,1,1,.12,cap,-1,h===1?-7:cap===29?-8:cap===6?-9:-6);
+   if(!rim)return;
+   this.cliffBottom=low;this.cliffTop=h;
+   this.terrainBox(x+.5,y+.5,low,1,1,h-low-.12,3,false);
+   if(tier===2)return;
+   // Lit west/north edges and darker east/south flanks are world-fixed. Keep
+   // the two terrain steps visible even in the far tier; adorn only near ones.
+   if(west<h)this.box(x+.04,y+.5,h+.006,.08,1,.008,6,-1,-6);
+   if(north<h)this.box(x+.5,y+.04,h+.006,1,.08,.008,5,-1,-6);
+   if(tier!==0)return;
+   if((east<h||south<h)&&hash%3===0){
+    const xx=x+(east<h?1.015:.5),yy=y+(south<h?1.015:.5),foot=Math.max(low,h-.6);
+    this.terrainBox(xx,yy,foot,east<h?.08:.28,south<h?.08:.28,h-foot-.1,3,false);
    }
-   if(!detail)return;
-   // Contour strips, exposed seams, ribs and retaining skins follow the authored
-   // island's rules so the generated land keeps the same carved read.
-   if(!this.land(x-1,y)||this.ground(x-1,y)<h)this.box(x+.03,y+.5,h+.012,.06,1,.008,y%4===0?29:30);
-   if((!this.land(x,y-1)||this.ground(x,y-1)<h)&&x%5<2)this.box(x+.5,y+.03,h+.012,1,.06,.008,29);
-   if(lowN||lowE||edge) {
-    this.terrainBox(x+.87,y+.83,bottom+.4,.17,.18,h-bottom-.6,hash%2?2:3);
-    if(hash%3===0)this.terrainBox(x+.55,y+.64,bottom+1.1,.9,.92,.2,4);
+   // All scenery is tied to exposed rock: no crystals scattered in clearings
+   // or on roads. This work runs during a window bake only.
+   if(cap===5&&h===1&&hash%4===0){
+    this.box(x+.56,y+.5,h,.64,.48,.38,4,-1,-6);
+    this.box(x+.65,y+.48,h+.38,.32,.36,.18,5,-1,-6);
    }
-   for(let side=0;side<2;side++) {
-    if(!(edge||side===0&&lowN||side===1&&lowE))continue;
-    const faceBottom=edge?bottom:Math.max(bottom,this.ground(x+(side===0?1:0),y+(side===1?1:0))-1.1);
-    for(let rib=0;rib<3;rib++) {
-     const along=.18+rib*.31,xx=x+(side===0?1.015:along),yy=y+(side===1?1.015:along);
-     const top=h-.28-(hash+rib)%3*.13;
-     this.terrainBox(xx,yy,faceBottom,side===0?.12:.16,side===1?.12:.16,top-faceBottom,(hash+rib)%2?5:4);
-     if((hash+rib)%3===0)this.terrainBox(xx,yy,top-.8,side===0?.25:.26,side===1?.25:.26,.14,5);
-    }
-   }
-   for(let s2=0;s2<4;s2++) {
-    const dx=s2===0?-1:s2===1?1:0,dy=s2===2?-1:s2===3?1:0;
-    if(!this.land(x+dx,y+dy))continue;
-    const low=this.ground(x+dx,y+dy);
-    if(low>=h)continue;
-    const xx=x+.5+dx*.505,yy=y+.5+dy*.505,w=dx?.075:1,d=dy?.075:1,rise=h-low;
-    for(let band=0;band<3;band++)this.box(xx,yy,low+rise*band/3,w,d,rise/3,3+band-(dx>0||dy>0?1:0));
-    this.box(xx,yy,low+.012,w+.015,d+.015,.055,1);
-    if(dx<0||dy<0)this.box(xx-dx*.045,yy-dy*.045,h+.012,dx?.06:1,dy?.06:1,.015,30);
-   }
-   // A sparse authored sprinkle: crystals and rock clusters, never tile noise.
-   if(hash%37===3)this.shard(x+.5,y+.5,h+.05,.9+(hash%3)*.2,30);
-   else if(hash%53===7) {this.groundContact(x+.62,y+.55,.42,.4);this.box(x+.62,y+.55,h+.05,.5,.46,.34,5);this.box(x+.72,y+.5,h+.39,.3,.28,.2,4);}
   }
  private building(e:Float32Array,o:number,id:number) {
   if(cinderBuildings.has(e[o+4])){

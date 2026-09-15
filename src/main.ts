@@ -8,7 +8,7 @@ type SimExports = SimAbi & WebAssembly.Exports;
 interface App {
  ready:boolean;error:string|null;
  getState():{touch:boolean;yawSteps:number;zoom:number;selected:number|null;entityCount:number;fps:number|null;frameStats:{drawCalls:number;triangles:number}|null;
-  mode:number;player:number;age:number;ageProgress:number;popUsed:number;popCap:number;alloy:number;charge:number;selectedKind:number|null;actions:number[];
+  mode:number;outcome:number;outcomeTick:number;player:number;age:number;ageProgress:number;popUsed:number;popCap:number;alloy:number;charge:number;selectedKind:number|null;actions:number[];
   worldTiles:number;worldMeters:number;camera:{x:number;y:number};minimap:{open:boolean}};
  /** Read-only heightfield sample: level codes on a fixed grid. */
  terrainSample(step:number):{side:number;stride:number;levels:number[]};
@@ -23,6 +23,7 @@ interface App {
   * harness taps this exact live position instead of scanning guessed points.
   * Read-only: it never selects, moves, or mutates simulation state. */
  entityScreen(kind:number,faction:number):{x:number;y:number}|null;
+ tileScreen(tx:number,ty:number):{x:number;y:number}|null;
 }
 declare global {interface Window {__APP:App}}
 let yawSteps=0,zoomIndex=1,sim:SimExports|undefined,entities=new Float32Array(0),entityCount=0,selected:number|null=null,fps:number|null=null;
@@ -169,6 +170,8 @@ function matchAbi():boolean {
   typeof s.sim_pop_used==='function'&&typeof s.sim_pop_cap==='function';
 }
 function simMode():number {const s=sim;return s&&typeof s.sim_mode==='function'?s.sim_mode()>>>0:0;}
+function simOutcome():number {const s=sim;return s&&typeof s.sim_outcome==='function'?s.sim_outcome()>>>0:0;}
+function simOutcomeTick():number {const s=sim;return s&&typeof s.sim_outcome_tick==='function'?s.sim_outcome_tick()>>>0:0;}
 function simPlayer():number {const s=sim;return s&&typeof s.sim_player==='function'?(s.sim_player()===1?1:0):0;}
 function simAge():number {const s=sim;return s&&typeof s.sim_age==='function'?s.sim_age()>>>0:0;}
 function simAgeProgress():number {const s=sim;const value=s&&typeof s.sim_age_progress==='function'?s.sim_age_progress():1;return Number.isFinite(value)?Math.max(0,Math.min(1,value)):1;}
@@ -228,13 +231,14 @@ function buildTile():number {
  for(const tile of tiles)if(!tileOccupied(tile,selected))return tile;
  return tileOf(x,y);
 }
-const view:HudView={ready:false,match:false,mode:0,player:0,age:0,ageProgress:1,ageCost:0,ageCostCharge:0,alloy:0,charge:0,popUsed:0,popCap:0,selected:null,selectedKind:null,selectedState:-1,tile:0};
+const view:HudView={ready:false,match:false,mode:0,outcome:0,player:0,age:0,ageProgress:1,ageCost:0,ageCostCharge:0,alloy:0,charge:0,popUsed:0,popCap:0,selected:null,selectedKind:null,selectedState:-1,tile:0};
 /** Push the current sim/selection state into the DOM bar. The view object is
  *  reused, so the bar never allocates per frame. */
 function syncHud() {
  view.ready=window.__APP.ready;
  view.match=matchAbi();
  view.mode=simMode();
+ view.outcome=simOutcome();
  view.player=simPlayer();
  view.age=simAge();
  view.ageProgress=simAgeProgress();
@@ -253,6 +257,7 @@ function syncHud() {
 function startMatch(faction:0|1) {
  if(!sim||typeof sim.sim_match_init!=='function')return;
  sim.sim_match_init(seed>>>0,faction===1?1:0);
+ yawSteps=0;zoomIndex=1;
  worldTerrain=new Float32Array(0);
  worldSide=typeof sim.sim_world_size==='function'?sim.sim_world_size():0;
  if(worldSide>0) {
@@ -373,11 +378,29 @@ function entityScreen(kind:number,faction:number):{x:number;y:number}|null {
  }
  return fallback;
 }
+/**
+ * Read-only: the screen point of a world tile centre, through the same projection
+ * the entity probe uses. The harness taps known-empty ground with this so that a
+ * "a ground tap clears the selection" check never has to guess a screen point,
+ * and never goes through the pick it is testing.
+ */
+function tileScreen(tx:number,ty:number):{x:number;y:number}|null {
+ const rect=canvas.getBoundingClientRect();
+ if(!rect.width||!rect.height)return null;
+ const zoom=zooms[zoomIndex],c=Math.round(Math.cos(yawSteps*Math.PI/2)),s=Math.round(Math.sin(yawSteps*Math.PI/2));
+ const side=sideOf();
+ const z=worldSide>0&&tx>=0&&ty>=0&&tx<side&&ty<side?Math.max(0,worldTerrain[ty*side+tx]):1;
+ const dx=tx-camX,dy=ty-camY;
+ const rx=dx*c-dy*s,ry=dx*s+dy*c;
+ const px=2*(240+6*(rx-ry)/zoom),py=2*(136+3.4641016*(rx+ry)/zoom-6.9282032*z/zoom);
+ if(px<0||py<0||px>RENDER_WIDTH||py>RENDER_HEIGHT)return null;
+ return {x:rect.left+px*rect.width/RENDER_WIDTH,y:rect.top+py*rect.height/RENDER_HEIGHT};
+}
 window.__APP={ready:false,error:null,getState:()=>({touch:touchLayout,yawSteps,zoom:zooms[zoomIndex],selected,entityCount,fps,frameStats:window.__APP.ready?renderer.stats:null,
- mode:simMode(),player:simPlayer(),age:simAge(),ageProgress:simAgeProgress(),popUsed:simPopUsed(),popCap:simPopCap(),
+ mode:simMode(),outcome:simOutcome(),outcomeTick:simOutcomeTick(),player:simPlayer(),age:simAge(),ageProgress:simAgeProgress(),popUsed:simPopUsed(),popCap:simPopCap(),
  alloy:sim?sim.sim_alloy():0,charge:sim?sim.sim_charge():0,selectedKind:currentKind(),actions:hud.actions(),
  worldTiles:worldSide,worldMeters:worldSide*(sim&&typeof sim.sim_metres_per_tile==='function'?sim.sim_metres_per_tile():10),camera:{x:camX,y:camY},minimap:{open:!minimap.classList.contains('off')}}),
- rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,command,selectEntity,selectKind,kinds,entityScreen,terrainSample,entityProbe};
+ rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,command,selectEntity,selectKind,kinds,entityScreen,tileScreen,terrainSample,entityProbe};
 const canvas=document.querySelector<HTMLCanvasElement>('#world')!;
 const viewport=document.querySelector<HTMLElement>('#viewport')!;
 const selection=document.querySelector<HTMLOutputElement>('#selection')!;
@@ -392,8 +415,21 @@ function hudHeight():number {
 function resize() {
  const read=(name:string)=>parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name))||0;
  const availW=innerWidth-read('--safe-l')-read('--safe-r');
- const availH=innerHeight-read('--safe-t')-read('--safe-b')-hudHeight();
- const fit=Math.min(availW/RENDER_WIDTH,availH/RENDER_HEIGHT);
+ const safeH=innerHeight-read('--safe-t')-read('--safe-b');
+ // SCREEN_USE_SPEC: on a landscape touch viewport the interface overlays the
+ // world instead of reserving a strip of it. Fitting the 960x540 target into the
+ // space the bar leaves costs a third of a phone screen in empty black bars
+ // (42.6% measured at 844x390), so there the fit uses the whole viewport and the
+ // bar sits over the canvas; elsewhere the bar keeps its own strip. The canvas
+ // keeps its aspect and its backing store, and the body clips the overflow.
+ const landscapeTouch=touchLayout&&availW>safeH;
+ // Fill only when the 960x540 target cannot be shown at native size (a phone).
+ // Above 1x the pixel rule wins instead, or the canvas would grow past the safe
+ // area: with 44px insets on a tablet, filling asked for 1.14x and the integer
+ // step produced a canvas 24px wider than the screen.
+ const fill=landscapeTouch&&Math.max(availW/RENDER_WIDTH,safeH/RENDER_HEIGHT)<1;
+ const availH=safeH-(fill?0:hudHeight());
+ const fit=fill?Math.max(availW/RENDER_WIDTH,safeH/RENDER_HEIGHT):Math.min(availW/RENDER_WIDTH,availH/RENDER_HEIGHT);
  const scale=fit>=1?Math.floor(fit):Math.max(0.1,fit);
  viewport.style.width=`${RENDER_WIDTH*scale}px`;viewport.style.height=`${RENDER_HEIGHT*scale}px`;
  clampMinimap();

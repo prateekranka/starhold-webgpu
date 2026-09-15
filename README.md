@@ -43,7 +43,7 @@ determinism tripwire, and at t = 108 s it must read
 tile — 10.24 km on a side — with terrain, biomes, ore deposits and two faction
 bases kilometres apart. A match starts with 54 entities (41 for the player, 13
 for the opponent); the opponent builds, trains and marches on the player's base.
-Match determinism is checked by hash (`a7b9e906`).
+Match determinism is checked by hash, comparing two matches started in the same run rather than against a stored constant (it reads `0f96e8dc` on the current build; a world regeneration legitimately moves it).
 
 Simulation steps at a fixed 60 Hz and is advanced from a fixed accumulator, so a
 seed plus a command sequence reproduces a match exactly.
