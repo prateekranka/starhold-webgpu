@@ -108,6 +108,45 @@ after numbers beside them.
    `__APP.tileScreen`, `match-end`, `world-composition`, both determinism gates).
 5. Showcase tuple unchanged; palette count still 32; fps within 0.5 of 60.3.
 
+## Round 2 — what is left, in the critics' own words
+
+Round 1 met all three measured targets and failed the blind gate at both zoom
+levels. That is recorded here because it teaches something about this spec's own
+acceptance section: **the numbers are diagnostics, the gate is the acceptance
+test.** The calm metric passed *before* anything changed, because it compared the
+clearing against a control disc placed near canyon country. "Is buildable ground
+calmer than a noisy control" is not the question a player asks; "can I tell
+buildable ground from road" is, and that distinction is categorical.
+
+Both critics agree on exactly three things being left, and two of them they also
+agree are working elsewhere:
+
+1. **Roads look like buildable plots.** *"The same light tiling is used on the two
+   diagonal routes, so buildable ground is not clearly separated from path."* The
+   base pad and the route surface share a treatment. Give the route its own bed —
+   a kerb, a border, a darker channel, a stitched edge — so "this is a way through"
+   and "this is where I may build" cannot be confused at 1x.
+2. **Cliffs resolve only at the widest zoom.** *"Flat tops are light grey, vertical
+   faces are dark purple/black. That makes wall-like cliffs visible"* at the widest
+   step, but at 1x *"it reads mostly as flat patterned purple bands."* The three-tone
+   system exists; it must survive the closer camera, which means stronger value
+   separation and an edge treatment that scales.
+3. **Charge crystals are illegible at 1x.** *"The charge crystals are tiny at normal
+   1x and unlabeled."* They must be unmistakable at gameplay zoom while staying
+   clearly a different family from the amber ore spikes.
+
+Everything else the critics list as working and must not regress: the base
+silhouette reads immediately, the two diagonal routes are visible and meet the
+central pad, ore reads as amber clustered spikes and differs from charge crystals,
+the palette is cohesive, the HUD is legible, and the clearing's extent is
+identifiable at the widest zoom.
+
+Round 2 is scoped to those three changes. It is not a refactor and not a new
+terrain language: change the road surface, the cliff faces at 1x, and the charge
+crystal presence, then re-judge. Do not raise the instance counts by more than 15 %,
+do not touch the palette's 32 entries, and keep the showcase and world hashes
+identical.
+
 ## Non-goals
 
 New units, buildings, mechanics or costs; unit art; camera, controls or interface
