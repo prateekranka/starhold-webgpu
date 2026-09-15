@@ -88,7 +88,7 @@
     {
       "name": "fps>=59-vsync-locked",
       "pass": true,
-      "detail": "fps=60.3 p95=16.9ms max=20.0ms"
+      "detail": "fps=60.3 p95=16.9ms max=17.1ms"
     },
     {
       "name": "hud-skirmish-entry",
@@ -133,7 +133,7 @@
     {
       "name": "lod-budget",
       "pass": true,
-      "detail": "instances per zoom 0.67:3523(60.3fps,p95=17.0ms) 0.80:4265(60.3fps,p95=16.9ms) 1.00:5763(60.3fps,p95=16.9ms) 1.33:9290(60.3fps,p95=17.0ms)"
+      "detail": "instances per zoom 0.67:3364(60.3fps,p95=17.0ms) 0.80:4113(60.3fps,p95=16.9ms) 1.00:5683(60.3fps,p95=17.0ms) 1.33:9440(60.3fps,p95=17.0ms)"
     },
     {
       "name": "minimap-present",
@@ -193,7 +193,7 @@
     {
       "name": "build-site",
       "pass": true,
-      "detail": "[exact tap kind 20 f0 @358,257] action=\"Build FREIGHT COURT, 24 alloy FREIGHT COURT24A\" kind=11 roster=24a/0c sitePlaced=true entities 68->69 alloy 80->56 charge 40->41 costSpent=true"
+      "detail": "[exact tap kind 20 f0 @362,256] action=\"Build FREIGHT COURT, 24 alloy FREIGHT COURT24A\" kind=11 roster=24a/0c sitePlaced=true entities 68->69 alloy 80->56 charge 40->41 costSpent=true"
     },
     {
       "name": "no-console-errors",
@@ -238,10 +238,10 @@
   "fps": {
     "fps": 60.25,
     "frames": 241,
-    "mean_ms": 16.643153526970956,
+    "mean_ms": 16.645228215767634,
     "p50_ms": 16.699999809265137,
     "p95_ms": 16.90000009536743,
-    "max_ms": 20
+    "max_ms": 17.100000143051147
   },
   "matchErrors": []
 }

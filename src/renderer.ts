@@ -30,6 +30,8 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  let combat=floor(color/32768.);o.rim=vec2f(select(0.,1.,combat>=18.),0.);
  var v=vertex;
  if screen < -0.5 && screen > -2.5 {v=vec3f(vertex.xy*select(1.,select(.55,.08,screen < -1.5),vertex.z>.5),vertex.z);}
+ // Match ore is a low, broad three-point cluster, not the tall charge spire.
+ if screen == -11. {v=vec3f(vertex.xy*select(1.,.12,vertex.z>.5),vertex.z);}
  var p=origin+v*size;
  // West-biased north-west key (-1,-0.4,above): the opposite cast vector
  // stays in world space. Its length remains capped at 0.4 tile.
@@ -100,6 +102,12 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
    o.ground=p.xy;o.material=u32(pigment)+1u;
   }
  }
+ // Match flanks keep a world-fixed key and a readable midstone wall. The
+ // authored island retains its original -5 ramp, byte for byte.
+ if screen == -10. {
+  o.cliff=vec2f(clamp((p.z-actor.x)/(actor.y-actor.x),0.,1.),10.+array<f32,6>(6.,5.,4.,6.,3.,1.)[u32(shade)]);
+ }
+ if screen == -11. {o.color=palette[array<u32,6>(22u,21u,21u,22u,20u,19u)[u32(shade)]];}
  // Match surface roles use -7..-9; the frozen island never uses these modes.
  if screen<=-7. && screen>=-9. && shade==0. {o.ground=p.xy;o.material=u32(pigment)+33u+u32(-screen-7.)*32u;}
  if screen == -3. || screen == -4. {o.color=palette[u32(pigment)];}
@@ -115,15 +123,15 @@ fn basalt(world:vec2f, province:u32)->u32 {
  if province>=96u {
   // Worn flagstone along the route: pale continuous fill, sparse dark joints.
   let p=fract(vec2f(world.x+floor(world.y/2.)*.7,world.y)/2.);
-  return select(6u,5u,p.y<.05 || (p.x<.05 && p.y<.6));
+  return select(6u,5u,p.y<.035 || (p.x<.035 && p.y<.45));
  }
  if province>=64u {
-  // Sparse linked chips in the cleared soil, not a repeating full-field grid.
-  let cell=floor(world/4.7);let q=fract(world/4.7);
-  let motif=(u32(cell.x)*7u+u32(cell.y)*11u)%19u;
-  if motif<3u && q.x>.15 && q.x<.58 && q.y>.28 && q.y<.44 {return 28u;}
-  if motif==2u && q.x>.48 && q.x<.72 && q.y>.4 && q.y<.51 {return 4u;}
-  return 29u;
+  // Matte cleared soil: occasional shallow scuffs, never the dark repeated
+  // debris marks of the rough country. One close-value step, no ink chips.
+  let cell=floor(world/7.3);let q=fract(world/7.3);
+  let motif=(u32(cell.x)*7u+u32(cell.y)*11u)%23u;
+  if motif==2u && q.x>.23 && q.x<.37 && q.y>.41 && q.y<.45 {return 29u;}
+  return 4u;
  }
  if province>=32u {
   let row=floor(world.y/1.7);
@@ -168,7 +176,11 @@ fn basalt(world:vec2f, province:u32)->u32 {
  // The bright rim gains one step over the deepened base: 5/2/1/1 lit, 4/1/1/1 opposing. Solid rock never reaches void index 0.
  // The bright rim occupies 15%, then 20% midstone, 25% shadow, 40% base.
  // Identical thresholds on ribs prevent bright strips reaching the foot.
- if i.cliff.x>=0. {let band=select(0.,1.,i.cliff.x<.85)+select(0.,1.,i.cliff.x<.65)+select(0.,1.,i.cliff.x<.40);f.color=vec4f(palette[u32(max(1.,i.cliff.y-band+select(1.,-1.,band>=1.)))],1.);}
+ if i.cliff.y>=10. {
+  let band=select(0.,1.,i.cliff.x<.65)+select(0.,1.,i.cliff.x<.25);
+  f.color=vec4f(palette[u32(max(1.,i.cliff.y-10.-band))],1.);
+ }
+ else if i.cliff.x>=0. {let band=select(0.,1.,i.cliff.x<.85)+select(0.,1.,i.cliff.x<.65)+select(0.,1.,i.cliff.x<.40);f.color=vec4f(palette[u32(max(1.,i.cliff.y-band+select(1.,-1.,band>=1.)))],1.);}
  else if i.material!=0u {f.color=vec4f(palette[basalt(i.ground,i.material-1u)],1.);}
  f.mask=vec4f(i.unit,i.position.z,i.rim);return f;}
 `;
@@ -245,6 +257,7 @@ export class Renderer {
  private scenePass:any;private presentPass:any;
  private hudAlloy=-1;private hudCharge=-1;private hudSelection=-2;private hudKind=-1;private hudHealth=-1;private hudJob=-1;private hudProgress=-1;private hudData=new Float32Array(24000);private hudCount=0;
  private terrain:Float32Array<ArrayBufferLike>=new Float32Array(1024);
+ private showcaseTerrain=new Float32Array(1024);
  async init(canvas:HTMLCanvasElement,terrain:Float32Array) {
   if(!navigator.gpu) throw new Error('WebGPU is unavailable. Open Starhold in a WebGPU-capable browser with hardware acceleration enabled.');
   const adapter=await navigator.gpu.requestAdapter({powerPreference:'high-performance'});
@@ -277,7 +290,7 @@ export class Renderer {
   const sceneView=scene.createView(),silhouetteView=silhouette.createView();this.postGroup=d.createBindGroup({layout:this.post.getBindGroupLayout(0),entries:[{binding:0,resource:sceneView},{binding:1,resource:silhouetteView},{binding:2,resource:contourTiles.createView()}]});
   this.scenePass={colorAttachments:[{view:sceneView,clearValue:{r:16/255,g:18/255,b:28/255,a:1},loadOp:'clear',storeOp:'store'},{view:silhouetteView,clearValue:{r:0,g:1,b:0,a:1},loadOp:'clear',storeOp:'store'}],depthStencilAttachment:{view:depth.createView(),depthClearValue:1,depthLoadOp:'clear',depthStoreOp:'discard'}};
   this.presentPass={colorAttachments:[{view:null,loadOp:'clear',storeOp:'store',clearValue:{r:16/255,g:18/255,b:28/255,a:1}}]};
-  this.terrain.set(terrain);this.makeTerrain();
+  this.terrain.set(terrain);this.showcaseTerrain.set(terrain);this.makeTerrain();
  }
  onError(callback:(message:string)=>void) {this.device.addEventListener('uncapturederror',(e:any)=>callback(e.error.message));this.device.lost.then((info:any)=>callback(`WebGPU device lost: ${info.message}`));}
  box(x:number,y:number,z:number,sx:number,sy:number,sz:number,color:number,owner=-1,screen=0) {
@@ -590,7 +603,10 @@ export class Renderer {
   }
   /** Back to the authored 32x32 island, baked once at init. */
   setShowcase() {
-   this.terrainSide=32;this.setView(16,16);
+   this.terrainSide=32;this.terrain=this.showcaseTerrain;this.setView(16,16);
+   // A world bake replaces the static instance buffer. Restore the authored
+   // bake as well as its heightfield before rendering the showcase again.
+   this.count=0;this.emissiveCount=0;this.degraded=false;this.makeTerrain();
    this.bakedX=NaN;this.bakedY=NaN;this.bakedZoom=-1;
   }
   /** View centre in world tiles. */
@@ -618,9 +634,13 @@ export class Renderer {
      const dx=r[2]-r[0],dy=r[3]-r[1],t=Math.max(0,Math.min(1,((x-r[0])*dx+(y-r[1])*dy)/(dx*dx+dy*dy)));
      road=Math.min(road,(x-r[0]-t*dx)**2+(y-r[1]-t*dy)**2);
     }
-    if(near>8&&road<=6.25)return road>2.25?5:6;
-    // Quiet ground has no repeating tile motif. Wear belongs at its edge.
-    if(near<31)return 29;
+    // Continuous stone reaches the keep's apron, not an eight-tile gap.
+    // The whole five-tile band keeps the road material through corners/LOD.
+    if(near>3.5&&road<=6.25)return 6;
+    // Desaturated cleared soil has an unpaved violet perimeter. The boundary
+    // lives in the tile caps, not a grid/decal laid across buildable ground.
+    if(near<29)return 29;
+    if(near<31)return 28;
    }
    const shoulder=this.ground(x-5,y)!==h||this.ground(x+5,y)!==h||this.ground(x,y-5)!==h||this.ground(x,y+5)!==h;
    if(h===1)return shoulder?5:4;
@@ -659,10 +679,12 @@ export class Renderer {
     const h=this.ground(x-4,y),u=x-cx,v=y-cy,rx=u*c-v*s,ry=u*s+v*c;
     const px=mx+hx*(rx-ry),py=my+hy*(rx+ry)-hz*h;
     if(h<0||px<-32||px>RENDER_WIDTH+32||py<-32||py>RENDER_HEIGHT+32||this.count+6>=BAKE_LIMIT)continue;
-    this.box(x-4,y,h,1.5,1.3,2.5,30,-1,-2);
-    this.box(x-2.8,y+.5,this.ground(x-2.8,y+.5),1.1,1.2,1.5,29,-1,-2);
-    this.box(x-4.7,y+.8,this.ground(x-4.7,y+.8),.8,.9,1.2,30,-1,-2);
-    this.box(x-4.3,y+.05,h+1.8,.18,.2,.6,31,-1,-2);
+    // Non-harvestable host rock is blunt and cold. Amber belongs exclusively
+    // to the actual ore actors, so a decorative spire cannot impersonate one.
+    this.box(x-4,y,h,1.8,1.5,.7,5,-1,-1);
+    this.box(x-2.8,y+.5,this.ground(x-2.8,y+.5),1.2,1.3,.45,4,-1,-1);
+    this.box(x-4.7,y+.8,this.ground(x-4.7,y+.8),1.,.9,.35,4,-1,-1);
+    this.box(x-4.3,y+.05,h+.65,.7,.65,.2,6,-1,-1);
    }
    this.staticCount=this.count;this.staticEmissiveCount=this.emissiveCount;
    this.bakedX=cx;this.bakedY=cy;this.bakedZoom=zoom;
@@ -682,7 +704,12 @@ export class Renderer {
    this.box(x+.5,y+.5,h-.12,1,1,.12,cap,-1,h===1?-7:cap===29?-8:cap===6?-9:-6);
    if(!rim)return;
    this.cliffBottom=low;this.cliffTop=h;
-   this.terrainBox(x+.5,y+.5,low,1,1,h-low-.12,3,false);
+   const column=this.count;
+   this.box(x+.5,y+.5,low,1,1,h-low-.12,3,-1,-10);
+   this.actorData[column*4]=low;this.actorData[column*4+1]=h;
+   // A continuous raised rock shoulder crowns high ridges. One box per rim
+   // tile, in every tier: the wall silhouette must not vanish at wide zoom.
+   if(h===1)this.box(x+.5,y+.5,h,1,1,.55,5,-1,-6);
    if(tier===2)return;
    // Lit west/north edges and darker east/south flanks are world-fixed. Keep
    // the two terrain steps visible even in the far tier; adorn only near ones.
@@ -700,6 +727,20 @@ export class Renderer {
     this.box(x+.65,y+.48,h+.38,.32,.36,.18,5,-1,-6);
    }
   }
+ private worldOre(x:number,y:number,z:number,amount:number,phase:number,id:number) {
+  const scale=amount>0?1:Math.max(.12,phase),h=(.9+id%3*.08)*scale;
+  // Leave the near half of the mining tile open for the worker's silhouette.
+  // The simulation's work point is unchanged; crystals occupy its far shoulder.
+  x-=.55;y-=.55;
+  // Three unequal facets, wider than tall, with gaps even in the close-spaced
+  // starter seam. Stagger the points, not the resource's position/footprint.
+  // Mask 1 supplies an ink contour without making ore selectable.
+  const dy=(id%3-1)*.14;
+  this.box(x,y+dy,z+.025,1.15,1.25,.16,4,-1,-1);
+  this.box(x-.08,y-.15+dy,z+.14,.88,1.02,h,53,-1,-11);
+  this.box(x-.5,y+.25+dy,z+.08,.58,.62,h*.48,53,-1,-11);
+  this.box(x+.43,y+.04+dy,z+.08,.6,.74,h*.65,53,-1,-11);
+ }
  private building(e:Float32Array,o:number,id:number) {
   if(cinderBuildings.has(e[o+4])){
    const start=this.count;
@@ -1447,7 +1488,10 @@ export class Renderer {
   for(let id=0;id<n;id++){const o=id*12,k=e[o+4];if(e[o+8]===1)this.selected=id;
    if(buildingFootprints[k])this.building(e,o,id);
    else if(dawnUnits.has(k)||cinderUnits.has(k))this.unit(e,o,id);
-   else if(k===40){const h=e[o+10]>0?1.3+id%3*.35:e[o+11]*1.4;this.shard(e[o],e[o+1],e[o+2],Math.max(.08,h*1.4),31);}
+   else if(k===40){
+    if(this.terrainSide>32)this.worldOre(e[o],e[o+1],e[o+2],e[o+10],e[o+11],id);
+    else {const h=e[o+10]>0?1.3+id%3*.35:e[o+11]*1.4;this.shard(e[o],e[o+1],e[o+2],Math.max(.08,h*1.4),31);}
+   }
    else if(k===41){this.box(e[o],e[o+1],e[o+2],.38,.36,.23,40);this.box(e[o],e[o+1],e[o+2]-.16,.18,.18,.14,18);}
    else if(effectKinds.has(k))this.effects(e,o);
   }

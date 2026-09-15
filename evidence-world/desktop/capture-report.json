@@ -13,7 +13,7 @@
     {
       "name": "fps>=59-vsync-locked",
       "pass": true,
-      "detail": "fps=60.3 p95=17.2ms max=18.2ms"
+      "detail": "fps=60.3 p95=17.1ms max=18.4ms"
     },
     {
       "name": "rotate-button",
@@ -73,7 +73,7 @@
     {
       "name": "lod-budget",
       "pass": true,
-      "detail": "instances per zoom 0.67:3661(60.3fps,p95=16.9ms) 0.80:4403(60.3fps,p95=16.9ms) 1.00:5901(60.3fps,p95=16.9ms) 1.33:9428(60.3fps,p95=17.1ms)"
+      "detail": "instances per zoom 0.67:3502(60.3fps,p95=17.0ms) 0.80:4251(60.3fps,p95=17.0ms) 1.00:5821(60.3fps,p95=17.0ms) 1.33:9578(60.3fps,p95=18.8ms)"
     },
     {
       "name": "minimap-present",
@@ -133,7 +133,7 @@
     {
       "name": "build-site",
       "pass": true,
-      "detail": "[exact tap kind 20 f0 @416,258] action=\"Build FREIGHT COURT, 24 alloy FREIGHT COURT24A\" kind=11 roster=24a/0c sitePlaced=true entities 68->69 alloy 80->56 charge 40->41 costSpent=true"
+      "detail": "[exact tap kind 20 f0 @420,256] action=\"Build FREIGHT COURT, 24 alloy FREIGHT COURT24A\" kind=11 roster=24a/0c sitePlaced=true entities 68->69 alloy 80->56 charge 40->41 costSpent=true"
     },
     {
       "name": "no-console-errors",
@@ -176,10 +176,10 @@
   "fps": {
     "fps": 60.25,
     "frames": 241,
-    "mean_ms": 16.654356846670886,
-    "p50_ms": 16.699999809265137,
-    "p95_ms": 17.200000047683716,
-    "max_ms": 18.200000047683716
+    "mean_ms": 16.641908713890803,
+    "p50_ms": 16.700000047683716,
+    "p95_ms": 17.100000143051147,
+    "max_ms": 18.40000009536743
   },
   "matchErrors": []
 }

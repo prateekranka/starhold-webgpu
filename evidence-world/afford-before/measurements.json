@@ -1,0 +1,362 @@
+{
+  "seed": 73129,
+  "targets": {
+    "oreHue": 60,
+    "oreLightness": 20,
+    "calmRatio": 0.7,
+    "routeTiles": 30
+  },
+  "rows": [
+    {
+      "viewport": "desktop",
+      "zoom": "1x",
+      "base": 0,
+      "ore": {
+        "pixels": 243,
+        "hue": 22.019,
+        "lightness": 31.916,
+        "hueNoiseMAD": 0,
+        "lightnessNoiseMAD": 0,
+        "chargePaletteHue": 103.773,
+        "oreRGB": [
+          189,
+          150,
+          193
+        ],
+        "groundRGB": [
+          98,
+          71,
+          121
+        ]
+      },
+      "calm": {
+        "clearingSD": 0.496,
+        "controlSD": 8.573,
+        "ratio": 0.058,
+        "pairs": 1782
+      },
+      "routes": [
+        {
+          "lane": 0,
+          "longest": 48,
+          "tiles": 48,
+          "reads": "111111111111111111111111111111111111111111111111"
+        },
+        {
+          "lane": 1,
+          "longest": 48,
+          "tiles": 48,
+          "reads": "111111111111111111111111111111111111111111111111"
+        }
+      ]
+    },
+    {
+      "viewport": "desktop",
+      "zoom": "1x",
+      "base": 1,
+      "ore": {
+        "pixels": 141,
+        "hue": 22.019,
+        "lightness": 31.916,
+        "hueNoiseMAD": 0,
+        "lightnessNoiseMAD": 0,
+        "chargePaletteHue": 103.773,
+        "oreRGB": [
+          189,
+          150,
+          193
+        ],
+        "groundRGB": [
+          98,
+          71,
+          121
+        ]
+      },
+      "calm": {
+        "clearingSD": 1.083,
+        "controlSD": 11.583,
+        "ratio": 0.093,
+        "pairs": 5265
+      },
+      "routes": [
+        {
+          "lane": 0,
+          "longest": 48,
+          "tiles": 48,
+          "reads": "111111111111111111111111111111111111111111111111"
+        },
+        {
+          "lane": 1,
+          "longest": 38,
+          "tiles": 48,
+          "reads": "111111100011111111111111111111111111111111111111"
+        }
+      ]
+    },
+    {
+      "viewport": "desktop",
+      "zoom": "widest",
+      "base": 0,
+      "ore": {
+        "pixels": 149,
+        "hue": 22.019,
+        "lightness": 31.916,
+        "hueNoiseMAD": 0,
+        "lightnessNoiseMAD": 0,
+        "chargePaletteHue": 103.773,
+        "oreRGB": [
+          189,
+          150,
+          193
+        ],
+        "groundRGB": [
+          98,
+          71,
+          121
+        ]
+      },
+      "calm": {
+        "clearingSD": 0.496,
+        "controlSD": 8.433,
+        "ratio": 0.059,
+        "pairs": 1782
+      },
+      "routes": [
+        {
+          "lane": 0,
+          "longest": 48,
+          "tiles": 48,
+          "reads": "111111111111111111111111111111111111111111111111"
+        },
+        {
+          "lane": 1,
+          "longest": 48,
+          "tiles": 48,
+          "reads": "111111111111111111111111111111111111111111111111"
+        }
+      ]
+    },
+    {
+      "viewport": "desktop",
+      "zoom": "widest",
+      "base": 1,
+      "ore": {
+        "pixels": 98,
+        "hue": 22.019,
+        "lightness": 31.916,
+        "hueNoiseMAD": 0,
+        "lightnessNoiseMAD": 0,
+        "chargePaletteHue": 103.773,
+        "oreRGB": [
+          189,
+          150,
+          193
+        ],
+        "groundRGB": [
+          98,
+          71,
+          121
+        ]
+      },
+      "calm": {
+        "clearingSD": 1.071,
+        "controlSD": 11.646,
+        "ratio": 0.092,
+        "pairs": 5265
+      },
+      "routes": [
+        {
+          "lane": 0,
+          "longest": 35,
+          "tiles": 48,
+          "reads": "111111111111011111111111111111111111111111111111"
+        },
+        {
+          "lane": 1,
+          "longest": 34,
+          "tiles": 48,
+          "reads": "111111100011101111111111111111111111111111111111"
+        }
+      ]
+    },
+    {
+      "viewport": "phone",
+      "zoom": "1x",
+      "base": 0,
+      "ore": {
+        "pixels": 221,
+        "hue": 22.019,
+        "lightness": 31.916,
+        "hueNoiseMAD": 0,
+        "lightnessNoiseMAD": 0,
+        "chargePaletteHue": 103.773,
+        "oreRGB": [
+          189,
+          150,
+          193
+        ],
+        "groundRGB": [
+          98,
+          71,
+          121
+        ]
+      },
+      "calm": {
+        "clearingSD": 0.512,
+        "controlSD": 8.248,
+        "ratio": 0.062,
+        "pairs": 1674
+      },
+      "routes": [
+        {
+          "lane": 0,
+          "longest": 48,
+          "tiles": 48,
+          "reads": "111111111111111111111111111111111111111111111111"
+        },
+        {
+          "lane": 1,
+          "longest": 48,
+          "tiles": 48,
+          "reads": "111111111111111111111111111111111111111111111111"
+        }
+      ]
+    },
+    {
+      "viewport": "phone",
+      "zoom": "1x",
+      "base": 1,
+      "ore": {
+        "pixels": 126,
+        "hue": 22.019,
+        "lightness": 31.916,
+        "hueNoiseMAD": 0,
+        "lightnessNoiseMAD": 0,
+        "chargePaletteHue": 103.773,
+        "oreRGB": [
+          189,
+          150,
+          193
+        ],
+        "groundRGB": [
+          98,
+          71,
+          121
+        ]
+      },
+      "calm": {
+        "clearingSD": 1.218,
+        "controlSD": 10.823,
+        "ratio": 0.113,
+        "pairs": 4358
+      },
+      "routes": [
+        {
+          "lane": 0,
+          "longest": 48,
+          "tiles": 48,
+          "reads": "111111111111111111111111111111111111111111111111"
+        },
+        {
+          "lane": 1,
+          "longest": 38,
+          "tiles": 48,
+          "reads": "111111100011111111111111111111111111111111111111"
+        }
+      ]
+    },
+    {
+      "viewport": "phone",
+      "zoom": "widest",
+      "base": 0,
+      "ore": {
+        "pixels": 145,
+        "hue": 22.019,
+        "lightness": 31.916,
+        "hueNoiseMAD": 0,
+        "lightnessNoiseMAD": 0,
+        "chargePaletteHue": 103.773,
+        "oreRGB": [
+          189,
+          150,
+          193
+        ],
+        "groundRGB": [
+          98,
+          71,
+          121
+        ]
+      },
+      "calm": {
+        "clearingSD": 0.497,
+        "controlSD": 8.51,
+        "ratio": 0.058,
+        "pairs": 1776
+      },
+      "routes": [
+        {
+          "lane": 0,
+          "longest": 48,
+          "tiles": 48,
+          "reads": "111111111111111111111111111111111111111111111111"
+        },
+        {
+          "lane": 1,
+          "longest": 48,
+          "tiles": 48,
+          "reads": "111111111111111111111111111111111111111111111111"
+        }
+      ]
+    },
+    {
+      "viewport": "phone",
+      "zoom": "widest",
+      "base": 1,
+      "ore": {
+        "pixels": 105,
+        "hue": 22.019,
+        "lightness": 31.916,
+        "hueNoiseMAD": 0,
+        "lightnessNoiseMAD": 0,
+        "chargePaletteHue": 103.773,
+        "oreRGB": [
+          189,
+          150,
+          193
+        ],
+        "groundRGB": [
+          98,
+          71,
+          121
+        ]
+      },
+      "calm": {
+        "clearingSD": 1.143,
+        "controlSD": 11.002,
+        "ratio": 0.104,
+        "pairs": 4623
+      },
+      "routes": [
+        {
+          "lane": 0,
+          "longest": 35,
+          "tiles": 48,
+          "reads": "111111111111011111111111111111111111111111111111"
+        },
+        {
+          "lane": 1,
+          "longest": 34,
+          "tiles": 48,
+          "reads": "111111100011101111111111111111111111111111111111"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "oreHueMin": 22.019,
+    "oreLightnessMin": 31.916,
+    "calmRatioMax": 0.113,
+    "routeTilesMin": 34
+  },
+  "pass": false
+}

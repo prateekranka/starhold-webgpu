@@ -31,6 +31,57 @@ Integration and release rules for wave 2:
 - Image generation is for concept sheets and HUD icons only. In-world rendering
   stays procedural and pixel-exact.
 
+## Wave 3 — 2026-09-15, third round (terrain legibility, and a lesson about metrics)
+
+Astra ran two visual passes on the terrain, 45 minutes each, and both times every
+numeric target it set passed while the blind gate still said **FAIL**. That is the
+important result of this round, and the lesson is written into the briefs: the
+numbers are diagnostics, the gate is the acceptance test.
+
+### Pass one: composition (`docs/TERRAIN_COMPOSITION_SPEC.md`)
+
+Data fixed and probe passing: zero void inside the base boxes (was 27.56%), two
+wide low-gradient routes from each clearing to the centre (was none), ore in 12
+groups with four per base (was one), ridge runs with flanks (was none),
+generation 353 ms -> 168 ms. The blind verdict moved from *"overwhelmingly a
+thresholded noise field, not a designed map"* to a narrower complaint: no readable
+resource or buildability language.
+
+### Pass two: affordances (`docs/TERRAIN_AFFORDANCE_SPEC.md`)
+
+Measured, before -> after: ore hue separation 22.0 -> **169.9 degrees** (target 60),
+route continuity 34 -> **48 tiles** (target 30), clearing pixel-variance ratio
+0.113 -> 0.008 (target 0.70). All three pass. The blind gate failed anyway, at both
+zoom levels.
+
+The reason is the first entry in the file, under "Checked and not a defect": the
+calm metric compared the clearing against a control disc 85 tiles away that sits
+near canyon country, so it passed before anything changed. "Is the buildable
+ground calmer than a noisy control" is not the question a player asks; "can I tell
+buildable ground from road" is, and that is a *categorical* distinction that no
+variance ratio can measure. The metric was honest and too easy.
+
+### What both critics say is left, verbatim
+
+> *"Buildable terrain is not visually distinct from roads/non-buildable ground.
+> The player cannot reliably tell where construction is allowed, and the cliffs do
+> not resolve into readable 3D faces."* — 1x, desktop and phone
+
+> *"The same light tiling is used on the two diagonal routes, so buildable ground
+> is not clearly separated from path."* … *"flat tops are light grey, vertical
+> faces are dark purple/black. That makes wall-like cliffs visible"* — at the widest
+> zoom the cliffs do read; at 1x they do not.
+
+> *"The harvestable node is a tiny orange speck. […] Buildable vs non-buildable vs
+> harvestable is not reliably encoded at widest zoom."*
+
+So the work that is left is small and named: separate the road surface from
+buildable ground, make cliffs resolve at 1x as well as at the widest zoom, and make
+the charge crystals legible at 1x. Everything else the critics list as working.
+
+Evidence: `evidence-world/afford-before/` and `afford-after/` (six frames each: both
+bases, 1x and widest, desktop and phone) with the three critic logs beside them.
+
 ## Wave 3 — 2026-09-15, second round (lab, match end, composition)
 
 Astra returned, so this round spends it where depth pays: a blind visual gate, a
