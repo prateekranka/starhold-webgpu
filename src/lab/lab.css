@@ -1,0 +1,70 @@
+/* Starhold development lab. Light on purpose: the lab shows the contract and the
+   live simulation side by side, it does not restyle the game. Palette values come
+   from src/kinds.ts; these are the same hexes the game draws with. */
+:root {
+  --ink: #10121C;
+  --ink-2: #1B1E30;
+  --ink-3: #2B2D46;
+  --line: #41435E;
+  --dim: #747C91;
+  --mid: #98A4AE;
+  --paper: #F3F0D7;
+  --gold: #F1CE72;
+  --teal: #4FB7AA;
+  --ember: #E77945;
+  --bad: #BC4A45;
+  --good: #8BD7BE;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--ink); color: var(--paper);
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+a { color: var(--teal); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+#lab { max-width: 1500px; margin: 0 auto; padding: 18px 20px 60px; }
+header.lab-head { display: flex; flex-wrap: wrap; gap: 14px; align-items: baseline; border-bottom: 2px solid var(--line); padding-bottom: 12px; }
+header.lab-head h1 { margin: 0; font-size: 19px; color: var(--gold); letter-spacing: .5px; }
+header.lab-head p { margin: 0; color: var(--mid); flex: 1 1 320px; }
+.badge { border: 1px solid var(--line); color: var(--mid); padding: 2px 7px; font-size: 11px; }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0; }
+.toolbar input[type=search] {
+  background: var(--ink-2); border: 2px solid var(--line); color: var(--paper);
+  padding: 8px 10px; min-width: 240px; font: inherit;
+}
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  background: var(--ink-2); border: 2px solid var(--line); color: var(--mid);
+  padding: 7px 11px; font: inherit; cursor: pointer; min-height: 36px;
+}
+.chip[aria-pressed=true] { border-color: var(--gold); color: var(--paper); }
+.chip:hover { border-color: var(--dim); }
+.toolbar label { color: var(--mid); display: flex; gap: 6px; align-items: center; }
+
+.summary { display: flex; flex-wrap: wrap; gap: 18px; padding: 10px 0 4px; color: var(--mid); }
+.summary b { color: var(--paper); }
+.drift { color: var(--bad); }
+.clean { color: var(--good); }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; margin-top: 16px; align-items: start; }
+.card { background: var(--ink-2); border: 2px solid var(--line); display: flex; flex-direction: column; }
+.card[data-drift=true] { border-color: var(--bad); }
+.card-head { display: flex; gap: 10px; align-items: center; padding: 10px; border-bottom: 1px solid var(--ink-3); }
+.card-head h2 { margin: 0; font-size: 14px; color: var(--paper); flex: 1; }
+.kind { color: var(--dim); font-size: 11px; }
+.role { color: var(--mid); font-size: 11px; }
+.preview { background: var(--ink); border-bottom: 1px solid var(--ink-3); }
+.preview canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+.fields { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; padding: 10px; }
+.fields dt { color: var(--dim); }
+.fields dd { margin: 0; color: var(--paper); }
+.fields dd.short { color: var(--bad); }
+.note { padding: 0 10px 10px; color: var(--mid); }
+.note b { color: var(--paper); }
+.tag { display: inline-block; border: 1px solid var(--line); padding: 1px 6px; margin-right: 4px; font-size: 11px; color: var(--mid); }
+.palette { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 22px; }
+.swatch { width: 34px; height: 34px; border: 1px solid var(--ink-3); position: relative; }
+.swatch span { position: absolute; bottom: -16px; left: 0; font-size: 9px; color: var(--dim); }
+footer.lab-foot { margin-top: 46px; color: var(--dim); border-top: 1px solid var(--line); padding-top: 12px; }
