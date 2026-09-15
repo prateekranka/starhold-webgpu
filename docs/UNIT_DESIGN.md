@@ -112,6 +112,14 @@ Two deliverables, in this order:
    `art/icons/<kind>.png`. The HUD uses an icon when the file exists and a text
    label otherwise.
 
+   **Measured result (2026-09-15):** 24×24 slices of the 1536×1024 roster boards
+   were cut and judged. A strict critic read several of them as mush: small units
+   and the two fliers collapse into a dark red mass, and wing silhouettes confuse
+   with each other. Verdict: **not usable as sole button icons.** The HUD keeps
+   text labels. Image-generated art is used where it reads — one section-sized
+   **portrait card (>=64×64) beside the selection name** — and the roster boards
+   stay design references. Pipeline: `scripts/iconize.py` (any cell size).
+
 Not in this wave: in-world sprite atlases. The in-world renderer stays procedural
 and pixel-exact. A raster atlas is a separate, separately judged piece because it
 risks the palette lock, the one-pixel grid, and the four-yaw contract.
