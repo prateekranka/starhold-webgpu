@@ -3,6 +3,34 @@
 Browser graphics demo: isometric pixel-art space colony, deterministic Rust/WASM
 simulation, and a raw WebGPU renderer.
 
+**Wave 2 in flight (2026-09-15): two complete civilizations, age progression,
+bottom HUD action bar, portrait play, and unit motion.** Contract:
+`docs/MATCH_SPEC.md` (runtime ABI, ages, commands, HUD, portrait) and
+`docs/UNIT_DESIGN.md` (silhouettes, motion, sprite/icon pipeline). GitHub:
+`prateekranka/starhold-webgpu` (private), pushed on every verified piece.
+
+Workers for wave 2 (one owner per file, orchestrator verifies and commits):
+
+| Piece | Owner | Files |
+|---|---|---|
+| W2-SIM: match mode, ages, commands, 2 full rosters | Astra xhigh (codex Plus) | `sim/src/lib.rs` |
+| W2-RENDER: Cinderwake buildings, new units, idle/attack motion | Astra xhigh (codex Plus) | `src/renderer.ts` |
+| W2-HUD: DOM bottom bar, portrait play, `__APP` surface | DeepSeek Flash subagent | `index.html`, `src/style.css`, `src/main.ts`, `src/hud.ts` |
+| W2-HARNESS: 10 new gates, iPad portrait mode | DeepSeek Flash subagent | `scripts/capture.mjs` |
+| W2-ART: concept sheets via the Plus image tool | Astra medium (codex Plus) | `art/concept/` |
+
+Integration and release rules for wave 2:
+
+- The showcase stays the boot scene. A match starts only from the HUD SKIRMISH
+  buttons or `__APP.startMatch(faction)`, so the pass-15 phone build and the
+  t=108 benchmark stay valid.
+- `sim_init(seed)` and the showcase hash `20b89f84` must not change.
+- The public Tailnet route stays on frozen pass 15 until wave 2 passes every
+  gate at desktop, iPhone landscape, iPhone portrait, iPad landscape, and iPad
+  portrait.
+- Image generation is for concept sheets and HUD icons only. In-world rendering
+  stays procedural and pixel-exact.
+
 **Lighting loop parked at pass 30 (`45212d0`). Every pass 25-30 passed all
 objective gates; the independent visual gate is still open — each fresh critic
 round preferred the newest build but kept naming carved lighting/depth as the
