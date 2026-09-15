@@ -56,12 +56,16 @@ header.lab-head p { margin: 0; color: var(--mid); flex: 1 1 320px; }
 .kind { color: var(--dim); font-size: 11px; }
 .role { color: var(--mid); font-size: 11px; }
 .preview { background: var(--ink); border-bottom: 1px solid var(--ink-3); }
+.portrait { margin: 0; background: var(--ink); border-bottom: 1px solid var(--ink-3); }
+.portrait img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+.portrait figcaption { padding: 6px 10px; color: var(--mid); font-size: 11px; }
 .preview canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; }
-.fields { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; padding: 10px; }
+.fields { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; padding: 10px 10px 14px; }
 .fields dt { color: var(--dim); }
 .fields dd { margin: 0; color: var(--paper); }
 .fields dd.short { color: var(--bad); }
 .note { padding: 0 10px 10px; color: var(--mid); }
+.card .note:last-child { padding-bottom: 14px; }
 .note b { color: var(--paper); }
 .tag { display: inline-block; border: 1px solid var(--line); padding: 1px 6px; margin-right: 4px; font-size: 11px; color: var(--mid); }
 .palette { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 22px; }

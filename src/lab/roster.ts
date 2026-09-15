@@ -13,9 +13,10 @@
 // Open it with `npm run dev` and visit /lab.html. It is not part of `npm run build`.
 import civDoc from '../../docs/CIVILIZATIONS.md?raw';
 import unitDoc from '../../docs/UNIT_DESIGN.md?raw';
+import ashJackalSheet from './art/ash-jackal-sheet.jpg';
 import {
   names, factionNames, palette, el, docTables, bold, downloadJSON, loadSim,
-  drawSchematic, type DocTable, type RosterRow,
+  drawSchematic, type RosterRow,
 } from './common';
 
 type Group = 'building' | 'unit' | 'prop' | 'effect';
@@ -43,6 +44,19 @@ interface Entry {
   sim: RosterRow | null;
   drift: string[];
 }
+
+/**
+ * Reference art per kind, where it exists. The world itself is drawn
+ * procedurally, so this is not the game's pixels: it is the artwork the
+ * silhouette contract in docs/UNIT_DESIGN.md is judged against, kept beside the
+ * numbers so a reviewer can compare intent and implementation in one place.
+ */
+const art: Record<number, { src: string; caption: string }> = {
+  30: {
+    src: ashJackalSheet,
+    caption: 'Steppe centaur animation sheet — frames 1-2 idle, 3-4 walk, 5-7 aim, 8 release. The world draws this unit procedurally: four-legged jointed chassis, archer torso, ember bow.',
+  },
+};
 
 const column = (header: string[], pattern: RegExp) => header.findIndex((h) => pattern.test(h));
 const cell = (row: { cells: string[] }, index: number) => (index >= 0 && index < row.cells.length ? row.cells[index] : '');
@@ -76,9 +90,8 @@ function build(): Entry[] {
     return entries.get(kind)!;
   };
 
-  // --- docs/CIVILIZATIONS.md: buildings
-  const buildingTable: DocTable | undefined = civTables.find((t) => column(t.header, /building/i) >= 0);
-  if (buildingTable) {
+  // --- docs/CIVILIZATIONS.md: buildings, one table per faction, so take them all
+  for (const buildingTable of civTables.filter((t) => column(t.header, /building/i) >= 0)) {
     const cKind = 0;
     const cTier = column(buildingTable.header, /tier/i);
     const cName = column(buildingTable.header, /building/i);
@@ -91,7 +104,7 @@ function build(): Entry[] {
       if (!/^\d+$/.test(k)) continue;
       const e = entry(Number(k));
       e.tier = cell(row, cTier) || null;
-      e.name = bold(cell(row, cName)) ?? e.name;
+      e.name = names[e.kind] ?? bold(cell(row, cName)) ?? e.name;
       e.role = cell(row, cFn) || null;
       e.costDoc = numbers(cell(row, cCost));
       e.time = cell(row, cTime) || null;
@@ -100,9 +113,8 @@ function build(): Entry[] {
     }
   }
 
-  // --- docs/CIVILIZATIONS.md: units
-  const unitTable: DocTable | undefined = civTables.find((t) => column(t.header, /unit/i) >= 0);
-  if (unitTable) {
+  // --- docs/CIVILIZATIONS.md: units, likewise one table per faction
+  for (const unitTable of civTables.filter((t) => column(t.header, /unit/i) >= 0)) {
     const cTier = column(unitTable.header, /tier/i);
     const cName = column(unitTable.header, /unit/i);
     const cProducer = column(unitTable.header, /producer/i);
@@ -114,7 +126,7 @@ function build(): Entry[] {
       if (!/^\d+$/.test(k)) continue;
       const e = entry(Number(k));
       e.tier = cell(row, cTier) || null;
-      e.name = bold(cell(row, cName)) ?? e.name;
+      e.name = names[e.kind] ?? bold(cell(row, cName)) ?? e.name;
       e.producer = cell(row, cProducer) || null;
       e.costDoc = numbers(cell(row, cCost));
       const train = cell(row, cTrain).match(/([\d.]+)\s*s\s*\/\s*(\d+)/);
@@ -200,6 +212,12 @@ function card(e: Entry): HTMLElement {
     el('h2', { text: e.name }),
     el('span', { class: 'kind', text: `KIND ${e.kind}` }),
   );
+  const reference = art[e.kind];
+  const figure = reference
+    ? el('figure', { class: 'portrait' },
+        el('img', { src: reference.src, alt: `${e.name} reference art`, loading: 'lazy' }),
+        el('figcaption', { text: reference.caption }))
+    : null;
   const preview = el('div', { class: 'preview' });
   const canvas = el('canvas');
   preview.append(canvas);
@@ -220,15 +238,16 @@ function card(e: Entry): HTMLElement {
   row(dl, 'Producer', e.producer ?? (e.sim && e.sim.producer > 0 ? (names[e.sim.producer] ?? `kind ${e.sim.producer}`) : null));
   row(dl, 'Tier', e.tier);
   row(dl, 'Role', e.role && e.role.length > 90 ? `${e.role.slice(0, 90)}…` : e.role);
-  row(dl, 'Sim', e.sim ? `class ${e.sim.klass} · tier ${e.sim.tier} · faction ${factionNames[e.sim.faction] ?? e.sim.faction}` : null);
+  row(dl, 'Faction', factionNames[e.faction] ?? `faction ${e.faction}`);
+  row(dl, 'Sim', e.sim ? `class ${e.sim.klass} · tier ${e.sim.tier}` : null);
   if (e.group === 'building') row(dl, 'Makes', e.makes.length ? e.makes.map((k) => names[k] ?? k).join(', ') : 'nothing');
 
-  const notes: HTMLElement[] = [];
+  const notes: HTMLElement[] = [el('p', { class: 'note' }, el('b', { text: 'Schematic: ' }), 'the plinth below is a proportion diagram drawn from the footprint, not the renderer.')];
   if (e.silhouette) notes.push(el('p', { class: 'note' }, el('b', { text: 'Silhouette: ' }), e.silhouette));
   if (e.motion) notes.push(el('p', { class: 'note' }, el('b', { text: 'Motion: ' }), e.motion));
   if (e.drift.length) notes.push(el('p', { class: 'note' }, el('b', { class: 'drift', text: 'Doc drift: ' }), e.drift.join('; ')));
 
-  const node = el('article', { class: 'card' }, head, preview, dl, ...notes);
+  const node = el('article', { class: 'card' }, head, ...(figure ? [figure] : []), preview, dl, ...notes);
   node.dataset.drift = e.drift.length ? 'true' : 'false';
   node.dataset.kind = String(e.kind);
   // Drawn after insertion so the canvas has a measured width.
