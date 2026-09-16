@@ -106,7 +106,12 @@ impl Sim {
         let e=self.entities[id];let victim=self.entities[target];let yaw=e.data[3];
         let (c,s)=(yaw.cos(),yaw.sin());
         let socket=[e.data[0]+0.6*c-0.18*s,e.data[1]+0.6*s+0.18*c,e.data[2]+0.72];
+        let previous_count=self.actors.event_count;
         self.actor_event(2,id,target,damage);
+        if self.actors.event_count>previous_count {
+            let offset=previous_count*EVENT_STRIDE+5;
+            self.actors.events[offset..offset+3].copy_from_slice(&socket);
+        }
         if let Some(shot)=(MATCH_ACTORS..148).find(|&j|!self.entities[j].active){
             self.match_add(shot,50,socket[0],socket[1],e.data[9] as usize);
             let p=&mut self.entities[shot];p.target=target;p.route=self.game.generations[target] as usize;

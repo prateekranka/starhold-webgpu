@@ -34,8 +34,8 @@ export class WorkshopSession {
  snapshot():Float32Array{return new Float32Array(this.sim.memory.buffer,this.sim.sim_entity_ptr(),this.sim.sim_entity_count()*12).slice();}
  terrain():Float32Array{return new Float32Array(this.sim.memory.buffer,this.sim.sim_world_ptr(),64*64).slice();}
  actors(){const data=this.snapshot();return Array.from({length:data.length/12},(_,index)=>({index,handle:this.sim.sim_actor_handle(index),kind:data[index*12+4],faction:data[index*12+9],x:data[index*12],y:data[index*12+1],health:data[index*12+7],state:data[index*12+5]}));}
- step(ticks=1):void {
-  const remaining=Math.max(0,1800-this.sim.sim_lab_tick()),count=Math.min(remaining,Math.max(0,Math.min(1800,Math.floor(ticks))));
+ step(ticks=1,limit=1800):void {
+  const remaining=Math.max(0,Math.min(7200,Math.max(1800,limit))-this.sim.sim_lab_tick()),count=Math.min(remaining,Math.max(0,Math.min(1800,Math.floor(ticks))));
   for(let i=0;i<count;i++){this.sim.sim_step(1000/60);this.collect();}
  }
  order(handle:number,op:number,arg:number):boolean {

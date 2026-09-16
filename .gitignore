@@ -5,3 +5,8 @@ sim/target/
 evidence/
 *.log
 .tmp/
+
+# Disposable development outputs
+tools/sim.workshop.wasm
+tools/revision.json
+workshop-evidence/

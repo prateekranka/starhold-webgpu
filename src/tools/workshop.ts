@@ -17,6 +17,9 @@ let session:WorkshopSession,createSession:()=>Promise<WorkshopSession>,research:
 let comparisons:Record<string,unknown>[]=[];
 const root=document.querySelector<HTMLElement>('#workshop')!;
 const renderer=new Renderer();
+const capturedFrame=document.createElement('canvas');capturedFrame.width=960;capturedFrame.height=540;
+const capturedContext=capturedFrame.getContext('2d')!;
+let redrawPending=false;
 let revision:Record<string,unknown>={revision:'unavailable'};
 const element=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
 function fail(error:unknown){playing=false;element('status').textContent=error instanceof Error?error.message:String(error);root.dataset.error='true';}
@@ -43,25 +46,27 @@ function options(){
 }
 function update(){
  if(!session)return;const m=session.metrics();
- element('status').textContent=`${(m.tick/60).toFixed(2)} / 30s · ${m.shots} releases · ${m.totalDamage.toFixed(1)} total damage (both sides) · ${m.deaths} deaths · ${m.preparationSeconds}s paid setup · ${m.alloy} Alloy / ${m.charge} Charge`;
+ element('status').textContent=`${(m.tick/60).toFixed(2)} / ${view==='research'?120:30}s · ${m.shots} releases · ${m.totalDamage.toFixed(1)} total damage (both sides) · ${m.deaths} deaths · ${m.preparationSeconds}s paid setup · ${m.alloy} Alloy / ${m.charge} Charge`;
  element('play').textContent=playing?'Pause':'Play';element('events').textContent=session.events.slice(-24).map(row=>`${(row[0]/60).toFixed(3)}s · ${['','DRAW','RELEASE','DAMAGE','DEATH','INTERRUPT','BLOCKED','ORDER'][row[1]]??row[1]} · actor ${row[2]} · value ${row[4].toFixed(2)}`).join('\n');
  if(view==='research')research.update();metadata();
 }
 async function draw(){
- if(drawing||disposed||!session)return;drawing=true;
+ if(disposed||!session)return;if(drawing){redrawPending=true;return;}drawing=true;
  try{
   const rig=view==='forge'||view==='codex';let data=session.snapshot(),tick=session.sim.sim_lab_tick();
+  if(!rig&&selected!==null){for(let i=0;i<data.length/12;i++)data[i*12+8]=session.sim.sim_actor_handle(i)===selected?1:0;}
   if(rig){const construction=readDefinition(session.sim,kind)!.klass===0?phase:1;data=new Float32Array([32,32,.5,Number(element<HTMLSelectElement>('facing').value)*Math.PI/4,kind,state,phase,Number(element<HTMLInputElement>('health').value),0,civ,construction,state===2&&phase>=.5?1:0]);tick=Math.round(phase*36);}
   renderer.jackalVariant=variant;
   renderer.render(data,data.length/12,Number(element<HTMLSelectElement>('yaw').value),1,session.sim.sim_alloy(),session.sim.sim_charge(),tick);
-  await renderer.settled();
+  const image=await renderer.captureFrame();
   if(disposed)return;
-  if(rig){const source=element<HTMLCanvasElement>('scene'),native=element<HTMLCanvasElement>('native'),large=element<HTMLCanvasElement>('large');
+  capturedContext.putImageData(image,0,0);
+  if(rig){const source=capturedFrame,native=element<HTMLCanvasElement>('native'),large=element<HTMLCanvasElement>('large');
    for(const [target,mult] of [[native,1],[large,4]] as const){const c=target.getContext('2d')!;c.imageSmoothingEnabled=false;c.clearRect(0,0,target.width,target.height);c.drawImage(source,416,192,128,112,0,0,128*mult,112*mult);}}
- }catch(error){fail(error);}finally{drawing=false;}
+ }catch(error){fail(error);}finally{drawing=false;if(redrawPending&&!disposed){redrawPending=false;void draw();}}
 }
 function animate(now:number){frame=0;if(disposed)return;const dt=last?Math.min(.05,(now-last)/1000):0;last=now;
- if(playing&&!document.hidden){if(view==='forge'){phase=(phase+dt*speed/1.2)%1;element<HTMLInputElement>('phase').value=String(phase);}else{accumulator+=dt*speed;let ticks=Math.min(12,Math.floor(accumulator*60));if(ticks){session.step(ticks);accumulator-=ticks/60;}if(session.sim.sim_lab_tick()>=1800)playing=false;}update();void draw();}
+ if(playing&&!document.hidden){if(view==='forge'){phase=(phase+dt*speed/1.2)%1;element<HTMLInputElement>('phase').value=String(phase);}else{accumulator+=dt*speed;let ticks=Math.min(12,Math.floor(accumulator*60));if(ticks){session.step(ticks,view==='research'?7200:1800);accumulator-=ticks/60;}if(session.sim.sim_lab_tick()>=(view==='research'?7200:1800))playing=false;}update();void draw();}
  if(playing&&!document.hidden)frame=requestAnimationFrame(animate);
 }
 function run(){last=0;if(!frame)frame=requestAnimationFrame(animate);update();}
@@ -95,14 +100,14 @@ async function boot(){
  element<HTMLInputElement>('search').oninput=ev=>roster((ev.target as HTMLInputElement).value);
  for(const id of ['variant','state','phase','health','facing','yaw'])element(id).addEventListener('input',()=>{variant=element<HTMLSelectElement>('variant').value as JackalVariant;state=Number(element<HTMLSelectElement>('state').value);phase=Number(element<HTMLInputElement>('phase').value);route();void draw();});
  element('reset').onclick=()=>{try{reset();selectedHandles.clear();}catch(error){fail(error);}};
- element('play').onclick=()=>{playing=!playing;if(playing&&session.sim.sim_lab_tick()>=1800&&view!=='forge')reset();playing=true;run();};
+
  // Pause must remain a real pause rather than a new replay.
- element('play').onclick=()=>{if(playing){playing=false;update();return;}if(view!=='forge'&&session.sim.sim_lab_tick()>=1800)reset();playing=true;run();};
- element('step').onclick=()=>{playing=false;if(view==='forge'){phase=Math.min(1,phase+1/60);element<HTMLInputElement>('phase').value=String(phase);}else session.step();update();void draw();};
+ element('play').onclick=()=>{if(playing){playing=false;update();return;}if(view!=='forge'&&session.sim.sim_lab_tick()>=(view==='research'?7200:1800))reset();playing=true;run();};
+ element('step').onclick=()=>{playing=false;if(view==='forge'){phase=Math.min(1,phase+1/60);element<HTMLInputElement>('phase').value=String(phase);}else session.step(1,view==='research'?7200:1800);update();void draw();};
  element('speed').onchange=()=>{speed=Number(element<HTMLSelectElement>('speed').value);};
  element('move').onclick=()=>{commandMode=0;};element('attack').onclick=()=>{commandMode=1;};element('hold').onclick=()=>{for(const handle of selectedHandles)session.order(handle,2,0);update();};
  element('scene').onclick=ev=>{if(view!=='encounter')return;const canvas=element<HTMLCanvasElement>('scene'),rect=canvas.getBoundingClientRect(),px=(ev.clientX-rect.left)*960/rect.width,py=(ev.clientY-rect.top)*540/rect.height,yaw=Number(element<HTMLSelectElement>('yaw').value);const data=session.actors(),picked=renderer.pick(px,py,yaw,1),actor=picked===null?null:data[picked];
-  if(actor?.faction===civ&&readDefinition(session.sim,actor.kind)?.klass===1){if(!ev.shiftKey)selectedHandles.clear();selectedHandles.add(actor.handle);selected=actor.index;element('status').textContent=`Selected ${selectedHandles.size} unit(s). Choose a command and target.`;return;}
+  if(actor?.faction===civ&&readDefinition(session.sim,actor.kind)?.klass===1){if(!ev.shiftKey)selectedHandles.clear();selectedHandles.add(actor.handle);selected=actor.handle;element('status').textContent=`Selected ${selectedHandles.size} unit(s). Choose a command and target.`;return;}
   if(!selectedHandles.size)return;
   if(commandMode===1&&actor&&actor.faction!==civ){for(const h of selectedHandles)session.order(h,1,actor.handle);}
   else if(commandMode===0){const c=Math.round(Math.cos(yaw*Math.PI/2)),s=Math.round(Math.sin(yaw*Math.PI/2));const diff=(px/2-240)/6,sum=(py/2-136+6.9282032*.5)/3.4641016,a=(sum+diff)/2,b=(sum-diff)/2;const tx=Math.max(1,Math.min(62,Math.floor(32+c*a+s*b))),ty=Math.max(1,Math.min(62,Math.floor(32-s*a+c*b)));for(const h of selectedHandles)session.order(h,0,tx+ty*64);}
@@ -111,10 +116,10 @@ async function boot(){
  element('compare').onclick=()=>{void compare();};
  element('export').onclick=()=>downloadJSON('starhold-session.json',session.evidence({source:revision,asset:JACKAL_VARIANTS.find(v=>v.id===variant),comparisons}));
  element('approve').onclick=()=>downloadJSON('starhold-asset-review.json',{format:'starhold-asset-review-v1',kind,civilization:civ,variant,asset:JACKAL_VARIANTS.find(v=>v.id===variant),phase,state,source:revision,wasmSHA256:loader.hash,status:'candidate-review-not-runtime-promotion'});
- element('capture').onclick=()=>{void (async()=>{await draw();await renderer.settled();const canvas=(view==='forge'||view==='codex')?element<HTMLCanvasElement>('large'):element<HTMLCanvasElement>('scene');const a=document.createElement('a');a.download=`starhold-${kind}-${variant}-${session.sim.sim_lab_tick()}.png`;a.href=canvas.toDataURL('image/png');a.click();})().catch(fail);};
+ element('capture').onclick=()=>{void (async()=>{await draw();await renderer.settled();const canvas=(view==='forge'||view==='codex')?element<HTMLCanvasElement>('large'):capturedFrame;const a=document.createElement('a');a.download=`starhold-${kind}-${variant}-${session.sim.sim_lab_tick()}.png`;a.href=canvas.toDataURL('image/png');a.click();})().catch(fail);};
  document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelAnimationFrame(frame);frame=0;last=0;accumulator=0;}else if(playing)run();});
  setView(view);root.dataset.ready='true';
- Object.assign(window,{__WORKSHOP:{getState:()=>({view,kind,civ,variant,selected,playing,...session.metrics()}),evidence:()=>session.evidence({source:revision}),step:(ticks:number)=>{session.step(ticks);update();return draw();},reset:()=>reset(),show:(next:View)=>setView(next)}});
+ Object.assign(window,{__WORKSHOP:{getState:()=>({view,kind,civ,variant,selected,playing,...session.metrics()}),evidence:()=>session.evidence({source:revision}),step:(ticks:number)=>{session.step(ticks,view==='research'?7200:1800);update();return draw();},reset:()=>reset(),show:(next:View)=>setView(next)}});
 }
 function dispose(){disposed=true;playing=false;cancelAnimationFrame(frame);research?.dispose();renderer.dispose();}
 window.addEventListener('pagehide',dispose,{once:true});if(import.meta.hot)import.meta.hot.dispose(dispose);

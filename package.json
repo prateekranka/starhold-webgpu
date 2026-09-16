@@ -8,7 +8,12 @@
     "dev": "npm run wasm && vite --port 5199 --strictPort",
     "build": "npm run wasm && tsc --noEmit && vite build",
     "preview": "vite preview --port 5199 --strictPort",
-    "capture": "node scripts/capture.mjs"
+    "capture": "node scripts/capture.mjs",
+    "wasm:workshop": "bash scripts/build-workshop-wasm.sh",
+    "dev:tools": "npm run wasm && npm run wasm:workshop && vite --port 5199 --strictPort",
+    "test:workshop": "node --experimental-strip-types --test tests/workshop.test.mjs",
+    "test:workshop:browser": "node scripts/workshop-browser.mjs",
+    "verify:workshop": "cargo test --manifest-path sim/Cargo.toml --features workshop && npm run build && npm run wasm:workshop && bash scripts/build-baseline.sh && npm run test:workshop"
   },
   "devDependencies": {
     "playwright": "^1.63.0",
