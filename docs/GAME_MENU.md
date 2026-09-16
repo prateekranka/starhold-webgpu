@@ -47,8 +47,6 @@ WORKSHOP_HEADED=1 WORKSHOP_GPU_LOG=1 xvfb-run -a npm run test:menu:browser
 
 The browser test verifies that the menu opens on the live showcase, showcase actors keep changing behind it, New Game starts Cinderwake and closes the menu, Resume returns to the active match, options/settings interactions work, and the page does not overflow horizontally. It writes title-menu evidence into `workshop-evidence/`.
 
-The menu and the full Workshop/game browser suite passed together in **Workshop verification #93** on commit `9cce6efd21451cdba7cb9a2a4fa349d27e8a05e9`.
-
 ## Scope
 
 The current Resume action is intentionally **current-session only**. A future save/load system should add simulation serialization explicitly rather than pretending that menu preference storage is a saved match. No menu setting changes simulation balance or the asset-governance contracts.
