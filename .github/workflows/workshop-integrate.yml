@@ -2,7 +2,7 @@ name: Integrate workshop checkpoint
 on:
   push:
     branches: [feat/ash-jackal-workshop]
-    paths: ['.workshop/frontend.py', '.github/workflows/workshop-integrate.yml']
+    paths: ['.workshop/frontend.py', '.workshop/capture.py', '.github/workflows/workshop-integrate.yml']
 permissions:
   contents: write
 concurrency:
@@ -23,7 +23,9 @@ jobs:
           node-version: '22'
           cache: npm
       - name: Apply reviewed integration edits
-        run: python3 .workshop/frontend.py
+        run: |
+          python3 .workshop/frontend.py
+          python3 .workshop/capture.py
       - name: Verify simulation and builds
         run: |
           rustup target add wasm32-unknown-unknown
@@ -36,12 +38,12 @@ jobs:
           npm run test:workshop
       - name: Browser checks and captures
         run: |
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium > /tmp/browser-install.log 2>&1 || { cat /tmp/browser-install.log; exit 1; }
           npm run test:workshop:browser
       - name: Commit verified frontend checkpoint
         run: |
           git add src sim/src scripts tests package.json .gitignore lab.html
-          git rm .workshop/frontend.py
+          git rm .workshop/frontend.py .workshop/capture.py
           git config user.name 'Starhold Workshop'
           git config user.email 'workshop@users.noreply.github.com'
           git commit -m 'feat: connect verified production asset, research and encounter tools'
@@ -49,6 +51,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: workshop-evidence-${{ github.run_id }}
+          name: workshop-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: workshop-evidence
           retention-days: 7
