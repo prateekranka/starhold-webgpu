@@ -2,7 +2,7 @@ name: Integrate workshop checkpoint
 on:
   push:
     branches: [feat/ash-jackal-workshop]
-    paths: ['.workshop/frontend.py', '.workshop/capture.py', '.github/workflows/workshop-integrate.yml']
+    paths: ['.workshop/frontend.py', '.workshop/capture.py', '.github/workflows/workshop-integrate.yml', 'scripts/workshop-browser.mjs', 'scripts/workshop-gpu.mjs']
 permissions:
   contents: write
 concurrency:
@@ -14,11 +14,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: feat/ash-jackal-workshop
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
@@ -36,10 +36,16 @@ jobs:
           npm run wasm:workshop
           bash scripts/build-baseline.sh
           npm run test:workshop
-      - name: Browser checks and captures
+      - name: Install software WebGPU and virtual display
         run: |
+          sudo apt-get update
+          sudo apt-get install -y libvulkan1 mesa-vulkan-drivers xvfb xauth
           npx playwright install --with-deps chromium > /tmp/browser-install.log 2>&1 || { cat /tmp/browser-install.log; exit 1; }
-          npm run test:workshop:browser
+      - name: Browser checks and captures
+        env:
+          WORKSHOP_HEADED: '1'
+          WORKSHOP_GPU_LOG: '1'
+        run: xvfb-run -a npm run test:workshop:browser
       - name: Commit verified frontend checkpoint
         run: |
           git add src sim/src scripts tests package.json .gitignore lab.html
@@ -48,7 +54,7 @@ jobs:
           git config user.email 'workshop@users.noreply.github.com'
           git commit -m 'feat: connect verified production asset, research and encounter tools'
           git push origin HEAD:feat/ash-jackal-workshop
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: workshop-evidence-${{ github.run_id }}-${{ github.run_attempt }}
