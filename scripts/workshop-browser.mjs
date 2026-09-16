@@ -20,7 +20,16 @@ try{
   await page.waitForFunction(()=>document.querySelector('#workshop')?.dataset.ready==='true'||document.querySelector('#workshop')?.dataset.error==='true',null,{timeout:60000});
   assert.equal(await page.locator('#workshop').getAttribute('data-error'),null,await page.locator('#status').textContent());
   assert.equal((await page.locator('#asset-name').textContent()).toLowerCase(),'ash jackal');
-  await page.locator('#variant').selectOption('longbow');await page.locator('#state').selectOption('2');
+  await page.locator('#variant').selectOption('longbow');
+  await page.waitForFunction(()=>document.querySelector('#asset-governance')?.dataset.ready==='true'&&document.querySelector('#candidate-revision')?.textContent==='jackal-longbow-1',null,{timeout:5000});
+  assert.match(await page.locator('#gate-summary').textContent(),/required gates pass/);
+  assert.equal(await page.locator('#asset-gates [data-pass="false"]').count(),0,'Ash Jackal technical asset gates must all pass');
+  for(const input of await page.locator('#human-review input[type="checkbox"]').all())await input.check();
+  await page.locator('#asset-approve-human').click();
+  assert.match(await page.locator('#review-status').textContent(),/Approved locally — not promoted/);
+  const approval=await page.evaluate(()=>window.__ASSET_REVIEW.getState());
+  assert.equal(approval.review.decision,'approved');assert.equal(approval.technicalPass,true);
+  await page.locator('#state').selectOption('2');
   await page.locator('#phase').evaluate(input=>{input.value='.49';input.dispatchEvent(new Event('input',{bubbles:true}));});
   // Wait for real pixels, but surface renderer/device errors immediately.
   await page.waitForFunction(()=>{if(document.querySelector('#workshop')?.dataset.error==='true')return true;const canvas=document.querySelector('#native'),data=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data,colors=new Set();for(let i=0;i<data.length;i+=4)colors.add(`${data[i]},${data[i+1]},${data[i+2]}`);return colors.size>3;},null,{timeout:15000});
@@ -41,13 +50,13 @@ try{
   await page.locator('#play').click();await page.waitForTimeout(80);await page.locator('#play').click();
   assert.equal((await page.evaluate(()=>window.__WORKSHOP.getState())).playing,false);
   const scroll=await page.evaluate(()=>({width:innerWidth,doc:document.documentElement.scrollWidth}));assert.ok(scroll.doc<=scroll.width+2,`Horizontal page overflow: ${JSON.stringify(scroll)}`);
-  const evidence=await page.evaluate(()=>window.__WORKSHOP.evidence());await writeFile(`workshop-evidence/${name}-session.json`,JSON.stringify(evidence,null,2));
-  assert.deepEqual(errors,[]);assert.equal(await page.locator('#workshop').getAttribute('data-error'),null,await page.locator('#status').textContent());results.push({viewport:name,pass:true,paintedColors:painted,metrics:state});console.log('PASS',name,JSON.stringify(state));await context.close();activePage=null;activeErrors=[];
+  const evidence=await page.evaluate(()=>window.__WORKSHOP.evidence());await writeFile(`workshop-evidence/${name}-session.json`,JSON.stringify({...evidence,assetReview:approval},null,2));
+  assert.deepEqual(errors,[]);assert.equal(await page.locator('#workshop').getAttribute('data-error'),null,await page.locator('#status').textContent());results.push({viewport:name,pass:true,paintedColors:painted,assetGates:approval.gates.length,metrics:state});console.log('PASS',name,JSON.stringify(state));await context.close();activePage=null;activeErrors=[];
  }
  const page=await browser.newPage();activePage=page;await page.goto('http://127.0.0.1:5199/');
  await page.waitForFunction(()=>window.__APP?.ready||window.__APP?.error,null,{timeout:60000});
  assert.equal(await page.evaluate(()=>window.__APP.error),null);
  await page.evaluate(()=>window.__APP.startMatch(1));await page.locator('#hud-research').click();assert.equal(await page.locator('.research-dialog').evaluate(d=>d.open),true);await page.locator('.research-close').click();
  results.push({view:'production-match-research',pass:true});console.log(JSON.stringify(results,null,2));
-}catch(error){results.push({pass:false,error:String(error),browserErrors:activeErrors});if(activePage){const diagnostics=await activePage.evaluate(()=>({state:window.__WORKSHOP?.getState(),status:document.querySelector('#status')?.textContent,canvases:[...document.querySelectorAll('canvas')].map(c=>({id:c.id,width:c.width,height:c.height,visible:!c.hidden}))})).catch(()=>({}));console.error('DIAGNOSTICS',JSON.stringify({...diagnostics,browserErrors:activeErrors}));await activePage.screenshot({path:'workshop-evidence/failure.png',fullPage:true}).catch(()=>{});await writeFile('workshop-evidence/failure.txt',await activePage.locator('body').innerText().catch(()=>''));}throw error;}
+}catch(error){results.push({pass:false,error:String(error),browserErrors:activeErrors});if(activePage){const diagnostics=await activePage.evaluate(()=>({state:window.__WORKSHOP?.getState(),assetReview:window.__ASSET_REVIEW?.getState?.(),status:document.querySelector('#status')?.textContent,canvases:[...document.querySelectorAll('canvas')].map(c=>({id:c.id,width:c.width,height:c.height,visible:!c.hidden}))})).catch(()=>({}));console.error('DIAGNOSTICS',JSON.stringify({...diagnostics,browserErrors:activeErrors}));await activePage.screenshot({path:'workshop-evidence/failure.png',fullPage:true}).catch(()=>{});await writeFile('workshop-evidence/failure.txt',await activePage.locator('body').innerText().catch(()=>''));}throw error;}
 finally{await writeFile('workshop-evidence/browser-results.json',JSON.stringify(results,null,2));await browser?.close();server.kill();}

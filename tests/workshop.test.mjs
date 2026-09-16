@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync,existsSync,readdirSync} from 'node:fs';
 import {readResearch,readRoster,readDefinition} from '../src/content-api.ts';
 import {drawAshJackal,jackalReleasePoint} from '../src/assets/ash-jackal.ts';
+import {ASH_JACKAL_CANDIDATES,ASH_JACKAL_CONTRACT,ASH_JACKAL_HUMAN_CRITERIA,candidateCatalogMatchesRenderer,evaluateAshJackalCandidate} from '../src/assets/ash-jackal-contract.ts';
 const normal=readFileSync('public/sim.wasm'),workshop=readFileSync('tools/sim.workshop.wasm');
 async function load(bytes=workshop){return (await WebAssembly.instantiate(bytes,{})).instance.exports;}
 function snapshot(s){return new Float32Array(s.memory.buffer,s.sim_entity_ptr(),s.sim_entity_count()*12).slice();}
@@ -52,5 +53,28 @@ test('research paths have deterministic outcomes through actual combat',async()=
  for(const path of [[],[202],[202,203],[202,204]]){
   const run=async()=>{const s=await load();s.sim_lab_init(7319,0,1,30,22,1);for(const id of path)assert.equal(s.sim_lab_prepare(id),1);advance(s,360);return snapshot(s);};
   assert.deepEqual(await run(),await run());
+ }
+});
+test('Ash Jackal contract governs immutable candidates and all required asset gates',()=>{
+ assert.equal(ASH_JACKAL_CONTRACT.kind,30);assert.equal(ASH_JACKAL_CONTRACT.civilization,1);
+ assert.deepEqual([...ASH_JACKAL_CONTRACT.animation.requiredStates],['idle','walk','attack','wreck']);
+ assert.equal(ASH_JACKAL_CONTRACT.review.humanApprovalRequired,true);
+ assert.equal(ASH_JACKAL_CONTRACT.review.approvalPromotesRuntime,false);
+ assert.equal(ASH_JACKAL_HUMAN_CRITERIA.length,4);
+ assert.equal(new Set(ASH_JACKAL_CANDIDATES.map(c=>c.revision)).size,ASH_JACKAL_CANDIDATES.length);
+ assert.equal(candidateCatalogMatchesRenderer(),true);
+ for(const candidate of ASH_JACKAL_CANDIDATES){
+  const gates=evaluateAshJackalCandidate(candidate.id),failed=gates.filter(g=>!g.pass);
+  assert.ok(gates.length>=8,`${candidate.revision} must have a meaningful technical gate set`);
+  assert.deepEqual(failed,[],`${candidate.revision} failed: ${failed.map(g=>`${g.id}: ${g.detail}`).join('; ')}`);
+ }
+});
+test('Ash Jackal wreck is a distinct terminal presentation',()=>{
+ for(const variant of ['field','longbow']){
+  const idle=[],wreck=[];
+  drawAshJackal({box(...args){idle.push(args);}},0,0,0,0,{state:0,phase:0,tick:0},variant);
+  drawAshJackal({box(...args){wreck.push(args);}},0,0,0,0,{state:4,phase:1,tick:36},variant);
+  assert.notDeepEqual(wreck,idle);
+  const top=Math.max(...wreck.map(b=>b[2]+b[5]));assert.ok(top<=ASH_JACKAL_CONTRACT.technicalLimits.maxWreckHeight);
  }
 });

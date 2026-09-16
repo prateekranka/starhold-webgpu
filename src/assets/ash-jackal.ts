@@ -1,10 +1,11 @@
-/** Original procedural assets. Both variants use the same gameplay attachment point. */
+/** Original procedural Ash Jackal assets. Candidate revisions share one gameplay socket. */
 export type JackalVariant='field'|'longbow';
 export const JACKAL_SCALE=0.6;
 export const JACKAL_SOCKET=Object.freeze([0.6,0.18,0.72] as const);
+export const JACKAL_FOOT_SIZE=Object.freeze([0.27,0.21,0.13] as const);
 export const JACKAL_VARIANTS=Object.freeze([
- {id:'field' as const,name:'Field rig',revision:'jackal-field-1',status:'Reference'},
- {id:'longbow' as const,name:'Longbow outrider',revision:'jackal-longbow-1',status:'Candidate'},
+ {id:'field' as const,name:'Field rig',revision:'jackal-field-1',status:'Technical pass'},
+ {id:'longbow' as const,name:'Longbow outrider',revision:'jackal-longbow-1',status:'Visual review'},
 ]);
 export interface BoxSink {box(x:number,y:number,z:number,w:number,d:number,h:number,color:number,owner?:number,screen?:number):void;}
 export interface JackalPose {state:number;phase:number;tick:number;cooldown?:number;}
@@ -13,7 +14,7 @@ export function jackalReleasePoint(x:number,y:number,z:number,yaw:number){
  return {x:x+sx*c-sy*s,y:y+sx*s+sy*c,z:z+sz};
 }
 export function drawAshJackal(sink:BoxSink,x:number,y:number,z:number,id:number,pose:JackalPose,variant:JackalVariant='field'):void {
- const moving=pose.state===1||pose.state===6,attacking=pose.state===2;
+ const moving=pose.state===1||pose.state===6,attacking=pose.state===2,wreck=pose.state===4;
  const phase=Math.max(0,Math.min(1,Number.isFinite(pose.phase)?pose.phase:0));
  const draw=attacking&&phase<.5?phase*2:0,gait=((pose.tick%36)+36)%36/36;
  const settle=attacking?0:Math.sin(pose.tick*Math.PI/36)*.025;
@@ -22,10 +23,28 @@ export function drawAshJackal(sink:BoxSink,x:number,y:number,z:number,id:number,
  const strut=(a:number,b:number,c:number,dx:number,dy:number,dz:number,width:number,color:number,steps=3)=>{
   for(let i=0;i<steps;i++){const t=(i+.5)/steps;box(a+dx*t,b+dy*t,c+dz*t-Math.abs(dz)/steps/2,Math.abs(dx)/steps+width,Math.abs(dy)/steps+width,Math.abs(dz)/steps+width,color);}
  };
+ if(wreck){
+  // Terminal low silhouette: collapsed chassis, folded legs, fallen bow and quiver.
+  box(-.18,0,.10,longer?1.5:1.32,.62,.24,24,-1);
+  box(.28,.05,.30,.46,.40,.28,23,-1);
+  box(.43,.08,.48,.28,.32,.18,23,-1);
+  for(const [a,b] of [[-.62,-.34],[-.56,.34],[.34,-.32],[.38,.34]] as const){
+   box(a,b,.035,.42,.16,.12,25);
+   box(a+(a<0?-.12:.12),b,.02,.28,.18,.10,23);
+  }
+  box(-.72,-.33,.18,.38,.18,.22,23);
+  for(let j=0;j<3;j++)box(-.82+j*.10,-.34,.38,.035,.04,.20,25);
+  strut(.20,.38,.07,.74,0,.02,.07,26,5);
+  strut(.18,.38,.09,.18,0,.34,.065,25,3);
+  strut(.94,.38,.09,-.16,0,.32,.065,25,3);
+  box(-.05,.05,.37,.18,.16,.10,27);
+  return;
+ }
+ // Mechanical diagonal-pair trot. At the swing phase exactly one diagonal pair lifts.
  for(const end of [-1,1])for(const side of [-1,1]){
   const p=(gait+(end*side>0?0:.5))%1,step=moving?(p<.6?.19-.38*p/.6:-.19+.38*(p-.6)/.4):0;
   const lift=moving&&p>=.6?Math.sin((p-.6)/.4*Math.PI)*.18:0;
-  box(end*span+step,side*stance,.025+lift,.27,.21,.13,23);
+  box(end*span+step,side*stance,.025+lift,JACKAL_FOOT_SIZE[0],JACKAL_FOOT_SIZE[1],JACKAL_FOOT_SIZE[2],23);
   strut(end*span+step,side*stance,.15+lift,-end*.18-step*.4,0,.3-lift,.115,24);
   strut(end*span-end*.18+step*.6,side*stance,.45,end*.12-step*.6,0,.23+settle,.14,25);
  }
