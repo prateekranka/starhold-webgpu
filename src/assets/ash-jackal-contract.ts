@@ -1,4 +1,4 @@
-import {drawAshJackal,JACKAL_FOOT_SIZE,JACKAL_SCALE,JACKAL_SOCKET,JACKAL_VARIANTS,type BoxSink,type JackalPose,type JackalVariant} from './ash-jackal';
+import {drawAshJackal,JACKAL_FOOT_SIZE,JACKAL_SCALE,JACKAL_SOCKET,JACKAL_VARIANTS,type BoxSink,type JackalPose,type JackalVariant} from './ash-jackal.ts';
 
 export type AssetLifecycle='experiment'|'candidate'|'technical-pass'|'visual-review'|'approved'|'rework';
 export interface AssetCandidate {
