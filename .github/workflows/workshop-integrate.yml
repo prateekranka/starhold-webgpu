@@ -1,0 +1,69 @@
+name: Integrate workshop checkpoint
+on:
+  push:
+    branches: [feat/ash-jackal-workshop]
+    paths: ['.workshop/patch.b64', '.github/workflows/workshop-integrate.yml']
+permissions:
+  contents: write
+concurrency:
+  group: workshop-integration
+  cancel-in-progress: false
+jobs:
+  integrate:
+    if: github.ref == 'refs/heads/feat/ash-jackal-workshop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/ash-jackal-workshop
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Apply authored patch
+        id: patch
+        run: |
+          if [ ! -f .workshop/patch.b64 ]; then echo 'present=false' >> "$GITHUB_OUTPUT"; exit 0; fi
+          echo 'present=true' >> "$GITHUB_OUTPUT"
+          python3 - <<'PY'
+          import base64, gzip, pathlib
+          pathlib.Path('/tmp/workshop.patch').write_bytes(gzip.decompress(base64.b64decode(pathlib.Path('.workshop/patch.b64').read_text())))
+          PY
+          git apply --check /tmp/workshop.patch
+          git apply --index /tmp/workshop.patch
+      - name: Verify simulation and build
+        if: steps.patch.outputs.present == 'true'
+        run: |
+          rustup target add wasm32-unknown-unknown
+          npm ci
+          cargo test --manifest-path sim/Cargo.toml
+          cargo test --manifest-path sim/Cargo.toml --features workshop
+          npm run build
+          cargo build --manifest-path sim/Cargo.toml --release --target wasm32-unknown-unknown --features workshop --target-dir sim/target/workshop
+          mkdir -p tools
+          cp sim/target/workshop/wasm32-unknown-unknown/release/starhold_sim.wasm tools/sim.workshop.wasm
+          npm run test:workshop --if-present
+      - name: Commit verified checkpoint (no merge or deployment)
+        if: steps.patch.outputs.present == 'true'
+        run: |
+          git rm .workshop/patch.b64
+          git config user.name 'Starhold Workshop'
+          git config user.email 'workshop@users.noreply.github.com'
+          git commit -m 'feat: integrate verified workshop checkpoint'
+          git push origin HEAD:feat/ash-jackal-workshop
+      - name: Archive verification state
+        if: always() && steps.patch.outputs.present == 'true'
+        run: |
+          mkdir -p /tmp/workshop-checkpoint
+          cp -r src sim/src tools scripts /tmp/workshop-checkpoint/
+          cp sim/Cargo.toml /tmp/workshop-checkpoint/Cargo.toml
+          cp -r dist /tmp/workshop-checkpoint/ 2>/dev/null || true
+          cp public/sim.wasm /tmp/workshop-checkpoint/sim.wasm
+          git rev-parse HEAD > /tmp/workshop-checkpoint/revision.txt
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.patch.outputs.present == 'true'
+        with:
+          name: workshop-checkpoint-${{ github.run_id }}
+          path: /tmp/workshop-checkpoint
+          retention-days: 3
