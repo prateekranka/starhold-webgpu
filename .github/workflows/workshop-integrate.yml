@@ -21,37 +21,45 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - name: Compiler and dependency inputs
-        run: |
-          rustup target add wasm32-unknown-unknown
-          npm ci
-          mkdir -p /tmp/workshop-inputs/compiler/bin /tmp/workshop-inputs/compiler/lib
-          SYSROOT=$(rustc --print sysroot)
-          cp -L "$SYSROOT/bin/rustc" "$SYSROOT/bin/cargo" /tmp/workshop-inputs/compiler/bin/
-          cp -L "$SYSROOT"/lib/*.so* /tmp/workshop-inputs/compiler/lib/ 2>/dev/null || true
-          cp -rL "$SYSROOT/lib/rustlib" /tmp/workshop-inputs/compiler/lib/
-          tar -czf /tmp/workshop-inputs/dependencies.tgz node_modules
-          cp .workshop/patch.b64 /tmp/workshop-inputs/patch.b64 2>/dev/null || true
       - name: Apply authored patch
         id: patch
         run: |
           if [ ! -f .workshop/patch.b64 ]; then echo 'present=false' >> "$GITHUB_OUTPUT"; exit 0; fi
           echo 'present=true' >> "$GITHUB_OUTPUT"
           python3 - <<'PY'
-          import base64, gzip, pathlib, json
+          import base64, gzip, pathlib, json, zlib
           data=pathlib.Path('.workshop/patch.b64').read_text()
           repair=pathlib.Path('.workshop/repair.json')
           if repair.exists():
-              for change in sorted(json.loads(repair.read_text()), key=lambda c:c['start'], reverse=True):
-                  assert data[change['start']:change['end']]==change['old']
-                  data=data[:change['start']]+change['new']+data[change['end']:]
-          pathlib.Path('/tmp/workshop.patch').write_bytes(gzip.decompress(base64.b64decode(data)))
+              changes=json.loads(repair.read_text())
+              for c in changes:
+                  if 'start' not in c:
+                      assert data.count(c['old'])==1
+                      data=data.replace(c['old'],c['new'])
+              for c in sorted([c for c in changes if 'start' in c],key=lambda c:c['start'],reverse=True):
+                  assert data[c['start']:c['end']]==c['old']
+                  data=data[:c['start']]+c['new']+data[c['end']:]
+          encoded=base64.b64decode(data)
+          try:
+              decoded=gzip.decompress(encoded)
+          except Exception:
+              stream=zlib.decompressobj(31); output=b''
+              for i,b in enumerate(encoded):
+                  try: output+=stream.decompress(bytes([b]))
+                  except Exception:
+                      print('Transport failure near base64 offset',i*4//3)
+                      print('Last decoded source:',output[-3000:].decode('utf-8','replace'))
+                      raise
+              raise
+          pathlib.Path('/tmp/workshop.patch').write_bytes(decoded)
           PY
           git apply --check /tmp/workshop.patch
           git apply --index /tmp/workshop.patch
       - name: Verify simulation and build
         if: steps.patch.outputs.present == 'true'
         run: |
+          rustup target add wasm32-unknown-unknown
+          npm ci
           cargo test --manifest-path sim/Cargo.toml
           cargo test --manifest-path sim/Cargo.toml --features workshop
           npm run build
@@ -71,15 +79,16 @@ jobs:
       - name: Archive verification state
         if: always()
         run: |
-          mkdir -p /tmp/workshop-inputs/source/sim
-          cp -r src /tmp/workshop-inputs/source/
-          cp -r sim/src sim/Cargo.toml /tmp/workshop-inputs/source/sim/
-          for p in tools scripts dist; do cp -r "$p" /tmp/workshop-inputs/source/ 2>/dev/null || true; done
-          cp public/sim.wasm /tmp/workshop-inputs/source/sim.wasm
-          git rev-parse HEAD > /tmp/workshop-inputs/source/revision.txt
+          mkdir -p /tmp/workshop-checkpoint/sim
+          cp -r src /tmp/workshop-checkpoint/
+          cp -r sim/src sim/Cargo.toml /tmp/workshop-checkpoint/sim/
+          for p in tools scripts dist; do cp -r "$p" /tmp/workshop-checkpoint/ 2>/dev/null || true; done
+          cp public/sim.wasm /tmp/workshop-checkpoint/sim.wasm
+          cp .workshop/patch.b64 /tmp/workshop-checkpoint/patch.b64 2>/dev/null || true
+          git rev-parse HEAD > /tmp/workshop-checkpoint/revision.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: workshop-checkpoint-${{ github.run_id }}
-          path: /tmp/workshop-inputs
+          path: /tmp/workshop-checkpoint
           retention-days: 1
