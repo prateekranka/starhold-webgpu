@@ -7,8 +7,6 @@ on:
     branches: [master]
   workflow_dispatch:
 
-# A feature-branch update is verified by its PR, not a duplicate push run.
-# No source generation, commits, or pushes are permitted in verification.
 permissions:
   contents: read
 
@@ -63,7 +61,9 @@ jobs:
         env:
           WORKSHOP_HEADED: '1'
           WORKSHOP_GPU_LOG: '1'
-        run: xvfb-run -a npm run test:workshop:browser
+        run: |
+          xvfb-run -a npm run test:workshop:browser
+          xvfb-run -a npm run test:menu:browser
       - name: Verification provenance
         if: always()
         run: |
