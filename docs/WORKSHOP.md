@@ -18,6 +18,19 @@ Open `http://localhost:5199/tools/?view=forge&civ=1&kind=30`. The command builds
 
 Generated `tools/sim.workshop.wasm` and `tools/revision.json` are ignored development outputs. Do not move tools into `public/` or the production entry graph. The normal WASM contains research/content rules but no lab mutation exports.
 
+## Agent playbooks
+
+Repository-local README/HOWTO playbooks live under [`skills/`](../skills/README.md):
+
+- [`starhold-workshop`](../skills/starhold-workshop/README.md) — build developer tools around real renderer/simulation systems;
+- [`starhold-research-atlas`](../skills/starhold-research-atlas/README.md) — add civilization research and Atlas behavior without duplicating runtime authority;
+- [`starhold-asset`](../skills/starhold-asset/README.md) — contract-first units/buildings, candidate lineage, technical gates and human approval;
+- [`starhold-animation`](../skills/starhold-animation/README.md) — gaits, attack timing, sockets and terminal-state QA;
+- [`starhold-slice`](../skills/starhold-slice/README.md) — cut large plans into green vertical agent slices;
+- [`starhold-precommit`](../skills/starhold-precommit/README.md) — maintain a task regression floor before every agent-created commit.
+
+These are Starhold adaptations inspired by Dimillian/Evergrow and TheOrcDev/skills; see [`skills/SOURCES.md`](../skills/SOURCES.md) for pinned source commits and adaptation notes. They are project instructions, not vendored upstream tooling.
+
 ## Review Ash Jackal
 
 Choose Cinderwake Reavers → Ash Jackal. Compare **Field rig** (`jackal-field-1`) and **Longbow outrider** (`jackal-longbow-1`). Both are authored procedural candidates drawn through the production renderer, with one shared weapon socket. Inspect eight actor facings, four camera yaws, idle/walk/attack/wreck poses and animation phase. The native crop is paired with a fixed 4× nearest-neighbor enlargement. For buildings, the phase slider controls construction progress.
