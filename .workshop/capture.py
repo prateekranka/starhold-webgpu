@@ -28,7 +28,7 @@ edit('src/renderer.ts',' private disposed=false;',""" private disposed=false;
   }finally{buffer.destroy();}
  }
 """)
-edit('src/renderer.ts','this.device=await adapter.requestDevice();','this.gpuAdapter=adapter;this.device=await adapter.requestDevice();')
+edit('src/renderer.ts','this.device=await adapter.requestDevice();','this.gpuAdapter=adapter;this.device=await this.gpuAdapter.requestDevice();')
 edit('src/renderer.ts',"const format=navigator.gpu.getPreferredCanvasFormat();this.context.configure({device:d,format,alphaMode:'opaque'});", "const format=navigator.gpu.getPreferredCanvasFormat();this.frameFormat=format;const captureUsage=GPUTextureUsage as typeof GPUTextureUsage & {COPY_SRC:number};this.context.configure({device:d,format,alphaMode:'opaque',usage:captureUsage.RENDER_ATTACHMENT|captureUsage.COPY_SRC});")
 edit('src/renderer.ts','this.presentPass.colorAttachments[0].view=this.context.getCurrentTexture().createView();','this.frameTexture=this.context.getCurrentTexture();this.presentPass.colorAttachments[0].view=this.frameTexture.createView();')
 edit('src/tools/workshop.ts','const renderer=new Renderer();',"""const renderer=new Renderer();
@@ -42,6 +42,6 @@ edit('src/tools/workshop.ts','  await renderer.settled();\n  if(disposed)return;
 edit('src/tools/workshop.ts',"if(rig){const source=element<HTMLCanvasElement>('scene'),native=",'if(rig){const source=capturedFrame,native=')
 edit('src/tools/workshop.ts',' }catch(error){fail(error);}finally{drawing=false;}'," }catch(error){fail(error);}finally{drawing=false;if(redrawPending&&!disposed){redrawPending=false;void draw();}}")
 edit('src/tools/workshop.ts',"?element<HTMLCanvasElement>('large'):element<HTMLCanvasElement>('scene');const a=document.createElement('a');", "?element<HTMLCanvasElement>('large'):capturedFrame;const a=document.createElement('a');")
-# Use the Vulkan backend used by Starhold's original capture harness. GPU device
-# loss is a failure, never a skipped screenshot. Software execution is not a GPU benchmark.
-edit('scripts/workshop-browser.mjs',"browser=await chromium.launch({headless:true,args:['--enable-unsafe-webgpu','--use-angle=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist','--disable-gpu-sandbox']});", "browser=await chromium.launch({headless:true,args:['--enable-features=Vulkan,VulkanFromANGLE','--enable-unsafe-webgpu','--use-angle=vulkan','--use-gl=angle','--ignore-gpu-blocklist','--disable-gpu-watchdog','--disable-dev-shm-usage']});")
+# Browser launch is owned by scripts/workshop-gpu.mjs. Do not rewrite its preset
+# here: both the isolated GPU probe and all real-pixel assertions must run.
+assert "browser=await chromium.launch(browserOptions());" in Path('scripts/workshop-browser.mjs').read_text()
