@@ -57,6 +57,16 @@ function exportReview(){
   policy:'Human approval is review evidence only. It never promotes a candidate, rewrites source, or changes the runtime default.',
  });
 }
+function syncHumanControls(candidate:AssetCandidate,review:HumanReview){
+ if(!panel)return;
+ const technical=allRequiredGatesPass(candidate.id),humanComplete=ASH_JACKAL_HUMAN_CRITERIA.every(c=>review.checks[c.id]);
+ const approve=panel.querySelector<HTMLButtonElement>('#asset-approve-human'),status=panel.querySelector<HTMLElement>('#review-status');
+ if(approve)approve.disabled=!technical||!humanComplete;
+ if(status){
+  const decision=review.decision==='approved'?'Approved locally — not promoted':review.decision==='rework'?'Rework requested':'Pending human review';
+  status.textContent=decision;status.className=`decision-${review.decision}`;
+ }
+}
 function render(){
  if(!panel)return;
  const state=workshopState();
@@ -78,7 +88,7 @@ function render(){
  <section class="human-review"><div class="gate-title"><h3>Human visual review</h3><strong id="review-status" class="decision-${review.decision}">${html(decision)}</strong></div><div id="human-review" class="human-checks">${humanRows}</div><label class="review-note">Review note<textarea id="asset-review-note" rows="3" placeholder="What works? What needs another pass?">${html(review.note)}</textarea></label><div class="review-actions"><button id="asset-approve-human" ${!technical||!humanComplete?'disabled':''}>Approve candidate</button><button id="asset-rework-human">Request rework</button><button id="asset-clear-human">Clear decision</button></div><p class="gate-rule">Approval is stored only as local review evidence and can be exported. It does not change the game’s production default or commit anything to Git.</p></section>`;
  panel.dataset.ready='true';
  for(const input of panel.querySelectorAll<HTMLInputElement>('[data-human]'))input.onchange=()=>{
-  const next=load(candidate);next.checks[input.dataset.human!]=input.checked;if(next.decision==='approved')next.decision='pending';next.decidedAt=null;save(next);render();
+  const next=load(candidate);next.checks[input.dataset.human!]=input.checked;if(next.decision==='approved')next.decision='pending';next.decidedAt=null;save(next);syncHumanControls(candidate,next);
  };
  const note=panel.querySelector<HTMLTextAreaElement>('#asset-review-note')!;note.oninput=()=>{const next=load(candidate);next.note=note.value;save(next);};
  panel.querySelector<HTMLButtonElement>('#asset-approve-human')!.onclick=()=>{
