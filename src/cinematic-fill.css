@@ -1,0 +1,14 @@
+/* Full-bleed presentation for laptops and tablet-class touch devices.
+   The renderer keeps its 960x540 backing store and aspect ratio; CSS cover
+   scaling fills the display without stretching. Excess world pixels are clipped
+   by the existing body overflow rule. HUD/minimap remain fixed safe-area UI. */
+body.cinematic-fill{padding:0}
+body.cinematic-fill #viewport{position:fixed;margin:0;max-width:none;max-height:none}
+
+/* On mouse/laptop layouts the original camera hit targets sit on top of artwork
+   drawn near the canvas edge. Cover-cropping could hide those pixels, so promote
+   the same controls to a fixed visible overlay, matching the touch treatment. */
+body.cinematic-fill.mouse #viewport nav{position:fixed;z-index:8;left:auto;top:auto;right:calc(var(--safe-r) + 12px);bottom:calc(var(--safe-b) + var(--hud-h) + 12px);display:flex;gap:8px;pointer-events:none}
+body.cinematic-fill.mouse #viewport nav button{position:static;width:48px;height:48px;min-width:44px;min-height:44px;border:2px solid #747C91;background:#1B1E30;padding:0;display:grid;place-items:center;pointer-events:auto}
+body.cinematic-fill.mouse #viewport nav button:hover,body.cinematic-fill.mouse #viewport nav button:focus-visible{border-color:#F1CE72;background:#2B2D46;outline:none}
+body.cinematic-fill.mouse #viewport canvas.glyph{display:block;width:36px;height:36px;image-rendering:pixelated}
