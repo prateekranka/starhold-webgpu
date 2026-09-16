@@ -12,7 +12,7 @@ interface HumanReview {
 }
 const root=document.querySelector<HTMLElement>('#workshop')!;
 const key=(revision:string)=>`starhold.asset-review.v2.${revision}`;
-const ESCAPE:Record<string,string>={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
+const ESCAPE:Record<string,string>={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'};
 const html=(value:unknown)=>String(value??'').replace(/[&<>"']/g,ch=>ESCAPE[ch]??ch);
 const stage=(value:string)=>value.split('-').map(word=>word[0]?.toUpperCase()+word.slice(1)).join(' ');
 function blank(candidate:AssetCandidate):HumanReview{
@@ -108,7 +108,7 @@ function install(){
  exportButton.onclick=exportReview;
  document.querySelector<HTMLSelectElement>('#variant')?.addEventListener('input',()=>queueMicrotask(render));
  document.querySelector<HTMLSelectElement>('#civ')?.addEventListener('change',()=>queueMicrotask(render));
- root.addEventListener('click',()=>queueMicrotask(render));
+ root.addEventListener('click',event=>{if((event.target as HTMLElement).closest('#asset-governance'))return;queueMicrotask(render);});
  render();
  Object.assign(window,{__ASSET_REVIEW:{
   getState:()=>{const {candidate,review,gates}=currentReview();return {candidate,review,gates,technicalPass:gates.every(g=>g.pass)};},
