@@ -6,6 +6,11 @@
 //! 6 retreat, 7 dock, 8 repair, 9 inactive.
 //! Snapshot: x,y,z,yaw,kind,state,anim_phase,health,selected,faction,param0,param1.
 use std::cell::RefCell;
+mod research;
+mod actors;
+mod nav;
+mod lab;
+#[cfg(test)] mod workshop_tests;
 const CAP: usize = 160;
 const STRIDE: usize = 12;
 // Two staggered ranks on the eastern terrace. At yaw 0 adjacent centers
@@ -14,12 +19,12 @@ const RAID_POSTS: [(f32,f32);8] = [(26.6,16.),(26.6,18.6),(26.6,21.2),(28.3,15.1
 // Planted infantry screen in front of the buildings, with rifle support behind.
 const GUARD_POSTS: [(f32,f32);6] = [(23.1,15.8),(23.2,18.4),(23.1,21.),(19.5,24.),(19.,18.8),(19.3,22.)];
 #[derive(Clone, Copy)]
-struct Entity { data: [f32; STRIDE], x: i32, y: i32, target: usize, timer: u32, route: usize, origin: [f32;3], destination: [f32;3], active: bool }
+struct Entity { data: [f32; STRIDE], x: i32, y: i32, target: usize, timer: u32, route: usize, origin: [f32;3], destination: [f32;3], damage: f32, active: bool }
 impl Entity {
-    const EMPTY: Self = Self { data: [0.; STRIDE], x: 0, y: 0, target: 0, timer: 0, route: 0, origin: [0.;3], destination: [0.;3], active: false };
+    const EMPTY: Self = Self { data: [0.; STRIDE], x: 0, y: 0, target: 0, timer: 0, route: 0, origin: [0.;3], destination: [0.;3], damage: 0., active: false };
 }
-struct Sim { entities: [Entity; CAP], snapshot: [f32; CAP*STRIDE], ids: [usize; CAP], terrain: [f32;1024], world: Vec<f32>, count: usize, tick: u32, accumulator: f64, rng: u32, selected: usize, alloy: u32, charge: u32, mode: u32, game: Match }
-thread_local! { static SIM: RefCell<Sim> = RefCell::new(Sim { entities:[Entity::EMPTY;CAP], snapshot:[0.;CAP*STRIDE], ids:[0;CAP], terrain:[0.;1024], world:Vec::new(), count:0,tick:0,accumulator:0.,rng:1,selected:CAP,alloy:160,charge:120,mode:0,game:Match::EMPTY }); }
+struct Sim { entities: [Entity; CAP], snapshot: [f32; CAP*STRIDE], ids: [usize; CAP], terrain: [f32;1024], world: Vec<f32>, count: usize, tick: u32, accumulator: f64, rng: u32, selected: usize, alloy: u32, charge: u32, mode: u32, game: Match, research: research::ResearchState, actors: actors::ActorState, lab: lab::LabState }
+thread_local! { static SIM: RefCell<Sim> = RefCell::new(Sim { entities:[Entity::EMPTY;CAP], snapshot:[0.;CAP*STRIDE], ids:[0;CAP], terrain:[0.;1024], world:Vec::new(), count:0,tick:0,accumulator:0.,rng:1,selected:CAP,alloy:160,charge:120,mode:0,game:Match::EMPTY,research:research::ResearchState::EMPTY,actors:actors::ActorState::EMPTY,lab:lab::LabState::EMPTY }); }
 fn height(x:f32,y:f32)->f32 {
     if (7. ..25.).contains(&x) && (9. ..26.).contains(&y) || (23. ..29.).contains(&x) && (7. ..26.).contains(&y) || (3. ..10.).contains(&x) && (15. ..26.).contains(&y) || x>=24. && y<=14. {0.5}
     else if (7. ..14.).contains(&x) && (3. ..9.).contains(&y) {1.} else if x<2. || y<2. || x>30. || y>30. {-1.} else {0.}
@@ -80,9 +85,9 @@ impl Sim {
  /// Height under a point, from the world heightfield in a world match and from
  /// the frozen showcase function otherwise.
  fn ground(&self,x:f32,y:f32)->f32 {
-  if self.mode==1 {let tx=x.floor();let ty=y.floor();if tx<0.||ty<0.||tx>=WORLD as f32||ty>=WORLD as f32 {return -1.;}self.world[ty as usize*WORLD+tx as usize]} else {height(x,y)}
+  if self.mode==1 {let n=self.side() as usize;let tx=x.floor();let ty=y.floor();if tx<0.||ty<0.||tx>=n as f32||ty>=n as f32 {return -1.;}self.world[ty as usize*n+tx as usize]} else {height(x,y)}
  }
- fn side(&self)->u32 {if self.mode==1 {WORLD as u32}else{32}}
+ fn side(&self)->u32 {if self.mode==1 {if self.lab.active{64}else{WORLD as u32}}else{32}}
  /// Is the 11x11 patch around a tile one flat land level? Used to place starts.
  fn patch_flat(&self,cx:i32,cy:i32)->bool {
   if cx<7||cy<7||cx>=WORLD as i32-7||cy>=WORLD as i32-7 {return false;}
@@ -300,7 +305,7 @@ impl Sim {
   self.pack();
  }
 }
-#[no_mangle] pub extern "C" fn sim_init(seed:u32) {SIM.with(|s| {let mut s=s.borrow_mut();s.entities.fill(Entity::EMPTY);s.tick=0;s.accumulator=0.;s.rng=seed.max(1);s.selected=7;s.alloy=160;s.charge=120;
+#[no_mangle] pub extern "C" fn sim_init(seed:u32) {SIM.with(|s| {let mut s=s.borrow_mut();s.research=research::ResearchState::EMPTY;s.actors.reset();s.lab=lab::LabState::EMPTY;s.entities.fill(Entity::EMPTY);s.tick=0;s.accumulator=0.;s.rng=seed.max(1);s.selected=7;s.alloy=160;s.charge=120;
 for y in 0..32 {for x in 0..32 {s.terrain[y*32+x]=height(x as f32+0.5,y as f32+0.5);}}
 for (id,(kind,x,y)) in [(10,16.,16.),(11,7.,23.),(12,10.,12.),(16,24.,8.),(13,16.,11.),(14,5.,18.),(15,17.,21.),(16,26.,12.)].iter().enumerate() {s.add(id,*kind,*x,*y,0.);if id>=4 {s.entities[id].data[10]=0.;s.entities[id].data[5]=5.;}}
 for id in 8..27 {let kind=if id<18 {20}else if id<20 {21}else if id<24 {22}else if id<26 {23}else{24};s.add(id,kind,9.+(id%5) as f32,24.+(id%2) as f32,0.);if kind==20 {s.entities[id].data[10]=0.;}else if kind==22||kind==23 {s.add(id,kind,22.5+(id%3) as f32*0.8,11.+(id%2) as f32*2.,0.);}else if kind==24 {s.add(id,kind,21.5,22.,0.);s.entities[id].data[2]=3.5;}}
@@ -433,6 +438,8 @@ impl Sim {
         if worker(kind) || carrier(kind) { e.data[10] = 0.; }
         if aircraft(kind) { e.data[2] += 3.; }
         self.entities[id] = e;
+        self.actors.bows[id]=actors::BowAction::EMPTY;
+        if id<self.actors.commands.len(){self.actors.commands[id]=None;self.actors.paths[id]=None;}
         self.game.jobs[id] = Production::EMPTY;
         self.game.orders[id] = Order::Idle;
         self.game.homes[id] = (x, y);
@@ -440,6 +447,7 @@ impl Sim {
         self.game.generations[id] = self.game.generations[id].wrapping_add(1);
     }
     fn match_init(&mut self, seed: u32, faction: u32) {
+        self.research=research::ResearchState::EMPTY;self.actors.reset();self.lab=lab::LabState::EMPTY;
         self.entities.fill(Entity::EMPTY);
         self.snapshot.fill(0.);
         self.ids.fill(0);
@@ -593,7 +601,7 @@ impl Sim {
     fn can_train(&self, f: usize, kind: u32, producer: usize) -> bool {
         let Some(k) = roster(kind) else { return false; };
         if k.klass != 1 || k.faction != f || !self.affordable(f, k)
-            || !self.complete(producer, f) || self.game.jobs[producer].kind != 0
+            || !self.complete(producer, f) || self.game.jobs[producer].kind != 0 || self.research.busy(producer)
             || self.entities[producer].data[4] != k.producer as f32
             || self.free_actor().is_none() { return false; }
         let Some(p) = roster(k.producer) else { return false; };
@@ -725,6 +733,8 @@ impl Sim {
             1 => self.build(f, a, b, self.selected),
             2 if a == 0 && b == 0 => self.advance(f),
             3 if a == 0 && b == 0 => self.cancel(f, self.selected),
+            10 if b == 0 => self.research_start(f,a),
+            11 if a == 0 && b == 0 => self.research_cancel(f),
             _ => false,
         };
         if accepted { self.pack(); }
@@ -737,6 +747,8 @@ impl Sim {
         self.entities[id].active = false;
         self.game.jobs[id] = Production::EMPTY;
         self.game.orders[id] = Order::Idle;
+        self.actors.bows[id]=actors::BowAction::EMPTY;
+        if id<self.actors.commands.len(){self.actors.commands[id]=None;self.actors.paths[id]=None;}
         if self.selected == id { self.selected = CAP; }
         for j in 0..MATCH_ACTORS {
             if self.game.orders[j] == Order::Build(id) {
@@ -900,7 +912,7 @@ impl Sim {
         for j in 0..MATCH_ACTORS {
             let target = self.entities[j];
             if !self.complete(j, f) || target.data[7] >= 1. { continue; }
-            let k = roster(target.data[4] as u32).unwrap();
+            let k = self.effective_kind(target.data[4] as u32).unwrap();
             if k.klass == 0 && (target.data[0] - e.data[0]).abs() <= k.width / 2. + 1.
                 && (target.data[1] - e.data[1]).abs() <= k.depth / 2. + 1. {
                 self.game.sides[f].alloy -= 1;
@@ -914,9 +926,11 @@ impl Sim {
         for id in 0..MATCH_ACTORS {
             let e = self.entities[id];
             if !e.active { continue; }
-            let Some(k) = roster(e.data[4] as u32) else { continue; };
+            let Some(k) = self.effective_kind(e.data[4] as u32) else { continue; };
             if k.klass == 0 { continue; }
+            if k.kind==30 && self.bow_locked(id){self.entities[id].data[5]=2.;continue;}
             self.entities[id].data[5] = 0.;
+            if self.actor_order_tick(id,&k){continue;}
             if (worker(k.kind) || carrier(k.kind)) && self.enemy_near(id, 4., true).is_some() {
                 if let Some(depot) = self.dropoff(id) {
                     let (x, y) = self.edge(depot, id);
@@ -926,7 +940,7 @@ impl Sim {
                 continue;
             }
             match self.game.orders[id] {
-                Order::Gather => self.gather(id, k),
+                Order::Gather => self.gather(id, &k),
                 Order::Build(site) => {
                     if !self.entities[site].active || self.entities[site].data[5] != 5. {
                         self.game.orders[id] = Order::Gather;
@@ -982,9 +996,11 @@ impl Sim {
     fn match_damage(&mut self, target: usize, damage: f32) {
         if !self.entities[target].active { return; }
         let victim = self.entities[target];
-        let Some(k) = roster(victim.data[4] as u32) else { return; };
+        let Some(k) = self.effective_kind(victim.data[4] as u32) else { return; };
+        self.actor_event(3,target,CAP,damage.min(victim.data[7]*k.hp));
         self.entities[target].data[7] = (victim.data[7] - damage / k.hp).max(0.);
         if self.entities[target].data[7] > 0. { return; }
+        self.actor_event(4,target,CAP,0.);
         self.remove_actor(target);
         if let Some(fx) = (148..CAP).find(|&i| !self.entities[i].active) {
             self.match_add(fx, 52, victim.data[0], victim.data[1], k.faction);
@@ -995,13 +1011,19 @@ impl Sim {
         for id in 0..MATCH_ACTORS {
             let e = self.entities[id];
             if !e.active || e.data[5] == 5. { continue; }
-            let Some(k) = roster(e.data[4] as u32) else { continue; };
+            let Some(k) = self.effective_kind(e.data[4] as u32) else { continue; };
             if k.damage == 0. { continue; }
+            if self.lab.active&&self.lab.scenario==0&&e.data[9]!=self.game.player as f32{continue;}
+            if k.kind==30{self.jackal_combat(id,&k);continue;}
             if k.klass == 0 { self.entities[id].data[5] = 0.; }
             self.game.cooldowns[id] = self.game.cooldowns[id].saturating_sub(1);
             if k.klass == 1 { self.entities[id].data[11] = self.game.cooldowns[id] as f32 / k.cadence as f32; }
             if self.game.orders[id] == Order::Return || e.data[5] == 6. { continue; }
-            let Some(target) = self.enemy_near(id, k.range, false) else { continue; };
+            if self.actors.commands.get(id).and_then(|c|*c).is_some_and(|c|matches!(c,nav::Command::Move(_))){continue;}
+            let command=self.actors.commands.get(id).and_then(|c|*c);
+            let target=if let Some(nav::Command::Attack(handle))=command{self.actor_id(handle).filter(|&j|self.in_range(id,j,k.range)&&self.line_of_fire(id,j))}
+                else if command.is_some(){self.visible_enemy(id,k.range)}else{self.enemy_near(id,k.range,false)};
+            let Some(target)=target else{continue;};
             let victim = self.entities[target];
             self.entities[id].data[5] = 2.;
             self.entities[id].data[3] = (victim.data[1] - e.data[1]).atan2(victim.data[0] - e.data[0]);
@@ -1021,7 +1043,7 @@ impl Sim {
                 p.route = generation;
                 p.data[2] = e.data[2] + if k.klass == 0 { 2. } else { 0.8 };
                 p.data[3] = yaw;
-                p.data[10] = k.kind as f32;
+                p.data[10] = k.kind as f32;p.damage=k.damage;
                 p.origin = [e.data[0], e.data[1], p.data[2]];
                 p.destination = [victim.data[0], victim.data[1], victim.data[2] + 0.5];
             } else {
@@ -1053,13 +1075,13 @@ impl Sim {
             let distance = (victim.data[0] - e.destination[0]).powi(2) + (victim.data[1] - e.destination[1]).powi(2);
             if distance > 1.44 { continue; }
             let bonus = if k.kind == 26 && roster(victim.data[4] as u32).unwrap().klass == 0 { 2. } else { 1. };
-            self.match_damage(e.target, k.damage * bonus);
+            self.match_damage(e.target, e.damage * bonus);
             if k.kind == 31 {
                 for j in 0..MATCH_ACTORS {
                     let other = self.entities[j];
                     if j != e.target && other.active && other.data[9] == victim.data[9]
                         && (other.data[0] - e.destination[0]).powi(2) + (other.data[1] - e.destination[1]).powi(2) <= 1.44 {
-                        self.match_damage(j, k.damage / 2.);
+                        self.match_damage(j, e.damage / 2.);
                     }
                 }
             }
@@ -1181,6 +1203,7 @@ impl Sim {
             }
         }
         self.match_production();
+        self.research_tick();
         // Both starting haulers wait at the depot for the opening ten seconds.
         if self.tick == 10 * 60 {
             for id in 0..MATCH_ACTORS {
@@ -1201,12 +1224,13 @@ impl Sim {
                 e.data[11] = if e.data[10] >= 160. { 0. } else { (self.tick % 180) as f32 / 180. };
             }
         }
-        self.opponent();
+        if !self.lab.active{self.opponent();}
         self.match_orders();
         self.match_combat();
         self.match_outcome();
         for id in 0..MATCH_ACTORS {
             if !self.entities[id].active { continue; }
+            if self.entities[id].data[4]==30. && self.actors.bows[id].target<CAP{continue;}
             let state = self.entities[id].data[5] as u32;
             let period = match state { 1 | 6 => 36, 2 => 60, _ => 120 };
             self.entities[id].data[6] = ((self.tick + id as u32 * 17) % period) as f32 / period as f32;
@@ -1218,7 +1242,7 @@ impl Sim {
 #[no_mangle] pub extern "C" fn sim_match_init(seed: u32, faction: u32) { SIM.with(|s| s.borrow_mut().match_init(seed, faction)); }
 // ---- Expansive-world read-only surface (LARGEMAP_SPEC §4) ------------------
 /// 1024 while a world match is live, 0 when the showcase is running.
-#[no_mangle] pub extern "C" fn sim_world_size() -> u32 { SIM.with(|s| { let s = s.borrow(); if s.mode == 1 { WORLD as u32 } else { 0 } }) }
+#[no_mangle] pub extern "C" fn sim_world_size() -> u32 { SIM.with(|s| { let s = s.borrow(); if s.mode == 1 { s.side() } else { 0 } }) }
 #[no_mangle] pub extern "C" fn sim_world_ptr() -> *const f32 { SIM.with(|s| s.borrow().world.as_ptr()) }
 #[no_mangle] pub extern "C" fn sim_metres_per_tile() -> u32 { METRES_PER_TILE }
 /// Base site of a faction, so the camera can open on the player's own start.
