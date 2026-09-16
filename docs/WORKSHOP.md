@@ -16,20 +16,13 @@ npm run dev:tools
 
 Open `http://localhost:5199/tools/?view=forge&civ=1&kind=30`. The command builds both WASM variants before starting Vite. Port 5199 must be free. The original `/lab.html` links to this workshop; the game remains `/`.
 
+The root `/` game page now uses the authored showcase as a **live animated game-menu background**. Units, buildings and simulation activity continue while the menu is open; New Game, session Resume, Options, Settings, How to Play and About sit over the live scene. See `docs/GAME_MENU.md` for the player flow and menu browser test.
+
 Generated `tools/sim.workshop.wasm` and `tools/revision.json` are ignored development outputs. Do not move tools into `public/` or the production entry graph. The normal WASM contains research/content rules but no lab mutation exports.
 
-## Agent playbooks
+## Repository skill playbooks
 
-Repository-local README/HOWTO playbooks live under [`skills/`](../skills/README.md):
-
-- [`starhold-workshop`](../skills/starhold-workshop/README.md) — build developer tools around real renderer/simulation systems;
-- [`starhold-research-atlas`](../skills/starhold-research-atlas/README.md) — add civilization research and Atlas behavior without duplicating runtime authority;
-- [`starhold-asset`](../skills/starhold-asset/README.md) — contract-first units/buildings, candidate lineage, technical gates and human approval;
-- [`starhold-animation`](../skills/starhold-animation/README.md) — gaits, attack timing, sockets and terminal-state QA;
-- [`starhold-slice`](../skills/starhold-slice/README.md) — cut large plans into green vertical agent slices;
-- [`starhold-precommit`](../skills/starhold-precommit/README.md) — maintain a task regression floor before every agent-created commit.
-
-These are Starhold adaptations inspired by Dimillian/Evergrow and TheOrcDev/skills; see [`skills/SOURCES.md`](../skills/SOURCES.md) for pinned source commits and adaptation notes. They are project instructions, not vendored upstream tooling.
+Read `skills/README.md` before delegating Workshop, asset, animation, research or pre-commit work. The folder contains Starhold-native README/HOWTO playbooks for the workflows adapted from Dimillian/Evergrow and TheOrcDev/skills, plus `skills/SOURCES.md` recording upstream inspiration and what was re-designed for Starhold.
 
 ## Review Ash Jackal
 
@@ -59,30 +52,24 @@ JSON records fixture/seed, research, commands, event trace, actor handles, paid 
 npm run verify:workshop
 npx playwright install chromium
 npm run test:workshop:browser
+npm run test:menu:browser
 ```
 
 Linux CI uses `scripts/workshop-gpu.mjs` software Vulkan and a virtual display:
 
 ```sh
 WORKSHOP_HEADED=1 WORKSHOP_GPU_LOG=1 xvfb-run -a npm run test:workshop:browser
+WORKSHOP_HEADED=1 WORKSHOP_GPU_LOG=1 xvfb-run -a npm run test:menu:browser
 ```
 
 An independent red-pixel GPU clear/readback probe runs before game checks. Adapter failure, device loss and blank Forge captures fail the test; they are never skipped as passes. Those Linux-specific flags do not apply to normal macOS/Windows runs.
 
-The integration checkpoint in Actions run **35081705270**, commit **620bd3c**, passed:
+The showcase regression test freshly compiles baseline `a52203db04807f9226d76546c807eb8145e99dd5`, then compares the exact entity snapshot at seed 1 / tick 6480. It retains 55 entities, 247 Alloy and 199 Charge. This verifies simulation preservation, not human approval of every visual.
 
-- Two default-feature Rust tests and fifteen workshop-feature Rust tests; the fifteen include the same two.
-- Strict TypeScript and production build.
-- Six JavaScript/WASM tests: production exclusion, complete content, paid setup, bow socket, deterministic research encounters and exact showcase regression.
-- Real-pixel browser checks at 1440×1000, 390×844, 844×390 and 768×1024, including research purchases, encounters, play/pause and horizontal containment.
-- Opening/closing the research panel in an actual match.
-
-The showcase test freshly compiles baseline `a52203db04807f9226d76546c807eb8145e99dd5`, then compares the exact entity snapshot at seed 1 / tick 6480. It retains 55 entities, 247 Alloy and 199 Charge. This verifies simulation preservation, not human approval of every visual.
-
-The permanent workflow is read-only. Evidence PNGs/JSON are retained for seven days; integration scripts and the temporary write-enabled workflow are removed after integration.
+The permanent workflow is read-only. Evidence PNGs/JSON are retained for seven days.
 
 ## Boundaries
 
-This is not a connected image-generation service, arbitrary asset editor, automatic approval/promotion store, manual replay importer, complete main-game command interface or global AI navigation rewrite. Explicit commands have deterministic obstacle navigation; legacy world AI has not been comprehensively replaced. All 30 actors being visible does not establish that all designed special abilities are finished.
+This is not a connected image-generation service, arbitrary asset editor, automatic approval/promotion store, persistent game-save system, manual replay importer, complete main-game command interface or global AI navigation rewrite. Explicit commands have deterministic obstacle navigation; legacy world AI has not been comprehensively replaced. All 30 actors being visible does not establish that all designed special abilities are finished.
 
 The next art decisions remain human review of the two Jackal candidates and the first Cinderwake building set. Physical iPhone/iPad/Safari verification is still needed. Software-GPU viewport checks are not Apple hardware performance results. This PR does not alter the live Tailnet deployment.
