@@ -2,6 +2,10 @@
 use super::*;
 pub(super) const EVENT_STRIDE:usize=9;
 const EVENT_CAP:usize=256;
+/// World-space Ash Jackal projectile socket: the authored bow grip (2, 0.6, 2.3)
+/// after the renderer's JACKAL_SCALE of 0.6. The rig, this constant and
+/// src/assets/ash-jackal.ts must agree exactly.
+pub(super) const JACKAL_SOCKET:[f32;3]=[1.2,0.36,1.38];
 #[derive(Clone, Copy)]
 pub(super) struct BowAction {
     pub target:usize,pub generation:u32,pub elapsed:u32,pub windup:u32,
@@ -86,7 +90,7 @@ impl Sim {
         for i in 1..samples {
             let t=i as f32/samples as f32;
             let x=a.data[0]+(b.data[0]-a.data[0])*t;let y=a.data[1]+(b.data[1]-a.data[1])*t;
-            let z=a.data[2]+0.72+(b.data[2]+0.5-a.data[2]-0.72)*t;
+            let z=a.data[2]+JACKAL_SOCKET[2]+(b.data[2]+0.5-a.data[2]-JACKAL_SOCKET[2])*t;
             if self.ground(x,y)>z{return false;}
             for (j,e) in self.entities[..MATCH_ACTORS].iter().enumerate(){
                 if j==id||j==target||!e.active{continue;}
@@ -105,7 +109,7 @@ impl Sim {
     fn fire_jackal(&mut self,id:usize,target:usize,damage:f32) {
         let e=self.entities[id];let victim=self.entities[target];let yaw=e.data[3];
         let (c,s)=(yaw.cos(),yaw.sin());
-        let socket=[e.data[0]+0.6*c-0.18*s,e.data[1]+0.6*s+0.18*c,e.data[2]+0.72];
+        let socket=[e.data[0]+JACKAL_SOCKET[0]*c-JACKAL_SOCKET[1]*s,e.data[1]+JACKAL_SOCKET[0]*s+JACKAL_SOCKET[1]*c,e.data[2]+JACKAL_SOCKET[2]];
         let previous_count=self.actors.event_count;
         self.actor_event(2,id,target,damage);
         if self.actors.event_count>previous_count {
@@ -121,5 +125,5 @@ impl Sim {
     }
 }
 #[no_mangle]pub extern "C" fn sim_actor_handle(index:u32)->u32{SIM.with(|s|{let s=s.borrow();if s.mode!=1||index as usize>=s.count{0}else{s.actor_handle(s.ids[index as usize])}})}
-#[no_mangle]pub extern "C" fn sim_jackal_socket(axis:u32)->f32{[0.6,0.18,0.72].get(axis as usize).copied().unwrap_or(0.)}
+#[no_mangle]pub extern "C" fn sim_jackal_socket(axis:u32)->f32{JACKAL_SOCKET.get(axis as usize).copied().unwrap_or(0.)}
 #[no_mangle]pub extern "C" fn sim_actor_order(handle:u32,op:u32,arg:u32)->u32{SIM.with(|s|s.borrow_mut().actor_order(handle,op,arg) as u32)}

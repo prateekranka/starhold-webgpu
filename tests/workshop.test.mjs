@@ -36,10 +36,10 @@ test('paid preparation preserves battle time and mutually exclusive choices',asy
 test('authoritative arrow origin matches both rendered rigs in every facing',async()=>{
  for(const variant of ['field','longbow']){
   const boxes=[];drawAshJackal({box(...args){boxes.push(args);}},0,0,0,0,{state:2,phase:.5,tick:25,cooldown:1},variant);
-  assert.ok(boxes.some(b=>b[0]===1&&b[1]===.3&&b[2]===1.15&&b[3]===.1&&b[4]===.12&&b[5]===.1));
+  assert.ok(boxes.some(b=>b[0]===2&&b[1]===.6&&b[2]===2.3&&b[3]===.2&&b[4]===.24&&b[5]===.2));
   for(let i=0;i<8;i++){
    const yaw=i*Math.PI/4,p=jackalReleasePoint(10,20,.5,yaw);
-   assert.ok(Math.abs(Math.hypot(p.x-10,p.y-20)-Math.hypot(.6,.18))<1e-6);assert.equal(p.z,1.22);
+   assert.ok(Math.abs(Math.hypot(p.x-10,p.y-20)-Math.hypot(1.2,.36))<1e-6);assert.equal(p.z,1.88);
   }
  }
  const s=await load();s.sim_lab_init(7319,0,1,30,22,1);advance(s,25);

@@ -1,4 +1,4 @@
-import {drawAshJackal,type JackalVariant} from './assets/ash-jackal';
+import {drawAshJackal,type JackalVariant,JACKAL_SCALE} from './assets/ash-jackal';
 import {palette, names, jobs} from './kinds';
 import {glyphs} from './font';
 // 16000 was enough for the authored 32x32 island. The 10 km world bakes the
@@ -1226,7 +1226,9 @@ export class Renderer {
  }
  private unit(e:Float32Array,o:number,id:number) {
   const k=e[o+4],friendly=dawnUnits.has(k);
-  if(wave2Units.has(k)&&e[o+5]===4){this.wreck(e[o],e[o+1],this.ground(e[o],e[o+1]),k);return;}
+  // Kind 30 draws its own fallen body in drawAshJackal (state 4); the generic
+  // wreck husk would hide it.
+  if(wave2Units.has(k)&&k!==30&&e[o+5]===4){this.wreck(e[o],e[o+1],this.ground(e[o],e[o+1]),k);return;}
   const combat=combatUnits.has(k);
   const offset=combat&&!(this.authoritativeActors&&k===30);
   const ox=offset?(id%3-1)*.24:0,oy=offset?(Math.floor(id/3)%3-1)*.24:0;
@@ -1235,7 +1237,7 @@ export class Renderer {
   const c=Math.cos(e[o+3]),sn=Math.sin(e[o+3]);
   // World geometry, picking and contours now use one common scale. These
   // role sizes target ~7 px workers and 8–14 px line silhouettes at zoom 1.
-  let scale=wave2Units.has(k)?(k===26||k===30||k===33?.6:k===35?.55:.5):k===20?.42:k===21||k===23?.46:k===22?.52:k===24?.55:.46;
+  let scale=wave2Units.has(k)?(k===30?JACKAL_SCALE:k===26||k===33?.6:k===35?.55:.5):k===20?.42:k===21||k===23?.46:k===22?.52:k===24?.55:.46;
   let minX=Infinity,minY=Infinity,minZ=Infinity,maxX=-Infinity,maxY=-Infinity,maxZ=-Infinity;
   for(let i=start;i<this.count;i++)if(this.owners[i]===id&&this.data[i*8+7]!==-4){
    const q=i*8,dx=this.data[q]-e[o],dy=this.data[q+1]-e[o+1];

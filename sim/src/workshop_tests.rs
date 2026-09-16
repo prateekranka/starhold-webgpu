@@ -79,7 +79,7 @@ fn producer_loss_cancels_without_refund_and_hp_research_does_not_heal(){SIM.with
 fn jackal_release_matches_phase_socket_and_48_tick_cadence(){SIM.with(|cell|{
     let mut s=cell.borrow_mut();fixture(&mut s);advance(&mut s,24);assert!(!s.entities[120..148].iter().any(|e|e.active&&e.data[4]==50.));s.match_tick();
     let shot=*s.entities[120..148].iter().find(|e|e.active&&e.data[4]==50.).unwrap();let actor=s.entities[10];
-    assert_eq!(actor.data[6],0.5);assert_eq!(shot.origin,[actor.data[0]+0.6,actor.data[1]+0.18,actor.data[2]+0.72]);
+    assert_eq!(actor.data[6],0.5);assert_eq!(shot.origin,[actor.data[0]+1.2,actor.data[1]+0.36,actor.data[2]+1.38]);
     advance(&mut s,60);let releases:Vec<_>=s.actors.events[..s.actors.event_count*actors::EVENT_STRIDE].chunks(actors::EVENT_STRIDE).filter(|r|r[1]==2.).map(|r|r[0] as u32).collect();
     assert!(releases.len()>=2);assert_eq!(releases[1]-releases[0],48);
 });}
