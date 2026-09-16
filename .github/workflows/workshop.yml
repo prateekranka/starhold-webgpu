@@ -1,0 +1,46 @@
+name: Workshop verification
+
+on:
+  push:
+    branches: ["feat/ash-jackal-workshop"]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workshop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install WASM target
+        run: rustup target add wasm32-unknown-unknown
+      - run: npm ci
+      - name: Rust tests
+        run: cargo test --manifest-path sim/Cargo.toml
+      - name: Production build
+        run: npm run build
+      - name: Workshop tests
+        run: npm run test:workshop --if-present
+      - name: Archive verification inputs
+        if: always()
+        run: |
+          mkdir -p /tmp/workshop-verification
+          git archive HEAD | tar -x -C /tmp/workshop-verification
+          cp -r dist /tmp/workshop-verification/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workshop-verification-${{ github.sha }}
+          path: /tmp/workshop-verification
+          retention-days: 7
