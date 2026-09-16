@@ -2,12 +2,11 @@ name: Workshop verification
 
 on:
   push:
-    branches: [master, "feat/ash-jackal-workshop"]
+    branches: [master, feat/ash-jackal-workshop]
   pull_request:
     branches: [master]
   workflow_dispatch:
 
-# Verification must never rewrite the branch it is testing.
 permissions:
   contents: read
 
@@ -25,72 +24,51 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
-      - name: Install WASM target
-        run: rustup target add wasm32-unknown-unknown
-      - name: Install dependencies
-        run: npm ci
-      - name: Production Rust tests
-        run: cargo test --manifest-path sim/Cargo.toml
-      - name: Workshop Rust tests (required)
-        run: cargo test --manifest-path sim/Cargo.toml --features workshop
-      - name: Production build and TypeScript checks
+      - name: Install WASM target and dependencies
+        run: |
+          rustup target add wasm32-unknown-unknown
+          npm ci
+      - name: Production and workshop Rust tests
+        run: |
+          cargo test --manifest-path sim/Cargo.toml
+          cargo test --manifest-path sim/Cargo.toml --features workshop
+      - name: Strict TypeScript and production build
         run: npm run build
-      - name: Build isolated workshop WASM
+      - name: Isolated tools and pinned baseline
         run: |
-          cargo build --manifest-path sim/Cargo.toml --release --target wasm32-unknown-unknown --features workshop --target-dir sim/target/workshop
-          mkdir -p tools
-          cp sim/target/workshop/wasm32-unknown-unknown/release/starhold_sim.wasm tools/sim.workshop.wasm
-      - name: Verify WASM isolation and repeatable encounter
+          npm run wasm:workshop
+          bash scripts/build-baseline.sh
+      - name: Runtime contract and showcase regression tests
+        run: npm run test:workshop
+      - name: Install software WebGPU and virtual display
         run: |
-          node --input-type=module <<'JS'
-          import assert from 'node:assert/strict';
-          import { readFileSync, existsSync } from 'node:fs';
-          const production = readFileSync('public/sim.wasm');
-          assert.ok(production.equals(readFileSync('dist/sim.wasm')), 'dist must contain the freshly built production WASM');
-          const exports = WebAssembly.Module.exports(new WebAssembly.Module(production)).map(e => e.name);
-          assert.ok(!exports.some(name => name.startsWith('sim_lab_')), 'production must exclude lab-only exports');
-          assert.ok(!existsSync('dist/tools') && !existsSync('dist/lab.html'), 'development pages must stay out of production');
-          const { instance } = await WebAssembly.instantiate(readFileSync('tools/sim.workshop.wasm'), {});
-          const sim = instance.exports;
-          for (const name of ['sim_lab_init', 'sim_lab_tick', 'sim_lab_event_count', 'sim_lab_event_ptr', 'sim_lab_event_stride', 'sim_step', 'sim_entity_count', 'sim_entity_ptr', 'sim_entity_stride']) {
-            assert.equal(typeof sim[name], 'function', `workshop export missing: ${name}`);
-          }
-          function encounter() {
-            assert.equal(sim.sim_lab_init(7319, 0, 1, 30, 22, 1), 1, 'the Ash Jackal fixture must initialize');
-            assert.equal(sim.sim_lab_tick(), 0);
-            for (let tick = 0; tick < 180; tick++) sim.sim_step(1000 / 60);
-            assert.equal(sim.sim_lab_tick(), 180, 'single steps must advance exact simulation ticks');
-            assert.ok(sim.sim_lab_event_count() > 0, 'the fixture must execute real combat');
-            return {
-              entities: Array.from(new Float32Array(sim.memory.buffer, sim.sim_entity_ptr(), sim.sim_entity_count() * sim.sim_entity_stride())),
-              events: Array.from(new Float32Array(sim.memory.buffer, sim.sim_lab_event_ptr(), sim.sim_lab_event_count() * sim.sim_lab_event_stride())),
-            };
-          }
-          assert.deepEqual(encounter(), encounter(), 'the same fixture must reproduce entities and combat events');
-          console.log('PASS: production exclusion, workshop exports, and deterministic 180-tick Ash Jackal encounter');
-          JS
-      - name: Archive verification inputs and built binaries
+          sudo apt-get update
+          sudo apt-get install -y libvulkan1 mesa-vulkan-drivers xvfb xauth
+          npx playwright install --with-deps chromium > /tmp/browser-install.log 2>&1 || { cat /tmp/browser-install.log; exit 1; }
+      - name: Real-pixel browser checks and captures
+        env:
+          WORKSHOP_HEADED: '1'
+          WORKSHOP_GPU_LOG: '1'
+        run: xvfb-run -a npm run test:workshop:browser
+      - name: Verification provenance
         if: always()
         run: |
-          mkdir -p /tmp/workshop-verification
-          git archive HEAD | tar -x -C /tmp/workshop-verification
-          git rev-parse HEAD > /tmp/workshop-verification/revision.txt
-          printf '%s\n' "run=$GITHUB_RUN_ID" "attempt=$GITHUB_RUN_ATTEMPT" "event=$GITHUB_EVENT_NAME" > /tmp/workshop-verification/run.txt
-          for path in dist tools/sim.workshop.wasm public/sim.wasm; do
-            if [ -e "$path" ]; then
-              mkdir -p "/tmp/workshop-verification/$(dirname "$path")"
-              cp -r "$path" "/tmp/workshop-verification/$path"
-            fi
-          done
+          mkdir -p workshop-evidence
+          git rev-parse HEAD > workshop-evidence/verified-commit.txt
+          printf '%s\n' "run=$GITHUB_RUN_ID" "attempt=$GITHUB_RUN_ATTEMPT" "event=$GITHUB_EVENT_NAME" > workshop-evidence/verification-run.txt
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: workshop-verification-${{ github.run_id }}-${{ github.run_attempt }}
-          path: /tmp/workshop-verification
+          name: workshop-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            workshop-evidence/*.png
+            workshop-evidence/*.json
+            workshop-evidence/*.txt
           retention-days: 7
           if-no-files-found: error
