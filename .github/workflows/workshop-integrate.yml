@@ -7,7 +7,7 @@ permissions:
   contents: write
 concurrency:
   group: workshop-integration
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   integrate:
     if: github.ref == 'refs/heads/feat/ash-jackal-workshop'
@@ -40,7 +40,7 @@ jobs:
           npm run test:workshop:browser
       - name: Commit verified frontend checkpoint
         run: |
-          git add src/renderer.ts src/main.ts src/tools/workshop.ts src/tools/workshop.css package.json .gitignore lab.html
+          git add src sim/src scripts tests package.json .gitignore lab.html
           git rm .workshop/frontend.py
           git config user.name 'Starhold Workshop'
           git config user.email 'workshop@users.noreply.github.com'
