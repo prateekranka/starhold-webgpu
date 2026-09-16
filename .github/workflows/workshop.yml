@@ -2,11 +2,13 @@ name: Workshop verification
 
 on:
   push:
-    branches: [master, feat/ash-jackal-workshop]
+    branches: [master]
   pull_request:
     branches: [master]
   workflow_dispatch:
 
+# A feature-branch update is verified by its PR, not a duplicate push run.
+# No source generation, commits, or pushes are permitted in verification.
 permissions:
   contents: read
 
@@ -30,6 +32,12 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Require checked-in integration
+        run: |
+          if [ -f .workshop/frontend.py ] || [ -f .workshop/capture.py ] || [ -f .workshop/patch.b64 ]; then
+            echo '::error::Pending source integration. Commit the complete reviewed source before verification; CI must not rewrite it.'
+            exit 1
+          fi
       - name: Install WASM target and dependencies
         run: |
           rustup target add wasm32-unknown-unknown
