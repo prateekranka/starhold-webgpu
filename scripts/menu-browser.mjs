@@ -20,6 +20,10 @@ async function assertCinematicCoverage(page,label){
  assert.ok(layout.scrollWidth<=layout.innerWidth+2,`${label} should not create horizontal page scrolling: ${JSON.stringify(layout)}`);
  return layout;
 }
+async function assertCleanTitleChrome(page,label){
+ assert.equal(await page.locator('.gm-kicker').evaluate(el=>getComputedStyle(el).display),'none',`${label} should hide the eyebrow text`);
+ assert.equal(await page.locator('#viewport nav').evaluate(el=>getComputedStyle(el).display),'none',`${label} should hide rotate/zoom controls`);
+}
 try{
  for(let i=0;i<60;i++){try{if((await fetch('http://127.0.0.1:5199/')).ok)break;}catch{}await new Promise(r=>setTimeout(r,500));}
  browser=await chromium.launch(browserOptions());await verifyWebGPU(browser);
@@ -27,15 +31,23 @@ try{
  page.on('pageerror',error=>errors.push(error.message));page.on('console',message=>{if(message.type()==='error')errors.push(message.text());});
  await waitForGame(page);
  const laptopTitle=await assertCinematicCoverage(page,'laptop title');
+ await assertCleanTitleChrome(page,'laptop title');
  assert.equal((await page.locator('#game-menu-title').textContent()).trim(),'MAIN MENU');assert.equal((await page.evaluate(()=>window.__APP.getState().mode)),0);
  assert.equal(await page.locator('#hud-bar').evaluate(el=>getComputedStyle(el).display),'none');
  const before=await page.evaluate(()=>window.__APP.entityProbe().map(e=>[e.x,e.y,e.state]));await page.waitForTimeout(1200);const after=await page.evaluate(()=>window.__APP.entityProbe().map(e=>[e.x,e.y,e.state]));
  assert.ok(after.some((row,i)=>row.some((value,j)=>Math.abs(value-before[i][j])>1e-4)),'Showcase actors should continue changing behind the menu');
  await page.screenshot({path:'workshop-evidence/game-menu-title.png',fullPage:true});
+ // Watching the showcase should remove the menu without bringing camera-debug
+ // controls back onto the home presentation.
+ await page.locator('[data-action="watch"]').click();
+ await page.waitForFunction(()=>document.querySelector('#game-menu')?.open===false);
+ assert.equal(await page.locator('#viewport nav').evaluate(el=>getComputedStyle(el).display),'none','watch showcase should stay clean');
+ await page.locator('#game-menu-toggle').click();await page.waitForFunction(()=>document.querySelector('#game-menu')?.open===true);
  await page.locator('[data-action="new"]').click();assert.equal((await page.locator('#game-menu-title').textContent()).trim(),'NEW GAME');
  await page.locator('[data-faction="1"]').click();await page.waitForFunction(()=>window.__APP.getState().mode===1&&document.querySelector('#game-menu')?.open===false,null,{timeout:5000});
  const laptopMatch=await assertCinematicCoverage(page,'laptop match');
  assert.equal(await page.locator('#hud-bar').evaluate(el=>getComputedStyle(el).display==='none'),false);
+ assert.notEqual(await page.locator('#viewport nav').evaluate(el=>getComputedStyle(el).display),'none','camera controls should remain available during play');
  await page.locator('#game-menu-toggle').click();await page.waitForFunction(()=>document.querySelector('#game-menu')?.open===true);
  const resume=page.locator('[data-action="resume"]');assert.equal(await resume.isEnabled(),true);await resume.click();assert.equal(await page.locator('#game-menu').evaluate(d=>d.open),false);
  await page.locator('#game-menu-toggle').click();await page.locator('[data-action="options"]').click();await page.locator('#gm-minimap-start').uncheck();
@@ -50,9 +62,10 @@ try{
   tabletPage.on('pageerror',error=>tabletErrors.push(error.message));tabletPage.on('console',message=>{if(message.type()==='error')tabletErrors.push(message.text());});
   await waitForGame(tabletPage);
   const layout=await assertCinematicCoverage(tabletPage,name);ipadLayouts.push({name,...layout});
+  await assertCleanTitleChrome(tabletPage,name);
   await tabletPage.screenshot({path:`workshop-evidence/${name}-menu.png`,fullPage:true});
   assert.deepEqual(tabletErrors,[]);await tablet.close();page=null;
  }
- await writeFile('workshop-evidence/game-menu-results.json',JSON.stringify({pass:true,showcaseMoved:true,laptopTitle,laptopMatch,ipadLayouts,errors},null,2));console.log('PASS game menu + cinematic fill');
+ await writeFile('workshop-evidence/game-menu-results.json',JSON.stringify({pass:true,showcaseMoved:true,laptopTitle,laptopMatch,ipadLayouts,errors},null,2));console.log('PASS game menu + cinematic fill + clean title chrome');
 }catch(error){await writeFile('workshop-evidence/game-menu-results.json',JSON.stringify({pass:false,error:String(error),errors},null,2));if(page)await page.screenshot({path:'workshop-evidence/game-menu-failure.png',fullPage:true}).catch(()=>{});throw error;}
 finally{await browser?.close();server.kill();}
