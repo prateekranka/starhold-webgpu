@@ -6,6 +6,17 @@ if ! git cat-file -e "$BASE:sim/Cargo.toml" 2>/dev/null; then
   echo 'The pinned baseline is missing from this checkout. Fetch repository history before verification.' >&2
   exit 1
 fi
+
+# rustup/cargo may live outside the non-interactive PATH (same fallback as
+# scripts/build-wasm.sh and scripts/build-workshop-wasm.sh).
+if ! command -v cargo >/dev/null 2>&1; then
+  if [[ -f "$HOME/.cargo/env" ]]; then
+    # shellcheck disable=SC1091
+    source "$HOME/.cargo/env"
+  fi
+fi
+command -v cargo >/dev/null 2>&1 || { echo "cargo not found" >&2; exit 1; }
+
 DIR=$(mktemp -d)
 trap 'rm -rf "$DIR"' EXIT
 git archive "$BASE" sim | tar -x -C "$DIR"

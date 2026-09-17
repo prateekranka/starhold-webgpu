@@ -11,7 +11,8 @@ starhold/
   sim/                  # Rust simulation crate -> wasm32-unknown-unknown
     Cargo.toml
     src/lib.rs
-  public/               # static assets (wasm output lands here as /sim.wasm)
+  public/               # static assets; the generated /sim.wasm lands here and is
+                        # gitignored — never commit a build output
   docs/                 # plan, evidence
   scripts/
     build-wasm.sh       # cargo build + copy to public/sim.wasm
@@ -22,8 +23,13 @@ starhold/
 
 - `npm run wasm` → builds `sim/` to `public/sim.wasm` (must work offline after first
   `rustup target add wasm32-unknown-unknown`; the target is installed).
+- `npm run wasm:workshop` → builds the workshop feature set to `tools/sim.workshop.wasm`.
+- `npm run wasm:all` → both variants. Use this when a script or a person needs both.
 - `npm run dev` → wasm build + vite dev server on port 5199.
 - `npm run build` → wasm + `tsc --noEmit` + `vite build`.
+- The two binaries are **generated, not committed** (`.gitignore` covers
+  `public/*.wasm` and `tools/*.wasm`). A script that reads one builds it first;
+  do not add a command that assumes a binary is already present in a checkout.
 - The Rust crate must build with plain `cargo build --release --target
   wasm32-unknown-unknown` — no wasm-bindgen, no wasm-pack. Use raw
   `#[no_mangle] pub extern "C"` exports and linear memory.

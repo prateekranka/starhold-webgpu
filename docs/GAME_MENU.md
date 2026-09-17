@@ -31,10 +31,9 @@ The normal build must pass first:
 npm run build
 ```
 
-The menu browser check requires Playwright Chromium. On macOS/Windows:
+The menu browser check requires Playwright Chromium. It builds `public/sim.wasm` itself. On macOS/Windows:
 
 ```sh
-npm run wasm
 npx playwright install chromium
 npm run test:menu:browser
 ```

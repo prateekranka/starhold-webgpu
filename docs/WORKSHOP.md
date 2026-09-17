@@ -14,11 +14,11 @@ rustup target add wasm32-unknown-unknown
 npm run dev:tools
 ```
 
-Open `http://localhost:5199/tools/?view=forge&civ=1&kind=30`. The command builds both WASM variants before starting Vite. Port 5199 must be free. The original `/lab.html` links to this workshop; the game remains `/`.
+Open `http://localhost:5199/tools/?view=forge&civ=1&kind=30`. The command builds both WASM variants (`public/sim.wasm` and `tools/sim.workshop.wasm`) before starting Vite, so a fresh clone needs no separate build step. Port 5199 must be free. The original `/lab.html` links to this workshop; the game remains `/`.
 
 The root `/` game page now uses the authored showcase as a **live animated game-menu background**. Units, buildings and simulation activity continue while the menu is open; New Game, session Resume, Options, Settings, How to Play and About sit over the live scene. See `docs/GAME_MENU.md` for the player flow and menu browser test.
 
-Generated `tools/sim.workshop.wasm` and `tools/revision.json` are ignored development outputs. Do not move tools into `public/` or the production entry graph. The normal WASM contains research/content rules but no lab mutation exports.
+Generated `public/sim.wasm`, `tools/sim.workshop.wasm` and `tools/revision.json` are ignored development outputs. They are build results, never committed source: `npm run wasm:all` produces both binaries, and every command and test that reads one builds it first. A committed binary drifts from its source — a stale `public/sim.wasm` once shipped without the `sim_research_count` export `src/` calls, so a bare checkout died with `s.sim_research_count is not a function` while CI stayed green. Do not move tools into `public/` or the production entry graph. The normal WASM contains research/content rules but no lab mutation exports.
 
 ## Repository skill playbooks
 
@@ -54,6 +54,8 @@ npx playwright install chromium
 npm run test:workshop:browser
 npm run test:menu:browser
 ```
+
+Each command builds what it reads: the two node-test and browser-test scripts build the WASM variants they load before they start, so a fresh clone runs them directly. `test:workshop` also needs the production `dist/` and the pinned baseline, and builds both when they are absent.
 
 Linux CI uses `scripts/workshop-gpu.mjs` software Vulkan and a virtual display:
 
