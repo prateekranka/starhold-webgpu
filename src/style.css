@@ -135,3 +135,18 @@ body.touch #minimap { width:128px; height:128px; bottom:calc(var(--safe-b) + var
  * on every touch viewport until the screen-use probe measured it. */
 body.touch #minimap-close { width:44px; height:44px; top:-2px; right:-2px; font:16px/1 monospace; }
 #hud-bar button[data-action="minimap"] { border-color:#B7C8C6; }
+@media (min-width: 768px) and (min-height: 600px) {
+ body.touch #minimap { width:180px; height:180px; }
+}
+#selection { cursor:pointer; }
+.touch-ripple {
+ position:fixed; width:32px; height:32px; margin-left:-16px; margin-top:-16px;
+ border-radius:50%; border:2px solid #8BD7BE; pointer-events:none; z-index:100;
+ animation:touch-ripple-fade 0.4s ease-out forwards;
+}
+.touch-ripple.target { border-color:#E77945; }
+.touch-ripple.select { border-color:#F3F0D7; }
+@keyframes touch-ripple-fade {
+ 0% { transform:scale(0.3); opacity:1; }
+ 100% { transform:scale(1.6); opacity:0; }
+}

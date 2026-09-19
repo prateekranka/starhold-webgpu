@@ -526,7 +526,7 @@ impl Side { const START: Self = Self { alloy: 80, charge: 40, age: 0, advancing:
 struct Production { kind: u32, slot: usize, remaining: u32 }
 impl Production { const EMPTY: Self = Self { kind: 0, slot: CAP, remaining: 0 }; }
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Order { Idle, Gather, Build(usize), Defend, Raid(u32), Return }
+enum Order { Idle, Gather, Build(usize), Defend, Raid(u32), Return, Move(u16, u16), Target(usize) }
 struct Match {
     player: usize, sides: [Side; 2], jobs: [Production; CAP], orders: [Order; CAP],
     homes: [(f32, f32); CAP], cooldowns: [u32; CAP], generations: [u32; CAP],
@@ -847,10 +847,60 @@ impl Sim {
             1 => self.build(f, a, b, self.selected),
             2 if a == 0 && b == 0 => self.advance(f),
             3 if a == 0 && b == 0 => self.cancel(f, self.selected),
+            4 => self.order_move(f, self.selected, a, b),
+            5 => self.order_target(f, self.selected, a as usize),
             _ => false,
         };
         if accepted { self.pack(); }
         accepted
+    }
+    fn order_move(&mut self, f: usize, selected: usize, a: u32, b: u32) -> bool {
+        if selected >= MATCH_ACTORS || !self.entities[selected].active || self.entities[selected].data[9] as usize != f {
+            return false;
+        }
+        let Some(k) = roster(self.entities[selected].data[4] as u32) else { return false; };
+        if k.klass == 0 { return false; } // Buildings do not move
+        let tx = (a as f32 / 10.).clamp(1., (WORLD - 1) as f32);
+        let ty = (b as f32 / 10.).clamp(1., (WORLD - 1) as f32);
+        self.game.orders[selected] = Order::Move((tx * 10.) as u16, (ty * 10.) as u16);
+        self.game.homes[selected] = (tx, ty);
+        self.entities[selected].timer = 0;
+        self.entities[selected].target = CAP;
+        true
+    }
+    fn order_target(&mut self, f: usize, selected: usize, target: usize) -> bool {
+        if selected >= MATCH_ACTORS || !self.entities[selected].active || self.entities[selected].data[9] as usize != f {
+            return false;
+        }
+        if target >= MATCH_ACTORS || !self.entities[target].active {
+            return false;
+        }
+        let sel_kind = self.entities[selected].data[4] as u32;
+        let target_kind = self.entities[target].data[4] as u32;
+        let target_f = self.entities[target].data[9] as usize;
+        if target_kind == 40 {
+            if worker(sel_kind) || carrier(sel_kind) {
+                self.game.orders[selected] = Order::Gather;
+                self.entities[selected].target = target;
+                self.entities[selected].route = 0;
+                return true;
+            }
+        } else if target_f == f {
+            if worker(sel_kind) {
+                if self.entities[target].data[5] == 5. {
+                    self.game.orders[selected] = Order::Build(target);
+                    return true;
+                } else if self.entities[target].data[7] < 1. {
+                    let (tx, ty) = self.edge(target, selected);
+                    self.game.orders[selected] = Order::Move((tx * 10.) as u16, (ty * 10.) as u16);
+                    return true;
+                }
+            }
+        } else {
+            self.game.orders[selected] = Order::Target(target);
+            return true;
+        }
+        false
     }
 }
 
@@ -1159,6 +1209,26 @@ impl Sim {
                     }
                 }
                 Order::Idle => if worker(k.kind) { self.repair(id, k.faction); },
+                Order::Move(tx_fixed, ty_fixed) => {
+                    let (tx, ty) = (tx_fixed as f32 / 10., ty_fixed as f32 / 10.);
+                    if self.walk(id, tx, ty, k.speed) {
+                        self.game.orders[id] = if worker(k.kind) || carrier(k.kind) { Order::Idle } else { Order::Defend };
+                    }
+                }
+                Order::Target(target_id) => {
+                    if target_id >= MATCH_ACTORS || !self.entities[target_id].active || self.entities[target_id].data[7] <= 0. {
+                        self.game.orders[id] = Order::Defend;
+                    } else {
+                        let (tx, ty) = (self.entities[target_id].data[0], self.entities[target_id].data[1]);
+                        let d = ((tx - e.data[0]).powi(2) + (ty - e.data[1]).powi(2)).sqrt();
+                        if d <= k.range {
+                            self.entities[id].data[3] = (ty - e.data[1]).atan2(tx - e.data[0]);
+                            self.entities[id].data[5] = 2.;
+                        } else {
+                            self.walk(id, tx, ty, k.speed);
+                        }
+                    }
+                }
             }
             if aircraft(k.kind) { self.entities[id].data[2] = self.ground(self.entities[id].data[0], self.entities[id].data[1]) + 3.; }
         }

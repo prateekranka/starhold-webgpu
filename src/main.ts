@@ -43,28 +43,49 @@ const minimapContext=minimapCanvas.getContext('2d')!;
 const MINIMAP=256;
 let minimapTerrain:ImageData|null=null,minimapSide=0,minimapStamp=-1000,minimapDrag:number|null=null,minimapGrabX=0,minimapGrabY=0,minimapMoved=0;
 const minimapHex=(index:number)=>`#${palette[index]}`;
-/** Terrain bitmap for the active map: 4 tiles per pixel in the world, 8 in the
- *  showcase. Rebuilt when the map changes, never per frame. */
+/** Terrain bitmap for the active map with area-block sampling and relief shading. */
 function minimapBuild():void {
  const view=terrainView(),side=sideOf();
  const image=minimapContext.createImageData(MINIMAP,MINIMAP);
  const step=side/MINIMAP;
  const rgb=new Map<number,number[]>();
- // Void, low shore, mesa, plateau: three separated steps so plateaus read.
- const shade=(h:number)=>h<0?0:h<0.25?28:h<0.75?30:31;
  const colour=(index:number)=>{
   let value=rgb.get(index);
   if(!value) {const hex=palette[index];value=[parseInt(hex.slice(0,2),16),parseInt(hex.slice(2,4),16),parseInt(hex.slice(4,6),16)];rgb.set(index,value);}
   return value;
  };
+ const hMap=new Float32Array(MINIMAP*MINIMAP);
+ for(let py=0;py<MINIMAP;py++) {
+  const y0=Math.floor(py*step), y1=Math.min(side-1,Math.floor((py+1)*step));
+  for(let px=0;px<MINIMAP;px++) {
+   const x0=Math.floor(px*step), x1=Math.min(side-1,Math.floor((px+1)*step));
+   let landSum=0, landCount=0;
+   for(let ty=y0;ty<=y1;ty++) {
+    const row=ty*side;
+    for(let tx=x0;tx<=x1;tx++) {
+     const h=view[row+tx];
+     if(h>=0) { landSum+=h; landCount++; }
+    }
+   }
+   hMap[py*MINIMAP+px]=landCount>0?landSum/landCount:-1;
+  }
+ }
  for(let py=0;py<MINIMAP;py++)for(let px=0;px<MINIMAP;px++) {
-  const tile=shade(view[Math.min(side-1,Math.floor(py*step))*side+Math.min(side-1,Math.floor(px*step))]);
-  const c=colour(tile),i=(py*MINIMAP+px)*4;
+  const h=hMap[py*MINIMAP+px];
+  const upLeft=hMap[(py>0?py-1:py)*MINIMAP+(px>0?px-1:px)];
+  let tileIndex:number;
+  if(h<0) tileIndex=0;
+  else if(upLeft<h) tileIndex=h>0.75?7:6; // illuminated cliff rim
+  else if(upLeft>h) tileIndex=1; // cliff shadow
+  else if(h<0.25) tileIndex=2; // low ground
+  else if(h<0.75) tileIndex=3; // corridor / shelf
+  else tileIndex=5; // high plateau
+  const c=colour(tileIndex),i=(py*MINIMAP+px)*4;
   image.data[i]=c[0];image.data[i+1]=c[1];image.data[i+2]=c[2];image.data[i+3]=255;
  }
  minimapTerrain=image;minimapSide=side;
 }
-/** Redraw the panel at 10 Hz: terrain plate, entity dots, camera window. */
+/** Redraw the panel at 10 Hz: relief terrain, base emblems, entity dots, camera frustum. */
 function minimapDraw(force=false):void {
  if(minimap.classList.contains('off'))return;
  if(!force&&performance.now()-minimapStamp<100)return;
@@ -73,13 +94,38 @@ function minimapDraw(force=false):void {
  if(!minimapTerrain)return;
  minimapContext.putImageData(minimapTerrain,0,0);
  const scale=MINIMAP/minimapSide;
+ if(worldSide>0&&sim){
+  const b0x=Math.floor((sim.sim_base_x?sim.sim_base_x(0):205)*scale);
+  const b0y=Math.floor((sim.sim_base_y?sim.sim_base_y(0):342)*scale);
+  const b1x=Math.floor((sim.sim_base_x?sim.sim_base_x(1):820)*scale);
+  const b1y=Math.floor((sim.sim_base_y?sim.sim_base_y(1):683)*scale);
+  minimapContext.fillStyle='#10121C';
+  minimapContext.fillRect(b0x-3,b0y-3,7,7);
+  minimapContext.fillStyle=minimapHex(14);
+  minimapContext.fillRect(b0x-2,b0y-2,5,5);
+  minimapContext.fillStyle='#10121C';
+  minimapContext.fillRect(b1x-3,b1y-3,7,7);
+  minimapContext.fillStyle=minimapHex(27);
+  minimapContext.fillRect(b1x-2,b1y-2,5,5);
+ }
  for(let i=0;i<entityCount;i++) {
   const kind=entities[i*12+4];
   const ore=kind===40;
   if(!ore&&!isUnitKind(kind)&&!isBuildingKind(kind))continue;
-  minimapContext.fillStyle=minimapHex(ore?22:entities[i*12+9]===1?25:13);
-  const size=ore?1:2;
-  minimapContext.fillRect(Math.floor(entities[i*12]*scale),Math.floor(entities[i*12+1]*scale),size,size);
+  const isBuilding=isBuildingKind(kind);
+  const f=entities[i*12+9];
+  const ex=Math.floor(entities[i*12]*scale);
+  const ey=Math.floor(entities[i*12+1]*scale);
+  if(ore){
+   minimapContext.fillStyle=minimapHex(22);
+   minimapContext.fillRect(ex-1,ey-1,3,3);
+  } else if(isBuilding){
+   minimapContext.fillStyle=minimapHex(f===1?25:13);
+   minimapContext.fillRect(ex-2,ey-2,4,4);
+  } else {
+   minimapContext.fillStyle=minimapHex(f===1?26:14);
+   minimapContext.fillRect(ex-1,ey-1,2,2);
+  }
  }
  const reach=Math.max(5,24*zooms[zoomIndex]);
  minimapContext.strokeStyle=minimapHex(9);minimapContext.lineWidth=2;
@@ -342,32 +388,85 @@ function beginPlacement(kind:number):number {
  placementWidth=sim.sim_build_extent(kind,0);placementDepth=sim.sim_build_extent(kind,1);
  setPlacementTile(initial%side,Math.floor(initial/side));syncHud();return 1;
 }
-/** Inverse of the orthographic tile projection. Intersect terrain caps from
- * high to low; actor art never diverts a placement onto a building's roof. */
-function movePlacement(x:number,y:number):void {
- if(!placementState.active)return;
- placementPointerX=x;placementPointerY=y;
+function screenToWorld(clientX:number,clientY:number):{tx:number;ty:number}|null {
  const rect=canvas.getBoundingClientRect();
- if(x<rect.left||y<rect.top||x>=rect.right||y>=rect.bottom){setPlacementTile(-1,-1);return;}
- const px=(x-rect.left)*RENDER_WIDTH/rect.width,py=(y-rect.top)*RENDER_HEIGHT/rect.height;
+ if(clientX<rect.left||clientY<rect.top||clientX>=rect.right||clientY>=rect.bottom)return null;
+ const px=(clientX-rect.left)*RENDER_WIDTH/rect.width,py=(clientY-rect.top)*RENDER_HEIGHT/rect.height;
  const diff=(px/2-240)*zooms[zoomIndex]/6,base=(py/2-136)*zooms[zoomIndex]/3.4641016;
  const c=Math.round(Math.cos(yawSteps*Math.PI/2)),s=Math.round(Math.sin(yawSteps*Math.PI/2)),side=sideOf();
  for(const z of [1,.5,0]){
   const a=(base+2*z+diff)/2,b=(base+2*z-diff)/2;
-  const tx=Math.floor(camX+c*a+s*b),ty=Math.floor(camY-s*a+c*b);
-  if(z===0||(tx>=0&&ty>=0&&tx<side&&ty<side&&terrainAt(tx+ty*side)===z)){setPlacementTile(tx,ty);return;}
+  const tx=camX+c*a+s*b,ty=camY-s*a+c*b;
+  if(z===0||(tx>=0&&ty>=0&&tx<side&&ty<side&&terrainAt(Math.floor(tx)+Math.floor(ty)*side)===z)){return {tx,ty};}
  }
+ return null;
+}
+function spawnTouchRipple(clientX:number,clientY:number,type:'move'|'target'|'select'):void {
+ const el=document.createElement('div');
+ el.className=`touch-ripple ${type}`;
+ el.style.left=`${clientX}px`;
+ el.style.top=`${clientY}px`;
+ document.body.appendChild(el);
+ setTimeout(()=>el.remove(),400);
+}
+function issueOrder(clientX:number,clientY:number):boolean {
+ if(!sim||selected===null||simMode()!==1)return false;
+ const rect=canvas.getBoundingClientRect();
+ const picked=renderer.pick((clientX-rect.left)*RENDER_WIDTH/rect.width,(clientY-rect.top)*RENDER_HEIGHT/rect.height,yawSteps,zooms[zoomIndex]);
+ if(picked!==null&&picked!==selected){
+  sim.sim_command?.(5,picked,0);
+  spawnTouchRipple(clientX,clientY,'target');
+  refreshEntities();updateSelection();syncHud();
+  return true;
+ }
+ const pt=screenToWorld(clientX,clientY);
+ if(pt){
+  const fixedX=Math.round(pt.tx*10);
+  const fixedY=Math.round(pt.ty*10);
+  sim.sim_command?.(4,fixedX,fixedY);
+  spawnTouchRipple(clientX,clientY,'move');
+  refreshEntities();updateSelection();syncHud();
+  return true;
+ }
+ return false;
+}
+function movePlacement(x:number,y:number):void {
+ if(!placementState.active)return;
+ placementPointerX=x;placementPointerY=y;
+ const pt=screenToWorld(x,y);
+ if(pt)setPlacementTile(Math.floor(pt.tx),Math.floor(pt.ty));
+ else setPlacementTile(-1,-1);
 }
 function reprojectPlacement():void {
  if(placementPointerX!==null)movePlacement(placementPointerX,placementPointerY);
 }
 function worldTap(x:number,y:number):void {
- if(!placementState.active){selectAt(x,y);return;}
- movePlacement(x,y);
- if(!placementState.active||!placementState.valid||!sim)return;
- const accepted=sim.sim_command?.(1,placementState.kind!,placementTile());
- if(accepted)cancelPlacement();
- refreshEntities();updateSelection();syncHud();
+ if(placementState.active){
+  movePlacement(x,y);
+  if(!placementState.active||!placementState.valid||!sim)return;
+  const accepted=sim.sim_command?.(1,placementState.kind!,placementTile());
+  if(accepted)cancelPlacement();
+  refreshEntities();updateSelection();syncHud();
+  return;
+ }
+ if(simMode()===0){
+  selectAt(x,y);
+  return;
+ }
+ if(selected!==null&&entities[selected*12+9]===simPlayer()){
+  const rect=canvas.getBoundingClientRect();
+  const picked=renderer.pick((x-rect.left)*RENDER_WIDTH/rect.width,(y-rect.top)*RENDER_HEIGHT/rect.height,yawSteps,zooms[zoomIndex]);
+  if(picked===selected){
+   sim?.sim_select(-1);refreshEntities();updateSelection();syncHud();
+   return;
+  }
+  if(picked!==null&&entities[picked*12+9]===simPlayer()){
+   selectEntity(picked);
+   return;
+  }
+  if(issueOrder(x,y))return;
+ }
+ selectAt(x,y);
 }
 /** Legacy nearest-site path remains available for old ABI/no-site fallback.
  * The simulation's AI still uses its own unchanged nearest-site planner. */
@@ -548,10 +647,17 @@ document.getElementById('rotate-right')!.addEventListener('click',()=>rotate(1))
 document.getElementById('zoom-out')!.addEventListener('click',()=>zoomBy(-1));
 document.getElementById('zoom-in')!.addEventListener('click',()=>zoomBy(1));
 window.addEventListener('keydown',e=>{if(e.key==='Escape'&&placementState.active){e.preventDefault();cancelPlacement();syncHud();}});
+canvas.addEventListener('contextmenu',e=>{e.preventDefault();});
+selection.addEventListener('click',()=>{if(sim){sim.sim_select(-1);refreshEntities();updateSelection();syncHud();}});
 canvas.addEventListener('click',e=>{if(mousePanned){mousePanned=false;return;}worldTap(e.clientX,e.clientY);});
 let mouseDown=false,mousePanned=false,mouseX=0,mouseY=0;
 canvas.addEventListener('pointerdown',e=>{
  if(e.pointerType!=='mouse')return;
+ if(e.button===2){
+  e.preventDefault();
+  if(placementState.active){cancelPlacement();syncHud();return;}
+  if(selected!==null){issueOrder(e.clientX,e.clientY);return;}
+ }
  if(placementState.active){movePlacement(e.clientX,e.clientY);return;}
  mouseDown=true;mousePanned=false;mouseX=e.clientX;mouseY=e.clientY;
 });
