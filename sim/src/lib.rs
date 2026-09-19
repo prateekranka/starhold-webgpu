@@ -72,6 +72,15 @@ fn world_route(side:usize,lane:usize)->[(f32,f32);6] {
     if lane==0 {[(x,y),(x,y-38.*m),(x+90.*m,y-32.*m),(mid,mid-64.*m),(mid,mid-24.*m),(mid,mid)]}
     else {[(x,y),(x-38.*m,y),(x-48.*m,y+70.*m),(x+52.*m,y+83.*m),(mid-64.*m,mid+64.*m),(mid,mid)]}
 }
+fn corridor_path(from_side: usize, lane_out: usize, lane_in: usize) -> [(f32, f32); 11] {
+    let r_out = world_route(from_side, lane_out % 2);
+    let to_side = 1 - from_side;
+    let r_in = world_route(to_side, lane_in % 2);
+    [
+        r_out[0], r_out[1], r_out[2], r_out[3], r_out[4], r_out[5],
+        r_in[4], r_in[3], r_in[2], r_in[1], r_in[0],
+    ]
+}
 fn world_outcrop(side:usize,group:usize)->(i32,i32) {
     let (x,y)=world_start(side);let m=if side==0 {1}else{-1};
     let (dx,dy)=[(0,-44),(-48,70),(-44,0)][group];(x+dx*m,y+dy*m)
@@ -187,20 +196,129 @@ impl Sim {
  // Match actors use match_add, and never pass through this showcase helper.
  fn add(&mut self,id:usize,kind:u32,x:f32,y:f32,faction:f32) { if id==0 {self.mode=0;} let mut e=Entity::EMPTY;e.active=true;e.x=(x*1024.) as i32;e.y=(y*1024.) as i32;e.data=[x,y,height(x,y),0.,kind as f32,0.,0.,1.,0.,faction,1.,0.];self.entities[id]=e; }
  fn pack(&mut self) { self.count=0;for i in 0..CAP {if self.entities[i].active {self.entities[i].data[8]=if self.selected==i {1.} else {0.};self.ids[self.count]=i;self.snapshot[self.count*STRIDE..(self.count+1)*STRIDE].copy_from_slice(&self.entities[i].data);self.count+=1;}} }
- fn walk(&mut self,id:usize,x:f32,y:f32,speed:f32)->bool {
-  let arrived;
-  {let e=&mut self.entities[id];let dx=(x*1024.) as i32-e.x;let dy=(y*1024.) as i32-e.y;let dist=((dx as f64).powi(2)+(dy as f64).powi(2)).sqrt();let step=(speed*1024./60.) as i32;if dist<=step as f64 {e.x=(x*1024.) as i32;e.y=(y*1024.) as i32;} else {e.x+=(dx as f64/dist*step as f64).round() as i32;e.y+=(dy as f64/dist*step as f64).round() as i32;}
-  e.data[0]=e.x as f32/1024.;e.data[1]=e.y as f32/1024.;e.data[3]=(dy as f32).atan2(dx as f32);e.data[5]=1.;arrived=dist<=step as f64;}
-  // Height comes from the active map, not the frozen showcase function: in a
-  // world match the old call returned -1 and sank every moving unit into void.
-  // Movement is direct (no pathfinding, a stated non-goal), so a unit crossing
-  // a canyon holds its last ground height instead of dropping into the void.
-  let (px,py)=(self.entities[id].data[0],self.entities[id].data[1]);
-  let gz=self.ground(px,py);
-  let previous=self.entities[id].data[2].max(0.);
-  self.entities[id].data[2]=if gz<0. {previous} else {gz};
-  arrived
- }
+  fn walk(&mut self, id: usize, x: f32, y: f32, speed: f32) -> bool {
+   if self.mode == 0 {
+       let arrived;
+       {
+           let e = &mut self.entities[id];
+           let dx = (x * 1024.) as i32 - e.x;
+           let dy = (y * 1024.) as i32 - e.y;
+           let dist = ((dx as f64).powi(2) + (dy as f64).powi(2)).sqrt();
+           let step = (speed * 1024. / 60.) as i32;
+           if dist <= step as f64 { e.x = (x * 1024.) as i32; e.y = (y * 1024.) as i32; }
+           else { e.x += (dx as f64 / dist * step as f64).round() as i32; e.y += (dy as f64 / dist * step as f64).round() as i32; }
+           e.data[0] = e.x as f32 / 1024.;
+           e.data[1] = e.y as f32 / 1024.;
+           e.data[3] = (dy as f32).atan2(dx as f32);
+           e.data[5] = 1.;
+           arrived = dist <= step as f64;
+       }
+       let (px, py) = (self.entities[id].data[0], self.entities[id].data[1]);
+       let gz = self.ground(px, py);
+       let previous = self.entities[id].data[2].max(0.);
+       self.entities[id].data[2] = if gz < 0. { previous } else { gz };
+       return arrived;
+   }
+   // Mode 1: World match with obstacle & canyon-aware steering.
+   let kind = self.entities[id].data[4] as u32;
+   let flying = aircraft(kind);
+   let (px, py) = (self.entities[id].data[0], self.entities[id].data[1]);
+   let (dx, dy) = (x - px, y - py);
+   let dist = (dx * dx + dy * dy).sqrt();
+   let step = speed / 60.;
+   if dist <= step {
+       let gz = self.ground(x, y);
+       let e = &mut self.entities[id];
+       e.x = (x * 1024.).round() as i32;
+       e.y = (y * 1024.).round() as i32;
+       e.data[0] = x;
+       e.data[1] = y;
+       e.data[3] = dy.atan2(dx);
+       e.data[5] = 1.;
+       e.data[2] = if flying { gz.max(0.) + 3. } else if gz >= 0. { gz } else { e.data[2].max(0.) };
+       return true;
+   }
+   let theta = dy.atan2(dx);
+   if flying {
+       let nx = px + theta.cos() * step;
+       let ny = py + theta.sin() * step;
+       let gz = self.ground(nx, ny);
+       let e = &mut self.entities[id];
+       e.x = (nx * 1024.).round() as i32;
+       e.y = (ny * 1024.).round() as i32;
+       e.data[0] = nx;
+       e.data[1] = ny;
+       e.data[3] = theta;
+       e.data[5] = 1.;
+       e.data[2] = gz.max(0.) + 3.;
+       return false;
+   }
+   // If ground unit is currently over void, steer toward nearest land.
+   if self.ground(px, py) < 0. {
+       if let Some((lx, ly)) = self.land_near(px.floor() as i32, py.floor() as i32, 30) {
+           let (ldx, ldy) = (lx - px, ly - py);
+           let ltheta = ldy.atan2(ldx);
+           let nx = px + ltheta.cos() * step;
+           let ny = py + ltheta.sin() * step;
+           let gz = self.ground(nx, ny);
+           let e = &mut self.entities[id];
+           e.x = (nx * 1024.).round() as i32;
+           e.y = (ny * 1024.).round() as i32;
+           e.data[0] = nx;
+           e.data[1] = ny;
+           e.data[3] = ltheta;
+           e.data[5] = 1.;
+           if gz >= 0. { e.data[2] = gz; }
+           return false;
+       }
+   }
+   // Ground unit: test direct step first.
+   let nx = px + theta.cos() * step;
+   let ny = py + theta.sin() * step;
+   let gz = self.ground(nx, ny);
+   if gz >= 0. && nx >= 2. && ny >= 2. && nx < (WORLD - 2) as f32 && ny < (WORLD - 2) as f32 {
+       let e = &mut self.entities[id];
+       e.x = (nx * 1024.).round() as i32;
+       e.y = (ny * 1024.).round() as i32;
+       e.data[0] = nx;
+       e.data[1] = ny;
+       e.data[3] = theta;
+       e.data[5] = 1.;
+       e.data[2] = gz;
+       return false;
+   }
+   // Canyon/void obstacle ahead: probe angular deflections for valid ground.
+   let deflections = [
+       std::f32::consts::FRAC_PI_6, -std::f32::consts::FRAC_PI_6,
+       std::f32::consts::FRAC_PI_3, -std::f32::consts::FRAC_PI_3,
+       std::f32::consts::FRAC_PI_2, -std::f32::consts::FRAC_PI_2,
+       std::f32::consts::PI * 2. / 3., -std::f32::consts::PI * 2. / 3.,
+       std::f32::consts::PI * 5. / 6., -std::f32::consts::PI * 5. / 6.,
+   ];
+   for da in deflections {
+       let alt_theta = theta + da;
+       let alt_x = px + alt_theta.cos() * step;
+       let alt_y = py + alt_theta.sin() * step;
+       let alt_gz = self.ground(alt_x, alt_y);
+       if alt_gz >= 0. && alt_x >= 2. && alt_y >= 2. && alt_x < (WORLD - 2) as f32 && alt_y < (WORLD - 2) as f32 {
+           let e = &mut self.entities[id];
+           e.x = (alt_x * 1024.).round() as i32;
+           e.y = (alt_y * 1024.).round() as i32;
+           e.data[0] = alt_x;
+           e.data[1] = alt_y;
+           e.data[3] = alt_theta;
+           e.data[5] = 1.;
+           e.data[2] = alt_gz;
+           return false;
+       }
+   }
+   // Blocked by void on all probe angles: hold position on solid ground.
+   let cur_gz = self.ground(px, py);
+   let e = &mut self.entities[id];
+   if cur_gz >= 0. { e.data[2] = cur_gz; }
+   e.data[5] = 0.;
+   false
+  }
  fn tick(&mut self) {
   self.tick+=1;let t=self.tick; if t%30==0 {self.charge=(self.charge+1).min(200);}
   // Repair transactions spend actual stock, with a bounded visible repair beat.
@@ -414,13 +532,15 @@ struct Match {
     homes: [(f32, f32); CAP], cooldowns: [u32; CAP], generations: [u32; CAP],
     defenders: [usize; 2], next_raid: u32, waves: u32, base: [(f32, f32); 2],
     outcome: u32, outcome_tick: u32, empty_since: [u32; 2],
+    waypoints: [u8; CAP], lanes: [u8; CAP],
 }
 impl Match {
     const EMPTY: Self = Self { player: 0, sides: [Side::START; 2],
         jobs: [Production::EMPTY; CAP], orders: [Order::Idle; CAP],
         homes: [(0., 0.); CAP], cooldowns: [0; CAP], generations: [0; CAP],
         defenders: [CAP; 2], next_raid: 150 * 60, waves: 0, base: [(0., 0.); 2],
-        outcome: 0, outcome_tick: 0, empty_since: [0; 2] };
+        outcome: 0, outcome_tick: 0, empty_since: [0; 2],
+        waypoints: [0; CAP], lanes: [0; CAP] };
 }
 impl Sim {
     fn match_add(&mut self, id: usize, kind: u32, x: f32, y: f32, faction: usize) {
@@ -437,6 +557,8 @@ impl Sim {
         self.game.orders[id] = Order::Idle;
         self.game.homes[id] = (x, y);
         self.game.cooldowns[id] = 0;
+        self.game.waypoints[id] = 0;
+        self.game.lanes[id] = 0;
         self.game.generations[id] = self.game.generations[id].wrapping_add(1);
     }
     fn match_init(&mut self, seed: u32, faction: u32) {
@@ -737,6 +859,8 @@ impl Sim {
         self.entities[id].active = false;
         self.game.jobs[id] = Production::EMPTY;
         self.game.orders[id] = Order::Idle;
+        self.game.waypoints[id] = 0;
+        self.game.lanes[id] = 0;
         if self.selected == id { self.selected = CAP; }
         for j in 0..MATCH_ACTORS {
             if self.game.orders[j] == Order::Build(id) {
@@ -947,14 +1071,44 @@ impl Sim {
                     }
                 }
                 Order::Raid(until) => {
-                    if self.tick >= until { self.game.orders[id] = Order::Return; }
+                    if self.tick >= until {
+                        self.game.orders[id] = Order::Return;
+                        self.game.waypoints[id] = 1;
+                    }
                     else if self.enemy_near(id, k.range, false).is_none() {
-                        let target = self.enemy_near(id, 50., false);
-                        // March at the enemy base, not at an authored island
-                        // coordinate: in a 10 km world (12,18) is the far corner.
                         let foe = 1 - self.entities[id].data[9] as usize;
-                        let (x, y) = target.map(|j| (self.entities[j].data[0], self.entities[j].data[1])).unwrap_or(self.game.base[foe]);
-                        self.walk(id, x, y, k.speed);
+                        let foe_base = self.game.base[foe];
+                        let (px, py) = (self.entities[id].data[0], self.entities[id].data[1]);
+                        let dist_to_foe_base = ((foe_base.0 - px).powi(2) + (foe_base.1 - py).powi(2)).sqrt();
+                        let target = if dist_to_foe_base <= 35. {
+                            self.enemy_near(id, 40., false)
+                        } else {
+                            self.enemy_near(id, 12., false)
+                        };
+                        if let Some(j) = target {
+                            self.walk(id, self.entities[j].data[0], self.entities[j].data[1], k.speed);
+                        } else if dist_to_foe_base <= 20. {
+                            self.walk(id, foe_base.0, foe_base.1, k.speed);
+                        } else {
+                            let from_faction = self.entities[id].data[9] as usize;
+                            let lane = self.game.lanes[id] as usize;
+                            let path = corridor_path(from_faction, lane, lane);
+                            let wp = self.game.waypoints[id] as usize;
+                            if wp < path.len() {
+                                let (wx, wy) = path[wp];
+                                let d2 = (wx - px).powi(2) + (wy - py).powi(2);
+                                if d2 <= 25. {
+                                    self.game.waypoints[id] = (wp as u8 + 1).min(path.len() as u8 - 1);
+                                    let next_wp = self.game.waypoints[id] as usize;
+                                    let (nwx, nwy) = path[next_wp];
+                                    self.walk(id, nwx, nwy, k.speed);
+                                } else {
+                                    self.walk(id, wx, wy, k.speed);
+                                }
+                            } else {
+                                self.walk(id, foe_base.0, foe_base.1, k.speed);
+                            }
+                        }
                     }
                 }
                 Order::Defend => {
@@ -970,9 +1124,39 @@ impl Sim {
                     }
                 }
                 Order::Return => {
-                    let (x, y) = self.game.homes[id];
-                    if self.walk(id, x, y, k.speed) { self.game.orders[id] = Order::Defend; }
-                    else { self.entities[id].data[5] = 6.; }
+                    let home = self.game.homes[id];
+                    let (px, py) = (self.entities[id].data[0], self.entities[id].data[1]);
+                    let d_home = ((home.0 - px).powi(2) + (home.1 - py).powi(2)).sqrt();
+                    if d_home <= 25. {
+                        if self.walk(id, home.0, home.1, k.speed) {
+                            self.game.orders[id] = Order::Defend;
+                            self.game.waypoints[id] = 0;
+                        } else { self.entities[id].data[5] = 6.; }
+                    } else {
+                        let home_faction = self.entities[id].data[9] as usize;
+                        let foe = 1 - home_faction;
+                        let lane = self.game.lanes[id] as usize;
+                        let path = corridor_path(foe, lane, lane);
+                        let wp = self.game.waypoints[id] as usize;
+                        if wp < path.len() {
+                            let (wx, wy) = path[wp];
+                            let d2 = (wx - px).powi(2) + (wy - py).powi(2);
+                            if d2 <= 25. {
+                                self.game.waypoints[id] = (wp as u8 + 1).min(path.len() as u8 - 1);
+                                let next_wp = self.game.waypoints[id] as usize;
+                                let (nwx, nwy) = path[next_wp];
+                                self.walk(id, nwx, nwy, k.speed);
+                            } else {
+                                self.walk(id, wx, wy, k.speed);
+                            }
+                        } else {
+                            if self.walk(id, home.0, home.1, k.speed) {
+                                self.game.orders[id] = Order::Defend;
+                                self.game.waypoints[id] = 0;
+                            }
+                        }
+                        self.entities[id].data[5] = 6.;
+                    }
                 }
                 Order::Idle => if worker(k.kind) { self.repair(id, k.faction); },
             }
@@ -1135,13 +1319,10 @@ impl Sim {
                     || self.game.orders[id] != Order::Defend { continue; }
                 let k = roster(self.entities[id].data[4] as u32).unwrap();
                 if k.klass != 1 || k.damage == 0. || aircraft(k.kind) { continue; }
-                // A raid window must cover the march to the enemy base: the two
-                // starts sit kilometres apart, so a fixed 35 s window leaves the
-                // raiders stranded in open ground for the whole wave.
-                let (hx, hy) = self.game.base[f];
-                let (ex, ey) = self.game.base[1 - f];
-                let march = (((ex - hx).powi(2) + (ey - hy).powi(2)).sqrt() / k.speed.max(0.1)).ceil() as u32;
-                self.game.orders[id] = Order::Raid(t + (35 + march) * 60);
+                let march = (990. / k.speed.max(0.1)).ceil() as u32;
+                self.game.orders[id] = Order::Raid(t + (120 + march) * 60);
+                self.game.waypoints[id] = 1;
+                self.game.lanes[id] = (self.game.waves % 2) as u8;
                 sent += 1;
             }
             self.game.waves += 1;

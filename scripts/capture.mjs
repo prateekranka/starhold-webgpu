@@ -48,25 +48,34 @@ async function resolveChromium() {
   if (process.env.PLAYWRIGHT_CHROMIUM && existsSync(process.env.PLAYWRIGHT_CHROMIUM)) {
     return process.env.PLAYWRIGHT_CHROMIUM;
   }
-  const cache = join(homedir(), '.cache', 'ms-playwright');
   const candidates = [];
+  if (process.platform === 'darwin') {
+    candidates.push('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
+  }
+  const cache = process.platform === 'darwin'
+    ? join(homedir(), 'Library', 'Caches', 'ms-playwright')
+    : join(homedir(), '.cache', 'ms-playwright');
+  const candidatesFromCache = [];
   try {
     const dirs = (await readdir(cache)).filter((d) => d.startsWith('chromium')).sort().reverse();
     for (const d of dirs) {
-      if (d.startsWith('chromium_headless_shell')) {
-        candidates.push(join(cache, d, 'chrome-headless-shell-linux64', 'chrome-headless-shell'));
-        candidates.push(join(cache, d, 'chrome-linux', 'chrome-headless-shell'));
+      if (!d.startsWith('chromium_headless_shell')) {
+        candidatesFromCache.push(join(cache, d, 'chrome-mac-arm64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'));
+        candidatesFromCache.push(join(cache, d, 'chrome-mac-x64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'));
+        candidatesFromCache.push(join(cache, d, 'chrome-linux64', 'chrome'));
+        candidatesFromCache.push(join(cache, d, 'chrome-linux', 'chrome'));
       }
     }
     for (const d of dirs) {
-      if (!d.startsWith('chromium_headless_shell')) {
-        candidates.push(join(cache, d, 'chrome-linux64', 'chrome'));
-        candidates.push(join(cache, d, 'chrome-linux', 'chrome'));
+      if (d.startsWith('chromium_headless_shell')) {
+        candidatesFromCache.push(join(cache, d, 'chrome-headless-shell-linux64', 'chrome-headless-shell'));
+        candidatesFromCache.push(join(cache, d, 'chrome-linux', 'chrome-headless-shell'));
       }
     }
   } catch {
     /* fall through to playwright default */
   }
+  candidates.push(...candidatesFromCache);
   return candidates.find((p) => existsSync(p));
 }
 
@@ -134,7 +143,10 @@ function startServer(root) {
   });
 }
 
-const WEBGPU_ARGS = [
+const WEBGPU_ARGS = process.platform === 'darwin' ? [
+  '--enable-unsafe-webgpu',
+  '--ignore-gpu-blocklist',
+] : [
   '--enable-features=Vulkan,VulkanFromANGLE',
   '--enable-unsafe-webgpu',
   '--use-angle=vulkan',

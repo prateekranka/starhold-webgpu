@@ -1,0 +1,4 @@
+interface:
+  display_name: "Shadscan Before Commit"
+  short_description: "Audit every agent-created commit with Shadscan"
+  default_prompt: "Use $shadscan-pre-commit for this task. Establish a baseline now, rerun Shadscan immediately before every commit, and do not install dependencies or change repository tooling."
