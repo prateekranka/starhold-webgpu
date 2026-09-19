@@ -32,6 +32,21 @@ current map and Dawnward visual language while these two civilizations are built
 3. **Coding subagents**: Astra medium (gpt-6-astra, reasoning medium). Fresh context
    per run. No forking. Implement only — do NOT test/validate (orchestrator does that).
 
+## Autonomous Dream Loop — 2026-09-19
+
+The current user direction supersedes the orchestrator row above for this loop:
+
+> i have 20% weekly usage remaining and it resets in 5 hrs. take the time to have
+> sol xhigh be the orchestrator and astra medium be the artistic hand that makes
+> this game fantastic to look at and play. use the typesafe skill to play the game
+> and fix any issues there. i'll check back in 5 hrs. let's see what you can get
+> done. make it a self bettering loop
+
+For this bounded loop, GPT-5.6 Sol at xhigh reasoning owns design, gameplay,
+validation, commits, and acceptance. Fresh GPT-6 Astra workers at medium reasoning
+implement one visual or interaction pass at a time and stop before testing. The
+binding loop and preservation rules are in `docs/DREAM_LOOP_SPEC.md`.
+
 ## Hard requirements
 
 - Runs in a browser. Uses **WASM** (Rust simulation) and **WebGPU** (rendering).
