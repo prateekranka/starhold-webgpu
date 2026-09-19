@@ -250,6 +250,10 @@ export function buttonGlyphPixels(kind:number):Uint8Array {return buttonPatterns
 export class Renderer {
  hudButtons=true;
  hudVisible=true;
+ /** Logical-pixel inset for left HUD content when a full-bleed canvas is cropped. */
+ hudLeftInset=0;
+ /** Logical-pixel lift that keeps the selection plaque above an overlaid DOM command bar. */
+ hudBottomInset=0;
  worldSide=0;
  readonly data=new Float32Array(MAX*STRIDE);
  readonly owners=new Int32Array(MAX);
@@ -308,7 +312,7 @@ export class Renderer {
  private contourSize={width:CONTOUR_COLUMNS,height:CONTOUR_ROWS,depthOrArrayLayers:1};
  private device:any;private context:any;private pipeline:any;private post:any;private vertex:any;private buffer:any;private uniform:any;private group:any;private postGroup:any;
  private scenePass:any;private presentPass:any;
- private hudWorldSide=-1;private hudAlloy=-1;private hudCharge=-1;private hudSelection=-2;private hudKind=-1;private hudHealth=-1;private hudJob=-1;private hudProgress=-1;private hudData=new Float32Array(24000);private hudCount=0;
+  private hudWorldSide=-1;private hudAlloy=-1;private hudCharge=-1;private hudSelection=-2;private hudKind=-1;private hudHealth=-1;private hudJob=-1;private hudProgress=-1;private hudInset=-1;private hudBottom=-1;private hudCachedButtons=true;private hudData=new Float32Array(24000);private hudCount=0;
  private terrain:Float32Array<ArrayBufferLike>=new Float32Array(1024);
  private showcaseTerrain=new Float32Array(1024);
  async init(canvas:HTMLCanvasElement,terrain:Float32Array) {
@@ -1553,12 +1557,13 @@ export class Renderer {
  private hud(e:Float32Array,alloy:number,charge:number) {
   const o=this.selected===null?-1:this.selected*12;
   const kind=o<0?-1:e[o+4],hp=o<0?-1:Math.round(e[o+7]*100),job=o<0?-1:e[o+5],progress=o<0?-1:Math.floor(e[o+10]*100);
-   if(this.worldSide!==this.hudWorldSide||(this.worldSide===0&&(alloy!==this.hudAlloy||charge!==this.hudCharge||o!==this.hudSelection||kind!==this.hudKind||hp!==this.hudHealth||job!==this.hudJob||progress!==this.hudProgress))){const start=this.count;
-    if(this.worldSide===0){this.rect(8,6,464,14,0);this.rect(8,19,464,1,5);this.text('STARHOLD',11,9);this.rect(287,12,4,5,20);this.rect(292,12,4,5,21);this.rect(290,8,4,4,22);this.text('ALLOY '+alloy,300,9,22);this.rect(379,9,5,8,16);this.rect(381,7,2,11,18);this.text('CHARGE '+charge,389,9,18);}
-    if(this.hudButtons)for(let j=0;j<4;j++){this.rect(370+j*25,244,22,20,5);this.rect(371+j*25,245,20,18,1);this.buttonGlyph(j,376+j*25,249);}
-    if(this.worldSide===0&&o>=0){this.rect(8,242,134,23,5);this.rect(9,243,132,21,0);this.text(names[e[o+4]]||'COLONY',12,244);this.rect(12,252,125,3,3);this.rect(12,252,Math.floor(125*e[o+7]),3,13);const max=maxHealth[e[o+4]]??180;this.text('HP '+Math.round(e[o+7]*max)+' '+(jobs[e[o+5]]||'IDLE')+(e[o+5]===5?' '+Math.floor(e[o+10]*100)+'%':''),12,257,7);}
-    this.hudCount=this.count-start;for(let i=0;i<this.hudCount*8;i++)this.hudData[i]=this.data[start*8+i];this.hudAlloy=alloy;this.hudCharge=charge;this.hudSelection=o;this.hudKind=kind;this.hudHealth=hp;this.hudJob=job;this.hudProgress=progress;this.hudWorldSide=this.worldSide;
-   }else{const available=Math.min(this.hudCount,MAX-this.count);for(let i=0;i<available*8;i++)this.data[this.count*8+i]=this.hudData[i];this.count+=available;this.dropped+=this.hudCount-available;}
+  const left=8+this.hudLeftInset,bottom=242-this.hudBottomInset;
+  if(this.worldSide!==this.hudWorldSide||this.hudLeftInset!==this.hudInset||this.hudBottomInset!==this.hudBottom||this.hudButtons!==this.hudCachedButtons||(this.worldSide===0&&(alloy!==this.hudAlloy||charge!==this.hudCharge||o!==this.hudSelection||kind!==this.hudKind||hp!==this.hudHealth||job!==this.hudJob||progress!==this.hudProgress))){const start=this.count;
+   if(this.worldSide===0){this.rect(8,6,464,14,0);this.rect(8,19,464,1,5);this.text('STARHOLD',left+3,9);this.rect(287,12,4,5,20);this.rect(292,12,4,5,21);this.rect(290,8,4,4,22);this.text('ALLOY '+alloy,300,9,22);this.rect(379,9,5,8,16);this.rect(381,7,2,11,18);this.text('CHARGE '+charge,389,9,18);}
+   if(this.hudButtons)for(let j=0;j<4;j++){this.rect(370+j*25,bottom+2,22,20,5);this.rect(371+j*25,bottom+3,20,18,1);this.buttonGlyph(j,376+j*25,bottom+7);}
+   if(this.worldSide===0&&o>=0){this.rect(left,bottom,134,23,5);this.rect(left+1,bottom+1,132,21,0);this.text(names[e[o+4]]||'COLONY',left+4,bottom+2);this.rect(left+4,bottom+10,125,3,3);this.rect(left+4,bottom+10,Math.floor(125*e[o+7]),3,13);const max=maxHealth[e[o+4]]??180;this.text('HP '+Math.round(e[o+7]*max)+' '+(jobs[e[o+5]]||'IDLE')+(e[o+5]===5?' '+Math.floor(e[o+10]*100)+'%':''),left+4,bottom+15,7);}
+   this.hudCount=this.count-start;for(let i=0;i<this.hudCount*8;i++)this.hudData[i]=this.data[start*8+i];this.hudAlloy=alloy;this.hudCharge=charge;this.hudSelection=o;this.hudKind=kind;this.hudHealth=hp;this.hudJob=job;this.hudProgress=progress;this.hudWorldSide=this.worldSide;this.hudInset=this.hudLeftInset;this.hudBottom=this.hudBottomInset;this.hudCachedButtons=this.hudButtons;
+  }else{const available=Math.min(this.hudCount,MAX-this.count);for(let i=0;i<available*8;i++)this.data[this.count*8+i]=this.hudData[i];this.count+=available;this.dropped+=this.hudCount-available;}
  }
  private markContours(yaw:number,zoom:number) {
   this.contourData.fill(0);

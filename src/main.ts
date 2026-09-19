@@ -414,6 +414,7 @@ function startMatch(faction:0|1) {
  }
  minimapInvalidate();
  resetClock();selectDefault();
+ window.dispatchEvent(new Event('resize'));
 }
 function resetShowcase() {
  if(!sim)return;
@@ -421,6 +422,7 @@ function resetShowcase() {
  worldSide=0;worldTerrain=new Float32Array(0);showcaseTerrain=new Float32Array(0);camX=16;camY=16;renderer.setShowcase();minimapInvalidate();
  sim.sim_init(seed>>>0);
  resetClock();selectDefault();
+ window.dispatchEvent(new Event('resize'));
 }
 function command(op:number,a:number,b:number):number {
  if(placementState.active){
@@ -770,6 +772,10 @@ function hudHeight():number {
  return bar?bar.getBoundingClientRect().height:0;
 }
 function resize() {
+ if(document.body.classList.contains('cinematic-fill')){
+  clampMinimap();
+  return;
+ }
  const read=(name:string)=>parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name))||0;
  const availW=innerWidth-read('--safe-l')-read('--safe-r');
  const safeH=innerHeight-read('--safe-t')-read('--safe-b');
@@ -791,6 +797,12 @@ function resize() {
  viewport.style.width=`${RENDER_WIDTH*scale}px`;viewport.style.height=`${RENDER_HEIGHT*scale}px`;
  clampMinimap();
 }
+window.addEventListener('starhold-cinematic-fill',event=>{
+ const detail=(event as CustomEvent<{hudLeftInset?:number;hudBottomInset?:number}>).detail;
+ const left=detail?.hudLeftInset,bottom=detail?.hudBottomInset;
+ renderer.hudLeftInset=Number.isFinite(left)?Math.max(0,Math.floor(left!)):0;
+ renderer.hudBottomInset=Number.isFinite(bottom)?Math.max(0,Math.floor(bottom!)):0;
+});
 /** Keep a dragged minimap inside the viewport. A panel moved in portrait keeps
  *  inline pixel offsets, so after a rotation it can end up off-screen; pull it
  *  back instead of leaving the player without it. */
@@ -978,6 +990,7 @@ function frame(now:number) {
   while(accumulator>=1000/60){sim.sim_step(1000/60);tick++;accumulator-=1000/60;}
   refreshEntities();updateSelection();syncHud();minimapDraw();
   renderer.hudVisible=simMode()===1&&!document.body.classList.contains('game-menu-open');
+  renderer.hudButtons=!touchLayout&&!document.body.classList.contains('cinematic-fill');
   renderer.render(entities,entityCount,yawSteps,zooms[zoomIndex],sim.sim_alloy(),sim.sim_charge(),tick);
   frames++;if(now-windowStart>=1000){fps=frames*1000/(now-windowStart);frames=0;windowStart=now;}
   window.__APP.ready=true;requestAnimationFrame(frame);

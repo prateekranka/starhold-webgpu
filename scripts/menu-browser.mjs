@@ -13,10 +13,10 @@ async function waitForGame(page){
  await page.waitForFunction(()=>document.querySelector('#game-menu')?.open===true,null,{timeout:5000});
 }
 async function assertCinematicCoverage(page,label){
- const layout=await page.evaluate(()=>{const r=document.querySelector('#viewport').getBoundingClientRect();return {width:r.width,height:r.height,left:r.left,top:r.top,innerWidth,innerHeight,scrollWidth:document.documentElement.scrollWidth};});
- assert.ok(layout.width>0&&layout.height>0,`${label} viewport should have non-zero dimensions: ${JSON.stringify(layout)}`);
- assert.ok(layout.width<=layout.innerWidth+2,`${label} viewport width should fit screen: ${JSON.stringify(layout)}`);
- assert.ok(layout.height<=layout.innerHeight+2,`${label} viewport height should fit screen: ${JSON.stringify(layout)}`);
+ const layout=await page.evaluate(()=>{const r=document.querySelector('#viewport').getBoundingClientRect();return {cinematic:document.body.classList.contains('cinematic-fill'),width:r.width,height:r.height,left:r.left,top:r.top,innerWidth,innerHeight,scrollWidth:document.documentElement.scrollWidth};});
+ assert.equal(layout.cinematic,true,`${label} should use cinematic-fill`);
+ assert.ok(layout.width>=layout.innerWidth-2,`${label} viewport should cover screen width: ${JSON.stringify(layout)}`);
+ assert.ok(layout.height>=layout.innerHeight-2,`${label} viewport should cover screen height: ${JSON.stringify(layout)}`);
  assert.ok(layout.scrollWidth<=layout.innerWidth+2,`${label} should not create horizontal page scrolling: ${JSON.stringify(layout)}`);
  return layout;
 }
@@ -55,14 +55,11 @@ try{
  const laptopMatch=await assertCinematicCoverage(page,'laptop match');
  assert.equal(await page.locator('#hud-bar').evaluate(el=>getComputedStyle(el).display==='none'),false);
  assert.notEqual(await page.locator('#viewport nav').evaluate(el=>getComputedStyle(el).display),'none','camera controls should remain available during play');
- const appErr = await page.evaluate(() => ({ error: window.__APP.error, errorText: document.querySelector('#error')?.textContent, hidden: document.querySelector('#error')?.hidden }));
- console.log('DEBUG appError:', appErr);
- const cameraControls=await page.locator('#viewport nav button').evaluateAll(buttons=>buttons.map(button=>{const r=button.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2,hit=document.elementFromPoint(x,y);return {id:button.id,width:r.width,height:r.height,inside:r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight,hit:!!hit&&button.contains(hit),hitEl:hit?`${hit.tagName}#${hit.id}.${hit.className}`:'null'};}));
- console.log('DEBUG cameraControls:', cameraControls);
+ const cameraControls=await page.locator('#viewport nav button').evaluateAll(buttons=>buttons.map(button=>{const r=button.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2,hit=document.elementFromPoint(x,y);return {id:button.id,width:r.width,height:r.height,inside:r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight,hit:!!hit&&button.contains(hit)};}));
  assert.equal(cameraControls.length,4,'active match should retain all four camera controls');
  assert.ok(cameraControls.every(control=>control.width>=44&&control.height>=44&&control.inside&&control.hit),`camera controls must be visible and hit-test to themselves: ${JSON.stringify(cameraControls)}`);
-  const noOverlap=await page.evaluate(()=>{const map=document.querySelector('#minimap').getBoundingClientRect(),buttons=[...document.querySelectorAll('#viewport nav button')].map(button=>button.getBoundingClientRect());return buttons.every(b=>(map.right<=b.left||map.left>=b.right||map.bottom<=b.top||map.top>=b.bottom));});
-  assert.ok(noOverlap,'minimap must not overlap camera buttons');
+ const minimapClearance=await page.evaluate(()=>{const map=document.querySelector('#minimap').getBoundingClientRect(),buttons=[...document.querySelectorAll('#viewport nav button')].map(button=>button.getBoundingClientRect());return Math.min(...buttons.map(button=>button.top))-map.bottom;});
+ assert.ok(minimapClearance>=8,`minimap must clear the camera row by at least 8px, got ${minimapClearance}px`);
  await page.locator('#game-menu-toggle').click();await page.waitForFunction(()=>document.querySelector('#game-menu')?.open===true);
  const resume=page.locator('[data-action="resume"]');assert.equal(await resume.isEnabled(),true);await resume.click();assert.equal(await page.locator('#game-menu').evaluate(d=>d.open),false);
  await page.locator('#game-menu-toggle').click();await page.locator('[data-action="options"]').click();await page.locator('#gm-minimap-start').uncheck();
