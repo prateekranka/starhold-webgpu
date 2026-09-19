@@ -177,7 +177,7 @@ function terrainSample(step:number):{side:number;stride:number;levels:number[]} 
  return {side,stride,levels};
 }
 function minimapInvalidate():void {minimapTerrain=null;minimapSide=0;minimapDraw(true);}
-function setMinimapOpen(open:boolean):void {minimap.classList.toggle('off',!open);if(open)minimapDraw(true);}
+function setMinimapOpen(open:boolean):void {minimap.classList.toggle('off',!open);if(open)minimapDraw(true);updateRaidWarning();}
 /** Centre the camera on the tapped tile, the same way a drag pans it. */
 function minimapJump(clientX:number,clientY:number):void {
  if(worldSide<=0)return;
@@ -318,9 +318,20 @@ const raidBadge=document.getElementById('raid-badge') as HTMLSpanElement|null;
 const raidDetail=document.getElementById('raid-detail') as HTMLSpanElement|null;
 
 function updateRaidWarning():void {
- if(!raidWarning||!raidBadge||!raidDetail)return;
+ const hudMinimap=document.getElementById('hud-minimap');
+ if(!raidWarning||!raidBadge||!raidDetail){
+  if(hudMinimap){
+   if(hudMinimap.classList.contains('pulse-alert'))hudMinimap.classList.remove('pulse-alert');
+   if(hudMinimap.innerHTML!=='<span class="n">MAP</span>')hudMinimap.innerHTML='<span class="n">MAP</span>';
+  }
+  return;
+ }
  if(!sim||simMode()!==1){
   raidWarning.classList.add('off');
+  if(hudMinimap){
+   if(hudMinimap.classList.contains('pulse-alert'))hudMinimap.classList.remove('pulse-alert');
+   if(hudMinimap.innerHTML!=='<span class="n">MAP</span>')hudMinimap.innerHTML='<span class="n">MAP</span>';
+  }
   return;
  }
  const active=sim.sim_raid_active?sim.sim_raid_active():0;
@@ -340,6 +351,15 @@ function updateRaidWarning():void {
   }
  }else{
   raidWarning.classList.add('off');
+ }
+ if(hudMinimap){
+  if(active>0&&minimap.classList.contains('off')){
+   if(!hudMinimap.classList.contains('pulse-alert'))hudMinimap.classList.add('pulse-alert');
+   if(hudMinimap.innerHTML!=='<span class="n">MAP ⚠</span>')hudMinimap.innerHTML='<span class="n">MAP ⚠</span>';
+  }else{
+   if(hudMinimap.classList.contains('pulse-alert'))hudMinimap.classList.remove('pulse-alert');
+   if(hudMinimap.innerHTML!=='<span class="n">MAP</span>')hudMinimap.innerHTML='<span class="n">MAP</span>';
+  }
  }
 }
 raidWarning?.addEventListener('click',()=>{

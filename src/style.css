@@ -15,14 +15,15 @@ nav { position:absolute; inset:0; pointer-events:none; }
 #viewport nav button { position:absolute; top:90.37037%; width:4.583333%; height:7.407407%; border:0; background:transparent; cursor:pointer; pointer-events:auto; padding:0; }
 #viewport nav button:focus-visible { outline:2px solid #F1CE72; outline-offset:0; }
 #rotate-left { left:77.083333%; } #rotate-right { left:82.291667%; } #zoom-out { left:87.5%; } #zoom-in { left:92.708333%; }
-#selection { position:absolute; top:12px; left:12px; z-index:10; padding:4px 10px; background:#1B1E30; border:1.5px solid #F1CE72; color:#F3F0D7; font:11px/1.2 monospace; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; pointer-events:auto; }
+#selection { position:absolute; top:12px; left:12px; z-index:10; padding:4px 10px; background:#1B1E30; border:1.5px solid #F1CE72; color:#F3F0D7; font:11px/1.2 monospace; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; pointer-events:auto; white-space:nowrap; max-width:calc(100% - 24px); overflow:hidden; text-overflow:ellipsis; }
 #selection-box { position:absolute; border:1.5px dashed #E2C044; background:rgba(78, 144, 150, 0.25); pointer-events:none; z-index:10; display:none; }
-#raid-warning { position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:10; display:flex; align-items:center; gap:8px; padding:6px 14px; min-height:36px; background:#1B1E30; border:1.5px solid #BC4A45; color:#F3F0D7; font:11px/1.2 monospace; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; pointer-events:auto; box-shadow:0 2px 10px rgba(188, 74, 69, 0.4); white-space:nowrap; }
+#raid-warning { position:absolute; top:48px; left:50%; transform:translateX(-50%); z-index:10; display:flex; align-items:center; gap:8px; padding:6px 14px; min-height:36px; max-width:calc(100% - 24px); background:#1B1E30; border:1.5px solid #BC4A45; color:#F3F0D7; font:11px/1.2 monospace; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; pointer-events:auto; box-shadow:0 2px 10px rgba(188, 74, 69, 0.4); white-space:nowrap; }
 #raid-warning.off { display:none !important; }
-#raid-warning #raid-badge { color:#BC4A45; font-weight:bold; }
+#raid-warning #raid-badge { color:#BC4A45; font-weight:bold; flex-shrink:0; }
+#raid-warning #raid-detail { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 #raid-warning.breach { border-color:#E2C044; box-shadow:0 0 14px rgba(226, 192, 68, 0.6); }
 #raid-warning.breach #raid-badge { color:#E2C044; }
-body.touch #raid-warning { min-height:44px; padding:10px 16px; font-size:12px; }
+body.touch #raid-warning { min-height:44px; padding:10px 16px; font-size:12px; top:48px; }
 #error { position:fixed; inset:20%; padding:24px; z-index:20; background:#1B1E30; border:2px solid #BC4A45; font:16px monospace; }
 [hidden] { display:none !important; }
 body.touch nav { position:fixed; inset:auto;
@@ -89,7 +90,7 @@ body.mouse #viewport canvas.glyph { display:none; }
 #hud-age-cost { font-size:9px; color:#98A4AE; white-space:nowrap; }
 #hud-actions { display:flex; align-items:center; gap:6px; min-width:0; flex:1 1 auto; justify-content:flex-end; }
 #hud-action-list { display:flex; align-items:center; gap:6px; min-width:0; flex:1 1 auto; justify-content:flex-end; }
-#hud-action-list button { flex:1 1 44px; min-width:44px; max-width:120px; }
+#hud-action-list button { flex:1 1 44px; min-width:44px; max-width:150px; }
 #hud-status { font-size:9px; color:#98A4AE; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
 /* Inactive clusters keep their boxes (so every button stays >=44x44 and the bar
    height never moves) but drop out of sight, parked over the read-only resource
@@ -133,7 +134,7 @@ body.touch #minimap { width:128px; height:128px; bottom:calc(var(--safe-b) + var
   #hud-action-list { gap:4px; }
   #hud-age { gap:5px; }
   #hud-age-progress { flex:0 1 44px; width:44px; min-width:32px; }
-  #hud-action-list button { max-width:96px; }
+  #hud-action-list button { max-width:110px; }
 }
 #minimap canvas { display:block; width:100%; height:100%; image-rendering:pixelated; }
 #minimap-close { position:absolute; top:-2px; right:-2px; width:24px; height:24px; min-width:0; min-height:0;
@@ -144,10 +145,12 @@ body.touch #minimap { width:128px; height:128px; bottom:calc(var(--safe-b) + var
  * on every touch viewport until the screen-use probe measured it. */
 body.touch #minimap-close { width:44px; height:44px; top:-2px; right:-2px; font:16px/1 monospace; }
 #hud-bar button[data-action="minimap"] { border-color:#B7C8C6; }
+#hud-minimap.pulse-alert { border-color: #BC4A45; color: #F1CE72; box-shadow: 0 0 10px rgba(188, 74, 69, 0.7); animation: map-pulse 1s infinite alternate; }
+#hud-bar button#hud-minimap.pulse-alert { border-color: #BC4A45; }
+@keyframes map-pulse { from { border-color: #BC4A45; } to { border-color: #F1CE72; } }
 @media (min-width: 768px) and (min-height: 600px) {
  body.touch #minimap { width:180px; height:180px; }
 }
-#selection { cursor:pointer; }
 .touch-ripple {
  position:fixed; width:32px; height:32px; margin-left:-16px; margin-top:-16px;
  border-radius:50%; border:2px solid #8BD7BE; pointer-events:none; z-index:100;

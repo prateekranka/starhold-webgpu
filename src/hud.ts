@@ -221,6 +221,12 @@ export class Hud {
   private cancelable = false;
   private key = '';
   private page = 0;
+  private readonly alloyRate: HTMLElement;
+  private readonly chargeRate: HTMLElement;
+  private buttonRows: RosterRow[] = [];
+  private history: Array<{ alloy: number; charge: number; time: number }> = [];
+  private lastSampleTime = 0;
+  private lastMode = -1;
   private buttons: HTMLButtonElement[] = [];
   private kinds: number[] = [];
   private buildFlags: boolean[] = [];
@@ -239,6 +245,24 @@ export class Hud {
     this.alloyValue = pick('hud-alloy-value');
     this.chargeValue = pick('hud-charge-value');
     this.popValue = pick('hud-pop-value');
+    const alloyParent = pick('hud-alloy');
+    let alloyRate = document.getElementById('hud-alloy-rate');
+    if (!alloyRate) {
+      alloyRate = document.createElement('span');
+      alloyRate.id = 'hud-alloy-rate';
+      alloyRate.className = 'r';
+      alloyParent.append(document.createTextNode(' '), alloyRate);
+    }
+    this.alloyRate = alloyRate;
+    const chargeParent = pick('hud-charge');
+    let chargeRate = document.getElementById('hud-charge-rate');
+    if (!chargeRate) {
+      chargeRate = document.createElement('span');
+      chargeRate.id = 'hud-charge-rate';
+      chargeRate.className = 'r';
+      chargeParent.append(document.createTextNode(' '), chargeRate);
+    }
+    this.chargeRate = chargeRate;
     this.skirmish = pick('hud-skirmish');
     this.faction = pick('hud-faction');
     this.ageCluster = pick('hud-age');
@@ -265,7 +289,7 @@ export class Hud {
     this.status = pick('hud-status');
     // Seed the text cache from the markup so the first update only writes what
     // actually differs (index.html starts at "MATCH UNAVAILABLE").
-    for (const element of [this.alloyValue, this.chargeValue, this.popValue, this.faction, this.ageName, this.ageCost, this.status]) {
+    for (const element of [this.alloyValue, this.chargeValue, this.popValue, this.faction, this.ageName, this.ageCost, this.status, this.alloyRate, this.chargeRate]) {
       this.texts.set(element, element.textContent ?? '');
     }
     this.view = {
@@ -310,6 +334,37 @@ export class Hud {
     if (this.lastCharge !== view.charge) { this.lastCharge = view.charge; this.setText(this.chargeValue, String(view.charge)); }
     const pop = `${view.popUsed}/${view.popCap}`;
     if (this.lastPop !== pop) { this.lastPop = pop; this.setText(this.popValue, pop); }
+
+    // Track resource delta over the last 60 ticks (1 second).
+    if (this.lastMode !== view.mode || this.lastPlayer !== view.player) {
+      this.lastMode = view.mode;
+      this.history = [];
+      this.lastSampleTime = 0;
+    }
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (this.history.length === 0 || now - this.lastSampleTime >= 12) {
+      this.lastSampleTime = now;
+      this.history.push({ alloy: view.alloy, charge: view.charge, time: now });
+      if (this.history.length > 60) {
+        this.history.shift();
+      }
+    } else {
+      this.history[this.history.length - 1] = { alloy: view.alloy, charge: view.charge, time: now };
+    }
+    while (this.history.length > 1 && now - this.history[0].time > 1050) {
+      this.history.shift();
+    }
+    const oldest = this.history[0];
+    const elapsedSec = oldest ? (now - oldest.time) / 1000 : 0;
+    const canRate = this.history.length >= 2 && elapsedSec >= 0.1;
+    const rateAlloy = canRate ? (view.alloy - oldest.alloy) / elapsedSec : 0;
+    const rateCharge = canRate ? (view.charge - oldest.charge) / elapsedSec : 0;
+    const alloyRateVal = Number(rateAlloy.toFixed(1));
+    const alloyRateText = alloyRateVal > 0 ? `(+${rateAlloy.toFixed(1)}/s)` : '';
+    this.setText(this.alloyRate, alloyRateText);
+    const chargeRateVal = Number(rateCharge.toFixed(1));
+    const chargeRateText = chargeRateVal > 0 ? `(+${rateCharge.toFixed(1)}/s)` : '';
+    this.setText(this.chargeRate, chargeRateText);
 
     // Middle: SKIRMISH in showcase mode, faction + age + RESET in match mode.
     this.setOff(this.skirmish, inMatch);
@@ -366,7 +421,28 @@ export class Hud {
     if (this.view.placementKind !== null) return this.view.placementValid ? 'TAP TO BUILD' : 'BLOCKED';
     if (this.view.selectedKind === null) return 'NO SELECTION';
     if (this.cancelable) return 'UNDER CONSTRUCTION';
-    return this.rows.length === 0 ? 'NO ACTIONS' : '';
+    if (this.rows.length === 0) {
+      const k = this.view.selectedKind;
+      if (k === 12) return 'HELIOWELL — GENERATES +1 CHARGE / S — TETHER SOURCE';
+      if (k === 62) return 'EMBER SIPHON — GENERATES +1 CHARGE / S — PYRE TETHER';
+      if (k === 15 || k === 65) return 'HABITATION — PROVIDES +5 POPULATION';
+      if (k === 40) return 'RICH ALLOY DEPOSIT — GATHERABLE BY WORKERS';
+      if (k === 22 || k === 23 || k === 26 || k === 30 || k === 31 || k === 34) return 'COMBAT READY — DEFENDS PERIMETER';
+      if (k === 20 || k === 32) return 'WORKER UNIT — GATHERS AND BUILDS';
+      if (k === 21 || k === 33) return 'CARRIER UNIT — HAULS ALLOY';
+      return 'NO ACTIONS';
+    }
+    return '';
+  }
+
+  private disabledReason(row: RosterRow): string {
+    if (this.view.alloy < row.alloy) return `Need ${row.alloy - this.view.alloy} more Alloy`;
+    if (this.view.charge < row.charge) return `Need ${row.charge - this.view.charge} more Charge`;
+    if (row.klass === 1 && (this.view.popUsed >= this.view.popCap || this.view.popUsed + (row.pop || 1) > this.view.popCap)) {
+      return `Population limit reached (${this.view.popUsed}/${this.view.popCap})`;
+    }
+    const build = row.klass === 0;
+    return `${build ? 'Build' : 'Train'} ${label(row.kind)}, ${costWords(row)}`;
   }
 
   /** Rebuild the visible page of action buttons. Only called when the action
@@ -375,6 +451,7 @@ export class Hud {
     this.list.textContent = '';
     this.buttons = [];
     this.kinds = [];
+    this.buttonRows = [];
     this.buildFlags = [];
     this.enabledFlags = [];
     // A selected construction site offers CANCEL: the simulation refunds a
@@ -415,11 +492,12 @@ export class Hud {
       button.append(name, cost);
       const accessible = `${build ? 'Build' : 'Train'} ${label(row.kind)}, ${costWords(row)}`;
       button.setAttribute('aria-label', accessible);
-      button.title = accessible;
       button.disabled = true;
+      button.title = this.disabledReason(row);
       this.list.append(button);
       this.buttons.push(button);
       this.kinds.push(row.kind);
+      this.buttonRows.push(row);
       this.buildFlags.push(build);
       this.enabledFlags.push(false);
     }
@@ -434,6 +512,7 @@ export class Hud {
   private sync(sim: SimAbi | undefined): void {
     for (let i = 0; i < this.buttons.length; i++) {
       const kind = this.kinds[i];
+      const row = this.buttonRows[i];
       let enabled = false;
       if (sim) {
         if (this.buildFlags[i]) enabled = typeof sim.sim_can_build === 'function' && sim.sim_can_build(kind) !== 0;
@@ -442,6 +521,14 @@ export class Hud {
       if (this.enabledFlags[i] !== enabled) {
         this.enabledFlags[i] = enabled;
         this.buttons[i].disabled = !enabled;
+      }
+      if (row) {
+        const build = this.buildFlags[i];
+        const accessible = `${build ? 'Build' : 'Train'} ${label(row.kind)}, ${costWords(row)}`;
+        const title = enabled ? accessible : this.disabledReason(row);
+        if (this.buttons[i].title !== title) {
+          this.buttons[i].title = title;
+        }
       }
     }
   }

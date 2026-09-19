@@ -249,6 +249,7 @@ const buttonPatterns=Array.from({length:4},(_,kind)=>{
 export function buttonGlyphPixels(kind:number):Uint8Array {return buttonPatterns[kind];}
 export class Renderer {
  hudButtons=true;
+ worldSide=0;
  readonly data=new Float32Array(MAX*STRIDE);
  readonly owners=new Int32Array(MAX);
  private actorData=new Float32Array(MAX*4);
@@ -306,7 +307,7 @@ export class Renderer {
  private contourSize={width:CONTOUR_COLUMNS,height:CONTOUR_ROWS,depthOrArrayLayers:1};
  private device:any;private context:any;private pipeline:any;private post:any;private vertex:any;private buffer:any;private uniform:any;private group:any;private postGroup:any;
  private scenePass:any;private presentPass:any;
- private hudAlloy=-1;private hudCharge=-1;private hudSelection=-2;private hudKind=-1;private hudHealth=-1;private hudJob=-1;private hudProgress=-1;private hudData=new Float32Array(24000);private hudCount=0;
+ private hudWorldSide=-1;private hudAlloy=-1;private hudCharge=-1;private hudSelection=-2;private hudKind=-1;private hudHealth=-1;private hudJob=-1;private hudProgress=-1;private hudData=new Float32Array(24000);private hudCount=0;
  private terrain:Float32Array<ArrayBufferLike>=new Float32Array(1024);
  private showcaseTerrain=new Float32Array(1024);
  async init(canvas:HTMLCanvasElement,terrain:Float32Array) {
@@ -645,7 +646,7 @@ export class Renderer {
   // ---- Expansive world (LARGEMAP_SPEC §5) ---------------------------------
   /** Adopt a generated world: side-length terrain, view centred on a base. */
   setWorld(terrain:Float32Array,side:number,cx:number,cy:number) {
-   this.terrain=terrain;this.terrainSide=side;this.setView(cx,cy);
+   this.terrain=terrain;this.terrainSide=side;this.worldSide=side;this.setView(cx,cy);
    // Match-only composition anchors mirror world_start/world_route in the sim.
    // They are starting slots, not factions; selecting Cinderwake swaps owners,
    // never geography. Derive once, not inside the per-frame render path.
@@ -663,7 +664,7 @@ export class Renderer {
   }
   /** Back to the authored 32x32 island, baked once at init. */
   setShowcase() {
-   this.terrainSide=32;this.terrain=this.showcaseTerrain;this.setView(16,16);
+   this.terrainSide=32;this.worldSide=0;this.terrain=this.showcaseTerrain;this.setView(16,16);
    // A world bake replaces the static instance buffer. Restore the authored
    // bake as well as its heightfield before rendering the showcase again.
    this.count=0;this.emissiveCount=0;this.degraded=false;this.makeTerrain();
@@ -1551,11 +1552,12 @@ export class Renderer {
  private hud(e:Float32Array,alloy:number,charge:number) {
   const o=this.selected===null?-1:this.selected*12;
   const kind=o<0?-1:e[o+4],hp=o<0?-1:Math.round(e[o+7]*100),job=o<0?-1:e[o+5],progress=o<0?-1:Math.floor(e[o+10]*100);
-  if(alloy!==this.hudAlloy||charge!==this.hudCharge||o!==this.hudSelection||kind!==this.hudKind||hp!==this.hudHealth||job!==this.hudJob||progress!==this.hudProgress){const start=this.count;this.rect(8,6,464,14,0);this.rect(8,19,464,1,5);this.text('STARHOLD',11,9);this.rect(287,12,4,5,20);this.rect(292,12,4,5,21);this.rect(290,8,4,4,22);this.text('ALLOY '+alloy,300,9,22);this.rect(379,9,5,8,16);this.rect(381,7,2,11,18);this.text('CHARGE '+charge,389,9,18);
-   if(this.hudButtons)for(let j=0;j<4;j++){this.rect(370+j*25,244,22,20,5);this.rect(371+j*25,245,20,18,1);this.buttonGlyph(j,376+j*25,249);}
-   if(o>=0){this.rect(8,242,134,23,5);this.rect(9,243,132,21,0);this.text(names[e[o+4]]||'COLONY',12,244);this.rect(12,252,125,3,3);this.rect(12,252,Math.floor(125*e[o+7]),3,13);const max=maxHealth[e[o+4]]??180;this.text('HP '+Math.round(e[o+7]*max)+' '+(jobs[e[o+5]]||'IDLE')+(e[o+5]===5?' '+Math.floor(e[o+10]*100)+'%':''),12,257,7);}
-   this.hudCount=this.count-start;for(let i=0;i<this.hudCount*8;i++)this.hudData[i]=this.data[start*8+i];this.hudAlloy=alloy;this.hudCharge=charge;this.hudSelection=o;this.hudKind=kind;this.hudHealth=hp;this.hudJob=job;this.hudProgress=progress;
-  }else{const available=Math.min(this.hudCount,MAX-this.count);for(let i=0;i<available*8;i++)this.data[this.count*8+i]=this.hudData[i];this.count+=available;this.dropped+=this.hudCount-available;}
+   if(this.worldSide!==this.hudWorldSide||(this.worldSide===0&&(alloy!==this.hudAlloy||charge!==this.hudCharge||o!==this.hudSelection||kind!==this.hudKind||hp!==this.hudHealth||job!==this.hudJob||progress!==this.hudProgress))){const start=this.count;
+    if(this.worldSide===0){this.rect(8,6,464,14,0);this.rect(8,19,464,1,5);this.text('STARHOLD',11,9);this.rect(287,12,4,5,20);this.rect(292,12,4,5,21);this.rect(290,8,4,4,22);this.text('ALLOY '+alloy,300,9,22);this.rect(379,9,5,8,16);this.rect(381,7,2,11,18);this.text('CHARGE '+charge,389,9,18);}
+    if(this.hudButtons)for(let j=0;j<4;j++){this.rect(370+j*25,244,22,20,5);this.rect(371+j*25,245,20,18,1);this.buttonGlyph(j,376+j*25,249);}
+    if(this.worldSide===0&&o>=0){this.rect(8,242,134,23,5);this.rect(9,243,132,21,0);this.text(names[e[o+4]]||'COLONY',12,244);this.rect(12,252,125,3,3);this.rect(12,252,Math.floor(125*e[o+7]),3,13);const max=maxHealth[e[o+4]]??180;this.text('HP '+Math.round(e[o+7]*max)+' '+(jobs[e[o+5]]||'IDLE')+(e[o+5]===5?' '+Math.floor(e[o+10]*100)+'%':''),12,257,7);}
+    this.hudCount=this.count-start;for(let i=0;i<this.hudCount*8;i++)this.hudData[i]=this.data[start*8+i];this.hudAlloy=alloy;this.hudCharge=charge;this.hudSelection=o;this.hudKind=kind;this.hudHealth=hp;this.hudJob=job;this.hudProgress=progress;this.hudWorldSide=this.worldSide;
+   }else{const available=Math.min(this.hudCount,MAX-this.count);for(let i=0;i<available*8;i++)this.data[this.count*8+i]=this.hudData[i];this.count+=available;this.dropped+=this.hudCount-available;}
  }
  private markContours(yaw:number,zoom:number) {
   this.contourData.fill(0);
