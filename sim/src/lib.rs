@@ -113,6 +113,17 @@ impl Sim {
   }
   None
  }
+ /// Check whether straight line between two points stays on solid ground.
+ fn line_clear(&self, x0: f32, y0: f32, x1: f32, y1: f32, samples: usize) -> bool {
+  let count = samples.max(2);
+  for i in 1..count {
+   let t = i as f32 / count as f32;
+   let sx = x0 + (x1 - x0) * t;
+   let sy = y0 + (y1 - y0) * t;
+   if self.ground(sx, sy) < 0. { return false; }
+  }
+  true
+ }
  /// Nearest flat site, searched ring by ring from a target tile. Deterministic.
  fn flat_site(&self,tx:i32,ty:i32)->Option<(f32,f32)> {
   for ring in 0..220i32 {
@@ -288,13 +299,28 @@ impl Sim {
        return false;
    }
    // Canyon/void obstacle ahead: probe angular deflections for valid ground.
-   let deflections = [
-       std::f32::consts::FRAC_PI_6, -std::f32::consts::FRAC_PI_6,
-       std::f32::consts::FRAC_PI_3, -std::f32::consts::FRAC_PI_3,
-       std::f32::consts::FRAC_PI_2, -std::f32::consts::FRAC_PI_2,
-       std::f32::consts::PI * 2. / 3., -std::f32::consts::PI * 2. / 3.,
-       std::f32::consts::PI * 5. / 6., -std::f32::consts::PI * 5. / 6.,
+   let cur_yaw = self.entities[id].data[3];
+   let mut yaw_diff = cur_yaw - theta;
+   while yaw_diff > std::f32::consts::PI { yaw_diff -= 2. * std::f32::consts::PI; }
+   while yaw_diff < -std::f32::consts::PI { yaw_diff += 2. * std::f32::consts::PI; }
+   let prefer_pos = yaw_diff >= 0.;
+   let angles = [
+       std::f32::consts::FRAC_PI_6,
+       std::f32::consts::FRAC_PI_3,
+       std::f32::consts::FRAC_PI_2,
+       std::f32::consts::PI * 2. / 3.,
+       std::f32::consts::PI * 5. / 6.,
    ];
+   let mut deflections: [f32; 10] = [0.; 10];
+   for (idx, &a) in angles.iter().enumerate() {
+       if prefer_pos {
+           deflections[idx * 2] = a;
+           deflections[idx * 2 + 1] = -a;
+       } else {
+           deflections[idx * 2] = -a;
+           deflections[idx * 2 + 1] = a;
+       }
+   }
    for da in deflections {
        let alt_theta = theta + da;
        let alt_x = px + alt_theta.cos() * step;
@@ -941,12 +967,45 @@ impl Sim {
         }
         let Some(k) = roster(self.entities[selected].data[4] as u32) else { return false; };
         if k.klass == 0 { return false; } // Buildings do not move
-        let tx = (a as f32 / 10.).clamp(1., (WORLD - 1) as f32);
-        let ty = (b as f32 / 10.).clamp(1., (WORLD - 1) as f32);
+        let mut tx = (a as f32 / 10.).clamp(2., (WORLD - 2) as f32);
+        let mut ty = (b as f32 / 10.).clamp(2., (WORLD - 2) as f32);
+        if self.mode == 1 && self.ground(tx, ty) < 0. {
+            if let Some((lx, ly)) = self.land_near(tx.floor() as i32, ty.floor() as i32, 40) {
+                tx = lx;
+                ty = ly;
+            }
+        }
         self.game.orders[selected] = Order::Move((tx * 10.) as u16, (ty * 10.) as u16);
         self.game.homes[selected] = (tx, ty);
         self.entities[selected].timer = 0;
         self.entities[selected].target = CAP;
+
+        let px = self.entities[selected].data[0];
+        let py = self.entities[selected].data[1];
+        let dist = ((tx - px).powi(2) + (ty - py).powi(2)).sqrt();
+        if self.mode == 1 && dist > 35. && !self.line_clear(px, py, tx, ty, 6) {
+            let from_faction = self.entities[selected].data[9] as usize;
+            let mut best_lane = 0;
+            let mut best_wp = 1;
+            let mut min_total_d = f32::MAX;
+            for lane in 0..2 {
+                let path = corridor_path(from_faction, lane, lane);
+                for (wp_idx, &(wx, wy)) in path.iter().enumerate() {
+                    let d_start = ((wx - px).powi(2) + (wy - py).powi(2)).sqrt();
+                    let d_goal = ((tx - wx).powi(2) + (ty - wy).powi(2)).sqrt();
+                    let total = d_start + d_goal;
+                    if total < min_total_d && self.line_clear(px, py, wx, wy, 4) {
+                        min_total_d = total;
+                        best_lane = lane as u8;
+                        best_wp = (wp_idx + 1) as u8;
+                    }
+                }
+            }
+            self.game.lanes[selected] = best_lane;
+            self.game.waypoints[selected] = best_wp;
+        } else {
+            self.game.waypoints[selected] = 0;
+        }
         true
     }
     fn order_target(&mut self, f: usize, selected: usize, target: usize) -> bool {
@@ -1293,8 +1352,34 @@ impl Sim {
                 Order::Idle => if worker(k.kind) { self.repair(id, k.faction); },
                 Order::Move(tx_fixed, ty_fixed) => {
                     let (tx, ty) = (tx_fixed as f32 / 10., ty_fixed as f32 / 10.);
-                    if self.walk(id, tx, ty, k.speed) {
-                        self.game.orders[id] = if worker(k.kind) || carrier(k.kind) { Order::Idle } else { Order::Defend };
+                    let wp = self.game.waypoints[id] as usize;
+                    let lane = self.game.lanes[id] as usize;
+                    let (px, py) = (self.entities[id].data[0], self.entities[id].data[1]);
+                    let dist_to_goal = ((tx - px).powi(2) + (ty - py).powi(2)).sqrt();
+                    if wp > 0 && wp <= 11 && dist_to_goal > 25. {
+                        let from_faction = self.entities[id].data[9] as usize;
+                        let path = corridor_path(from_faction, lane, lane);
+                        let wp_idx = (wp - 1).min(path.len() - 1);
+                        let (wx, wy) = path[wp_idx];
+                        let d_wp2 = (wx - px).powi(2) + (wy - py).powi(2);
+                        if d_wp2 <= 36. {
+                            if self.line_clear(px, py, tx, ty, 6) || wp_idx + 1 >= path.len() {
+                                self.game.waypoints[id] = 0;
+                                self.walk(id, tx, ty, k.speed);
+                            } else {
+                                self.game.waypoints[id] = (wp as u8 + 1).min(path.len() as u8);
+                                let next_idx = (wp_idx + 1).min(path.len() - 1);
+                                let (nwx, nwy) = path[next_idx];
+                                self.walk(id, nwx, nwy, k.speed);
+                            }
+                        } else {
+                            self.walk(id, wx, wy, k.speed);
+                        }
+                    } else {
+                        if self.walk(id, tx, ty, k.speed) {
+                            self.game.orders[id] = if worker(k.kind) || carrier(k.kind) { Order::Idle } else { Order::Defend };
+                            self.game.waypoints[id] = 0;
+                        }
                     }
                 }
                 Order::Target(target_id) => {

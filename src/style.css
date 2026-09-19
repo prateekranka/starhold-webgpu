@@ -73,14 +73,18 @@ body.mouse #viewport canvas.glyph { display:none; }
 #hud-bar button[data-action="build"] { border-color:#D5A64B; }
 #hud-bar button[data-action="reset"] { border-color:#98A4AE; }
 #hud-bar button[data-page] { flex:0 0 44px; min-width:44px; padding:0; font-size:14px; letter-spacing:0; }
-#hud-resources { display:flex; align-items:center; gap:10px; min-width:0; flex:0 0 auto; }
-#hud-resources .m { display:flex; align-items:baseline; gap:4px; font-size:10px; color:#98A4AE; white-space:nowrap; }
-#hud-resources .m .v { color:#F3F0D7; }
-#hud-resources .m .r { font-size:9px; color:#8BD7BE; white-space:nowrap; }
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.hud-icon { display:inline-block; vertical-align:middle; flex:0 0 16px; width:16px; height:16px; image-rendering:pixelated; }
+.hud-cost-icon { display:inline-block; vertical-align:text-top; width:10px; height:10px; margin:0 1px; image-rendering:pixelated; }
+.cost-chip { display:inline-flex; align-items:center; gap:2px; white-space:nowrap; }
+#hud-resources { display:flex; align-items:center; gap:10px; min-width:0; flex:0 0 240px; width:240px; }
+#hud-resources .m { display:flex; align-items:center; gap:4px; font-size:10px; color:#98A4AE; white-space:nowrap; cursor:pointer; }
+#hud-resources .m .v { font-variant-numeric:tabular-nums; color:#F3F0D7; min-width:22px; text-align:right; }
+#hud-resources .m .r { font-variant-numeric:tabular-nums; font-size:9px; color:#8BD7BE; white-space:nowrap; min-width:38px; display:inline-block; text-align:left; }
 #hud-alloy .v { color:#F1CE72; }
 #hud-charge .v { color:#58BED4; }
 #hud-pop .v { color:#8BD7BE; }
-#hud-middle { display:flex; align-items:center; gap:8px; min-width:0; flex:1 1 auto; }
+#hud-middle { display:flex; align-items:center; gap:8px; min-width:0; flex:1 1 auto; justify-content:center; }
 #hud-skirmish { display:flex; align-items:center; gap:6px; min-width:0; }
 #hud-skirmish .l { font-size:9px; color:#98A4AE; }
 #hud-faction { font-size:9px; color:#B7C8C6; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
@@ -88,11 +92,23 @@ body.mouse #viewport canvas.glyph { display:none; }
 #hud-age-name { font-size:11px; color:#F1CE72; white-space:nowrap; }
 #hud-age-progress { flex:0 1 56px; width:56px; min-width:40px; height:8px; border:2px solid #747C91; background:#10121C; }
 #hud-age-fill { display:block; height:4px; width:0%; background:#F1CE72; }
-#hud-age-cost { font-size:9px; color:#98A4AE; white-space:nowrap; }
+#hud-age-cost { font-size:9px; color:#98A4AE; white-space:nowrap; display:inline-flex; align-items:center; gap:4px; min-width:64px; }
+#hud-age-cost .cost-label { color:#747C91; font-size:8px; }
 #hud-actions { display:flex; align-items:center; gap:6px; min-width:0; flex:1 1 auto; justify-content:flex-end; }
-#hud-action-list { display:flex; align-items:center; gap:6px; min-width:0; flex:1 1 auto; justify-content:flex-end; }
-#hud-action-list button { flex:1 1 44px; min-width:44px; max-width:150px; }
+#hud-action-list { display:flex; align-items:center; gap:6px; min-width:0; flex:0 0 auto; justify-content:flex-end; }
+#hud-action-list button { flex:0 0 72px; width:72px; min-width:72px; max-width:72px; }
+#hud-action-list button .c { display:inline-flex; align-items:center; justify-content:center; gap:3px; }
 #hud-status { font-size:9px; color:#98A4AE; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+#hud-tip { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(var(--safe-b) + var(--hud-h) + 8px);
+ z-index:20; padding:6px 14px; background:#1B1E30; border:1.5px solid #F1CE72; color:#F3F0D7;
+ font:10px/1.3 monospace; letter-spacing:.05em; text-transform:uppercase; text-align:center;
+ white-space:normal; max-width:min(500px, calc(100% - 32px)); box-shadow:0 4px 16px rgba(0,0,0,0.8);
+ pointer-events:auto; opacity:0; visibility:hidden; transition:opacity 0.15s ease-in-out, visibility 0.15s ease-in-out; }
+#hud-tip.active { opacity:1; visibility:visible; }
+#hud-tip.off { display:none; }
+#hud-tip strong { color:#F1CE72; }
+#hud-tip .tip-cost { color:#8BD7BE; font-weight:bold; }
+#hud-tip .tip-warn { color:#BC4A45; font-weight:bold; }
 /* Inactive clusters keep their boxes (so every button stays >=44x44 and the bar
    height never moves) but drop out of sight, parked over the read-only resource
    row where they cannot overlap another button. */
@@ -105,7 +121,7 @@ body.mouse #viewport canvas.glyph { display:none; }
 @media (orientation:portrait) {
  :root { --hud-h:160px; }
  #hud-bar { flex-direction:column; align-items:stretch; gap:6px; padding:6px; }
- #hud-resources { flex:1 1 0; min-height:44px; gap:12px; }
+ #hud-resources { flex:1 1 0; width:auto; min-height:44px; gap:12px; }
  #hud-middle { flex:1 1 0; min-height:44px; }
  #hud-actions { flex:1 1 0; min-height:44px; }
 }
@@ -128,14 +144,14 @@ body.touch #minimap { width:128px; height:128px; bottom:calc(var(--safe-b) + var
  * any cluster is squeezed, because a squeezed cluster draws its children outside
  * its own box and the next control then wins the hit test at their centres. */
 @media (max-width: 900px) {
-  #hud-bar { gap:8px; }
-  #hud-resources { gap:6px; }
-  #hud-middle { gap:6px; }
-  #hud-actions { gap:5px; }
+  #hud-bar { gap:6px; }
+  #hud-resources { gap:6px; flex:0 0 216px; width:216px; }
+  #hud-middle { gap:4px; }
+  #hud-actions { gap:4px; }
   #hud-action-list { gap:4px; }
-  #hud-age { gap:5px; }
+  #hud-age { gap:4px; }
   #hud-age-progress { flex:0 1 44px; width:44px; min-width:32px; }
-  #hud-action-list button { max-width:110px; }
+  #hud-action-list button { flex:0 0 60px; width:60px; min-width:60px; max-width:60px; }
 }
 #minimap canvas { display:block; width:100%; height:100%; image-rendering:pixelated; }
 #minimap-close { position:absolute; top:-2px; right:-2px; width:24px; height:24px; min-width:0; min-height:0;
@@ -159,6 +175,7 @@ body.touch #minimap-close { width:44px; height:44px; top:-2px; right:-2px; font:
 }
 .touch-ripple.target { border-color:#E77945; }
 .touch-ripple.select { border-color:#F3F0D7; }
+.touch-ripple.move { border-color:#58BED4; }
 @keyframes touch-ripple-fade {
  0% { transform:scale(0.3); opacity:1; }
  100% { transform:scale(1.6); opacity:0; }
