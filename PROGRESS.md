@@ -20,7 +20,15 @@ paving, pulled support props toward the settlement, and removed outer noise.
 The first combined frame was not accepted as final because its dark road X
 controlled the composition. The corrected frame passes the final visual gate:
 the working settlement is now the first read, with routes, placement truth,
-units, and match HUD still clear. The next visual gap is unit silhouette variety.
+units, and match HUD still clear.
+
+A fresh independent blind critic then compared the baseline against the
+corrected frame and returned **PASS** (`deleg_822e64d6`): "Distinct paving,
+quieter surrounding terrain, and restrained settlement props establish a clear
+visual hierarchy without clutter. Camera, HUD, pixel-art palette, and gameplay
+framing remain intact." Its named remaining gap is action readability — small
+workers still merge with resource bases and dark shadows at native scale. That
+gap is the next piece.
 
 The source delta is restricted to `src/renderer.ts`, `src/hud.ts`, and
 `src/style.css`: 350 insertions and 26 deletions from the Dream Loop setup head.
