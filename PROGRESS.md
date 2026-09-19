@@ -9,6 +9,29 @@ bottom HUD action bar, portrait play, and unit motion.** Contract:
 `docs/UNIT_DESIGN.md` (silhouettes, motion, sprite/icon pipeline). GitHub:
 `prateekranka/starhold-webgpu` (private), pushed on every verified piece.
 
+## PR menu chrome and asset-review stability — 2026-09-19
+
+The title/showcase now renders only the live world behind the menu. The canvas
+`STARHOLD`/resource strip, selected-entity plaque (including `PRISM BASTION`),
+and the four rotate/zoom glyphs are absent while the showcase or menu is active.
+A live match restores the full canvas HUD and HTML camera controls. Full-bleed
+cover layouts now inset the left-anchored match labels by the actual canvas crop,
+so `STARHOLD` and selected-entity names remain fully visible.
+
+The two known asset-review defects are also closed. The quote escape is `&quot;`,
+and ordinary Workshop refreshes update the mounted form in place instead of
+replacing checkbox and note nodes. The existing Workshop browser gate now proves
+node identity, note value, and focus survive an unrelated click.
+
+Verified on the served build: menu and match composited captures have no page
+errors; a fresh blind critic returns **PASS** with no remaining gap for this
+request. All four camera controls are 48×48, fully on-screen, hit-test to their
+own buttons, and clear the minimap by at least 8 px. `npm run build`,
+`npm run test:menu:browser`, `npm run test:workshop:browser` (desktop, phone,
+landscape, iPad), `npm run test:workshop` (8/8), and Rust Workshop tests (15/15)
+pass. Simulation, WASM ABI, fixed-tick timing, and player input commands were not
+changed.
+
 Workers for wave 2 (one owner per file, orchestrator verifies and commits):
 
 | Piece | Owner | Files |

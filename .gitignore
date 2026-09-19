@@ -5,3 +5,16 @@ sim/target/
 evidence/
 *.log
 .tmp/
+
+# Generated simulation binaries. Build outputs, never source: a checkout
+# without them is normal, and a stale committed copy silently breaks the app
+# at runtime (`s.sim_research_count is not a function`).
+#   npm run wasm           -> public/sim.wasm         (scripts/build-wasm.sh)
+#   npm run wasm:workshop  -> tools/sim.workshop.wasm (scripts/build-workshop-wasm.sh)
+#   npm run wasm:all       -> both
+public/*.wasm
+tools/*.wasm
+
+# Disposable development outputs
+tools/revision.json
+workshop-evidence/

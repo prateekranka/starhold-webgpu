@@ -1,0 +1,96 @@
+name: Workshop verification
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Require checked-in integration
+        run: |
+          if [ -f .workshop/frontend.py ] || [ -f .workshop/capture.py ] || [ -f .workshop/patch.b64 ]; then
+            echo '::error::Pending source integration. Commit the complete reviewed source before verification; CI must not rewrite it.'
+            exit 1
+          fi
+      - name: Reject committed build artifacts
+        run: |
+          tracked=$(git ls-files '*.wasm')
+          if [ -n "$tracked" ]; then
+            echo "::error::Generated WASM binaries must not be committed: $(echo $tracked | tr '\n' ' ')"
+            echo 'These are build outputs of scripts/build-wasm.sh and scripts/build-workshop-wasm.sh.'
+            echo 'Every job builds what it needs. Remove them with: git rm --cached <path>'
+            exit 1
+          fi
+      - name: Install WASM target and dependencies
+        run: |
+          rustup target add wasm32-unknown-unknown
+          npm ci
+      - name: Build simulation WASM from source
+        run: |
+          # The binaries are not committed: build them in this job before any
+          # step that runs the app, the browser gates or the node tests.
+          npm run wasm:all
+      - name: Production and workshop Rust tests
+        run: |
+          cargo test --manifest-path sim/Cargo.toml
+          cargo test --manifest-path sim/Cargo.toml --features workshop
+      - name: Strict TypeScript and production build
+        run: npm run build
+      - name: Isolated tools and pinned baseline
+        run: |
+          npm run wasm:workshop
+          bash scripts/build-baseline.sh
+      - name: Runtime contract and showcase regression tests
+        run: npm run test:workshop
+      - name: Install software WebGPU and virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvulkan1 mesa-vulkan-drivers xvfb xauth
+          npx playwright install --with-deps chromium > /tmp/browser-install.log 2>&1 || { cat /tmp/browser-install.log; exit 1; }
+      - name: Real-pixel browser checks and captures
+        env:
+          WORKSHOP_HEADED: '1'
+          WORKSHOP_GPU_LOG: '1'
+        run: |
+          xvfb-run -a npm run test:workshop:browser
+          xvfb-run -a npm run test:menu:browser
+      - name: Verification provenance
+        if: always()
+        run: |
+          mkdir -p workshop-evidence
+          git rev-parse HEAD > workshop-evidence/verified-commit.txt
+          printf '%s\n' "run=$GITHUB_RUN_ID" "attempt=$GITHUB_RUN_ATTEMPT" "event=$GITHUB_EVENT_NAME" > workshop-evidence/verification-run.txt
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: workshop-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            workshop-evidence/*.png
+            workshop-evidence/*.json
+            workshop-evidence/*.txt
+          retention-days: 7
+          if-no-files-found: error

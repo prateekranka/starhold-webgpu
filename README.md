@@ -10,10 +10,33 @@ frame is generated.
 | Command | What it does |
 | --- | --- |
 | `npm run wasm` | Build `public/sim.wasm` from `sim/src/lib.rs` |
+| `npm run wasm:workshop` | Build `tools/sim.workshop.wasm` with the workshop feature set |
+| `npm run wasm:all` | Both WASM variants, in order |
 | `npm run build` | wasm, then `tsc --noEmit`, then `vite build` into `dist/` |
 | `npm run dev` | Build the wasm and serve on port 5199 |
-| `npm run capture` | The browser gate harness; writes a capture report and screenshots |
-| `npm run preview` | Serve the built `dist/` on port 5199 |
+| `npm run dev:tools` | Build both wasm variants and serve the app plus the workshop |
+| `npm run capture` | Build, then run the browser gate harness; writes a capture report and screenshots |
+| `npm run preview` | Build, then serve the built `dist/` on port 5199 |
+| `npm run test:workshop` | Build everything the node tests read, then run them |
+| `npm run verify:workshop` | Rust tests, production build, pinned baseline, node tests |
+
+### The simulation binaries are generated, never committed
+
+`public/sim.wasm` and `tools/sim.workshop.wasm` are build outputs of
+`sim/`. They are **not tracked by Git** — `.gitignore` excludes them, and CI
+fails if either one is committed. Every command above builds the variants it
+needs before it uses them, so a fresh clone needs only the toolchain:
+
+```sh
+npm ci
+rustup target add wasm32-unknown-unknown
+npm run dev
+```
+
+A committed binary drifts from its source. One checkout carried a stale
+`public/sim.wasm` without the `sim_research_count` export that `src/` calls, so
+the app died at runtime with `s.sim_research_count is not a function` while
+every CI job stayed green, because CI built the wasm before it ran the app.
 
 The gate harness runs one viewport per invocation. The five-viewport set is:
 
