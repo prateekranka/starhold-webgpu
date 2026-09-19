@@ -9,6 +9,31 @@ bottom HUD action bar, portrait play, and unit motion.** Contract:
 `docs/UNIT_DESIGN.md` (silhouettes, motion, sprite/icon pipeline). GitHub:
 `prateekranka/starhold-webgpu` (private), pushed on every verified piece.
 
+## Accelerated Dream Loop terrain/readability pass — 2026-09-19
+
+Four isolated GPT-6 Astra medium implementation passes were judged against a
+captured active-match baseline and an aspirational target. The accepted result
+keeps all three focused workstreams: authored terrain hierarchy, bounded
+settlement service activity, and explicit HUD action feedback. A fourth
+correction reduced the route network's visual weight, expanded connected base
+paving, pulled support props toward the settlement, and removed outer noise.
+The first combined frame was not accepted as final because its dark road X
+controlled the composition. The corrected frame passes the final visual gate:
+the working settlement is now the first read, with routes, placement truth,
+units, and match HUD still clear. The next visual gap is unit silhouette variety.
+
+The source delta is restricted to `src/renderer.ts`, `src/hud.ts`, and
+`src/style.css`: 350 insertions and 26 deletions from the Dream Loop setup head.
+There are no changes under `sim/`, `src/sim.ts`, or `src/engine.ts`. The final
+capture differs from the baseline across 23.42% of pixels and produced no page
+errors. `MAX` remains 26,000 and `BAKE_LIMIT` remains 24,000.
+
+Final verification passes: production build; menu browser; Workshop integration
+8/8; Workshop browser on desktop, phone, landscape, and iPad; Rust 2/2; and
+`git diff --check`. The isolated built preview is
+`https://bobby.taile5de76.ts.net:8450/` (HTTP 200). Frozen release `8446` and the
+validated PR preview `8448` remain unchanged and both return HTTP 200.
+
 ## PR menu chrome and asset-review stability — 2026-09-19
 
 The title/showcase now renders only the live world behind the menu. The canvas
