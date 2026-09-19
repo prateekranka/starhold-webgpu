@@ -1,5 +1,6 @@
 import {palette, names, jobs} from './kinds';
 import {glyphs} from './font';
+import {drawAshJackal, type JackalVariant} from './assets/ash-jackal';
 // 16000 was enough for the authored 32x32 island. The 10 km world bakes the
 // visible window with three detail tiers, so the ceiling is raised and the bake
 // itself stops at BAKE_LIMIT instead of dropping instances one by one.
@@ -248,12 +249,48 @@ const buttonPatterns=Array.from({length:4},(_,kind)=>{
 });
 export function buttonGlyphPixels(kind:number):Uint8Array {return buttonPatterns[kind];}
 export class Renderer {
+ authoritativeActors=false;
+ jackalVariant:JackalVariant='field';
  hudButtons=true;
  hudVisible=true;
  /** Logical-pixel inset for left HUD content when a full-bleed canvas is cropped. */
  hudLeftInset=0;
  /** Logical-pixel lift that keeps the selection plaque above an overlaid DOM command bar. */
  hudBottomInset=0;
+ showInterface=true;
+ kindHealth:((kind:number)=>number)|null=null;
+ private disposed=false;
+ private frameTexture:any=null;
+ private frameFormat='rgba8unorm';
+ private gpuAdapter:any=null;
+ /** Explicit readback is used only by tools/captures, never the normal game loop. */
+ async captureFrame():Promise<ImageData>{
+  if(!this.frameTexture)throw new Error('Render before requesting a capture.');
+  const d=this.device,usage=GPUBufferUsage as typeof GPUBufferUsage & {MAP_READ:number};
+  const row=Math.ceil(RENDER_WIDTH*4/256)*256;
+  const buffer=d.createBuffer({size:row*RENDER_HEIGHT,usage:usage.COPY_DST|usage.MAP_READ});
+  try{
+   const encoder=d.createCommandEncoder();
+   encoder.copyTextureToBuffer({texture:this.frameTexture},{buffer,bytesPerRow:row,rowsPerImage:RENDER_HEIGHT},[RENDER_WIDTH,RENDER_HEIGHT]);
+   d.queue.submit([encoder.finish()]);
+   await buffer.mapAsync(1);
+   const bytes=new Uint8Array(buffer.getMappedRange()),rgba=new Uint8ClampedArray(RENDER_WIDTH*RENDER_HEIGHT*4);
+   const bgra=this.frameFormat.startsWith('bgra');
+   for(let y=0;y<RENDER_HEIGHT;y++)for(let x=0;x<RENDER_WIDTH;x++){
+    const a=y*row+x*4,b=(y*RENDER_WIDTH+x)*4;
+    rgba[b]=bytes[a+(bgra?2:0)];rgba[b+1]=bytes[a+1];rgba[b+2]=bytes[a+(bgra?0:2)];rgba[b+3]=bytes[a+3];
+   }
+   buffer.unmap();return new ImageData(rgba,RENDER_WIDTH,RENDER_HEIGHT);
+  }finally{buffer.destroy();}
+ }
+ setReviewWorld(terrain:Float32Array,side:number,cx:number,cy:number) {
+  if(side<33||terrain.length!==side*side)throw new Error('Invalid review terrain');
+  this.terrain=terrain;this.terrainSide=side;this.setView(cx,cy);
+  this.worldStarts=[];this.worldRoutes=[];this.worldOutcrops=[];
+  this.bakedX=NaN;this.bakedY=NaN;this.bakedZoom=-1;this.authoritativeActors=true;
+ }
+ async settled():Promise<void>{await this.device?.queue.onSubmittedWorkDone();}
+ dispose():void{this.disposed=true;this.context?.unconfigure();this.device?.destroy();}
  worldSide=0;
  readonly data=new Float32Array(MAX*STRIDE);
  readonly owners=new Int32Array(MAX);
@@ -319,9 +356,9 @@ export class Renderer {
   if(!navigator.gpu) throw new Error('WebGPU is unavailable. Open Starhold in a WebGPU-capable browser with hardware acceleration enabled.');
   const adapter=await navigator.gpu.requestAdapter({powerPreference:'high-performance'});
   if(!adapter) throw new Error('No WebGPU adapter is available. Enable hardware acceleration and Vulkan support.');
-  this.device=await adapter.requestDevice();
-  const d=this.device;this.context=canvas.getContext('webgpu');
-  const format=navigator.gpu.getPreferredCanvasFormat();this.context.configure({device:d,format,alphaMode:'opaque'});
+   this.gpuAdapter=adapter;this.device=await this.gpuAdapter.requestDevice();
+   const d=this.device;this.context=canvas.getContext('webgpu');
+   const format=navigator.gpu.getPreferredCanvasFormat();this.frameFormat=format;const captureUsage=GPUTextureUsage as typeof GPUTextureUsage & {COPY_SRC:number};this.context.configure({device:d,format,alphaMode:'opaque',usage:captureUsage.RENDER_ATTACHMENT|captureUsage.COPY_SRC});
   const mesh:number[]=[];
   const face=(a:number[],b:number[],c:number[],e:number[],shade:number)=>{for(const v of [a,b,c,a,c,e])mesh.push(...v,shade);};
   face([-.5,-.5,1],[.5,-.5,1],[.5,.5,1],[-.5,.5,1],0);
@@ -349,7 +386,7 @@ export class Renderer {
   this.presentPass={colorAttachments:[{view:null,loadOp:'clear',storeOp:'store',clearValue:{r:16/255,g:18/255,b:28/255,a:1}}]};
   this.terrain.set(terrain);this.showcaseTerrain.set(terrain);this.makeTerrain();
  }
- onError(callback:(message:string)=>void) {this.device.addEventListener('uncapturederror',(e:any)=>callback(e.error.message));this.device.lost.then((info:any)=>callback(`WebGPU device lost: ${info.message}`));}
+ onError(callback:(message:string)=>void) {this.device.addEventListener('uncapturederror',(e:any)=>{console.error('UNCAPTURED ERROR:', e.error?.message||e.error);callback(e.error.message);});this.device.lost.then((info:any)=>{if(!this.disposed)callback(`WebGPU device lost: ${info.message}`);});}
  box(x:number,y:number,z:number,sx:number,sy:number,sz:number,color:number,owner=-1,screen=0) {
   if(this.count>=MAX){this.dropped++;return;}
   const i=this.count*8;this.data[i]=x;this.data[i+1]=y;this.data[i+2]=z;this.data[i+3]=sx;this.data[i+4]=sy;this.data[i+5]=sz;this.data[i+6]=color;this.data[i+7]=screen;this.owners[this.count++]=owner;
@@ -1193,7 +1230,8 @@ export class Renderer {
   const k=e[o+4],friendly=dawnUnits.has(k);
   if(wave2Units.has(k)&&e[o+5]===4){this.wreck(e[o],e[o+1],this.ground(e[o],e[o+1]),k);return;}
   const combat=combatUnits.has(k);
-  const ox=combat?(id%3-1)*.24:0,oy=combat?(Math.floor(id/3)%3-1)*.24:0;
+  const offset=combat&&!(this.authoritativeActors&&k===30);
+  const ox=offset?(id%3-1)*.24:0,oy=offset?(Math.floor(id/3)%3-1)*.24:0;
   const start=this.count;
   this.unitParts(e,o,id);
   const c=Math.cos(e[o+3]),sn=Math.sin(e[o+3]);
@@ -1237,6 +1275,10 @@ export class Renderer {
   }
  }
  private wave2Unit(e:Float32Array,o:number,id:number) {
+  if(this.authoritativeActors&&e[o+4]===30){
+   drawAshJackal(this,e[o],e[o+1],e[o+2],id,{state:e[o+5],phase:e[o+6],tick:Math.round(this.time*60),cooldown:e[o+11]},this.jackalVariant);
+   return;
+  }
   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],state=e[o+5];
   const tick=Math.round(this.time*60),moving=state===1||state===6,attacking=state===2;
   const worker=k===32,working=worker&&(state===3||state===5||state===8);
@@ -1525,6 +1567,10 @@ export class Renderer {
  }
  private effects(e:Float32Array,o:number) {
   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],sub=e[o+10],age=e[o+11],dx=Math.cos(e[o+3]),dy=Math.sin(e[o+3]);
+  if(k===50&&sub===30&&this.authoritativeActors){
+   this.strut(x,y,z,-dx*.36,-dy*.36,0,.035,26,-1,3);
+   this.box(x,y,z,.08,.08,.075,32+27);return;
+  }
   if(k===50){const color=sub===30||sub===31?26:sub===22?22:17;
    const steps=sub===30?3:sub===23?7:sub===31?5:4;
    for(let j=steps-1;j>=0;j--){const q=j*(sub===30?.48:.26);this.box(x-dx*q,y-dy*q,z-(sub===31?j*.035:0),.13,.13,.115,32+color);}
@@ -1561,59 +1607,59 @@ export class Renderer {
   if(this.worldSide!==this.hudWorldSide||this.hudLeftInset!==this.hudInset||this.hudBottomInset!==this.hudBottom||this.hudButtons!==this.hudCachedButtons||(this.worldSide===0&&(alloy!==this.hudAlloy||charge!==this.hudCharge||o!==this.hudSelection||kind!==this.hudKind||hp!==this.hudHealth||job!==this.hudJob||progress!==this.hudProgress))){const start=this.count;
    if(this.worldSide===0){this.rect(8,6,464,14,0);this.rect(8,19,464,1,5);this.text('STARHOLD',left+3,9);this.rect(287,12,4,5,20);this.rect(292,12,4,5,21);this.rect(290,8,4,4,22);this.text('ALLOY '+alloy,300,9,22);this.rect(379,9,5,8,16);this.rect(381,7,2,11,18);this.text('CHARGE '+charge,389,9,18);}
    if(this.hudButtons)for(let j=0;j<4;j++){this.rect(370+j*25,bottom+2,22,20,5);this.rect(371+j*25,bottom+3,20,18,1);this.buttonGlyph(j,376+j*25,bottom+7);}
-   if(this.worldSide===0&&o>=0){this.rect(left,bottom,134,23,5);this.rect(left+1,bottom+1,132,21,0);this.text(names[e[o+4]]||'COLONY',left+4,bottom+2);this.rect(left+4,bottom+10,125,3,3);this.rect(left+4,bottom+10,Math.floor(125*e[o+7]),3,13);const max=maxHealth[e[o+4]]??180;this.text('HP '+Math.round(e[o+7]*max)+' '+(jobs[e[o+5]]||'IDLE')+(e[o+5]===5?' '+Math.floor(e[o+10]*100)+'%':''),left+4,bottom+15,7);}
-   this.hudCount=this.count-start;for(let i=0;i<this.hudCount*8;i++)this.hudData[i]=this.data[start*8+i];this.hudAlloy=alloy;this.hudCharge=charge;this.hudSelection=o;this.hudKind=kind;this.hudHealth=hp;this.hudJob=job;this.hudProgress=progress;this.hudWorldSide=this.worldSide;this.hudInset=this.hudLeftInset;this.hudBottom=this.hudBottomInset;this.hudCachedButtons=this.hudButtons;
-  }else{const available=Math.min(this.hudCount,MAX-this.count);for(let i=0;i<available*8;i++)this.data[this.count*8+i]=this.hudData[i];this.count+=available;this.dropped+=this.hudCount-available;}
- }
- private markContours(yaw:number,zoom:number) {
-  this.contourData.fill(0);
-  const c=Math.round(Math.cos(yaw*Math.PI/2)),s=Math.round(Math.sin(yaw*Math.PI/2));
-  const horizontal=6*GRID/zoom,vertical=3.4641016*GRID/zoom,height=6.9282032*GRID/zoom;
-  for(let i=0;i<this.worldCount;i++){
-   const q=i*8,color=this.data[q+6],core=this.data[q+7]===-4;
-   if(Math.floor((color%32768)/32)===0&&!core)continue;
-   const x=this.data[q]-this.camX,y=this.data[q+1]-this.camY,rx=x*c-y*s,ry=x*s+y*c;
-   let px=240*GRID+horizontal*(rx-ry),py=136*GRID+vertical*(rx+ry)-height*this.data[q+2];
-   const combat=Math.floor(color/32768)>=18;
-   let halfX=horizontal*(this.data[q+3]+this.data[q+4])*.5;
-   let halfY=vertical*(this.data[q+3]+this.data[q+4])*.5,rise=height*this.data[q+5];
-   if(core){halfX=this.data[q+3]*.5;halfY=this.data[q+4]*.5;rise=0;}
-   // Four raster pixels conservatively cover snapping and the one-pixel contour.
-   const left=Math.max(0,Math.floor((px-halfX-4)/CONTOUR_TILE)),right=Math.min(CONTOUR_COLUMNS-1,Math.floor((px+halfX+4)/CONTOUR_TILE));
-   const top=Math.max(0,Math.floor((py-halfY-rise-4)/CONTOUR_TILE)),bottom=Math.min(CONTOUR_ROWS-1,Math.floor((py+halfY+4)/CONTOUR_TILE));
-   for(let row=top;row<=bottom;row++)for(let col=left;col<=right;col++)this.contourData[row*256+col]|=combat?3:1;
+    if(this.worldSide===0&&o>=0){this.rect(left,bottom,134,23,5);this.rect(left+1,bottom+1,132,21,0);this.text(names[e[o+4]]||'COLONY',left+4,bottom+2);this.rect(left+4,bottom+10,125,3,3);this.rect(left+4,bottom+10,Math.floor(125*e[o+7]),3,13);const max=this.kindHealth?.(e[o+4])??maxHealth[e[o+4]]??180;this.text('HP '+Math.round(e[o+7]*max)+' '+(jobs[e[o+5]]||'IDLE')+(e[o+5]===5?' '+Math.floor(e[o+10]*100)+'%':''),left+4,bottom+15,7);}
+    this.hudCount=this.count-start;for(let i=0;i<this.hudCount*8;i++)this.hudData[i]=this.data[start*8+i];this.hudAlloy=alloy;this.hudCharge=charge;this.hudSelection=o;this.hudKind=kind;this.hudHealth=hp;this.hudJob=job;this.hudProgress=progress;this.hudWorldSide=this.worldSide;this.hudInset=this.hudLeftInset;this.hudBottom=this.hudBottomInset;this.hudCachedButtons=this.hudButtons;
+   }else{const available=Math.min(this.hudCount,MAX-this.count);for(let i=0;i<available*8;i++)this.data[this.count*8+i]=this.hudData[i];this.count+=available;this.dropped+=this.hudCount-available;}
   }
- }
- render(e:Float32Array,n:number,yaw:number,zoom:number,alloy:number,charge:number,tick:number) {
-  this.time=tick/60;this.maybeBake(yaw,zoom);this.count=this.staticCount;this.emissiveCount=this.staticEmissiveCount;this.selected=null;this.dropped=0;
-  if(this.terrainSide>32)this.markBuildable(e,n);
-  for(let id=0;id<n;id++){const o=id*12,k=e[o+4];if(e[o+8]===1)this.selected=id;
-   if(buildingFootprints[k])this.building(e,o,id);
-   else if(dawnUnits.has(k)||cinderUnits.has(k))this.unit(e,o,id);
-   else if(k===40){
-    if(this.terrainSide>32)this.worldOre(e[o],e[o+1],e[o+2],e[o+10],e[o+11],id);
-    else {const h=e[o+10]>0?1.3+id%3*.35:e[o+11]*1.4;this.shard(e[o],e[o+1],e[o+2],Math.max(.08,h*1.4),31);}
+  private markContours(yaw:number,zoom:number) {
+   this.contourData.fill(0);
+   const c=Math.round(Math.cos(yaw*Math.PI/2)),s=Math.round(Math.sin(yaw*Math.PI/2));
+   const horizontal=6*GRID/zoom,vertical=3.4641016*GRID/zoom,height=6.9282032*GRID/zoom;
+   for(let i=0;i<this.worldCount;i++){
+    const q=i*8,color=this.data[q+6],core=this.data[q+7]===-4;
+    if(Math.floor((color%32768)/32)===0&&!core)continue;
+    const x=this.data[q]-this.camX,y=this.data[q+1]-this.camY,rx=x*c-y*s,ry=x*s+y*c;
+    let px=240*GRID+horizontal*(rx-ry),py=136*GRID+vertical*(rx+ry)-height*this.data[q+2];
+    const combat=Math.floor(color/32768)>=18;
+    let halfX=horizontal*(this.data[q+3]+this.data[q+4])*.5;
+    let halfY=vertical*(this.data[q+3]+this.data[q+4])*.5,rise=height*this.data[q+5];
+    if(core){halfX=this.data[q+3]*.5;halfY=this.data[q+4]*.5;rise=0;}
+    // Four raster pixels conservatively cover snapping and the one-pixel contour.
+    const left=Math.max(0,Math.floor((px-halfX-4)/CONTOUR_TILE)),right=Math.min(CONTOUR_COLUMNS-1,Math.floor((px+halfX+4)/CONTOUR_TILE));
+    const top=Math.max(0,Math.floor((py-halfY-rise-4)/CONTOUR_TILE)),bottom=Math.min(CONTOUR_ROWS-1,Math.floor((py+halfY+4)/CONTOUR_TILE));
+    for(let row=top;row<=bottom;row++)for(let col=left;col<=right;col++)this.contourData[row*256+col]|=combat?3:1;
    }
-   else if(k===41){this.box(e[o],e[o+1],e[o+2],.38,.36,.23,40);this.box(e[o],e[o+1],e[o+2]-.16,.18,.18,.14,18);}
-   else if(effectKinds.has(k))this.effects(e,o);
   }
-   for(let selId=0;selId<n;selId++){const o=selId*12;if(e[o+8]!==1)continue;const r=buildingFootprints[e[o+4]]?(cinderBuildings.has(e[o+4])?Math.max(...buildingFootprints[e[o+4]])/2+.3:e[o+4]===10?2.5:e[o+4]===16?1.5:1.8):e[o+4]===20?.65:e[o+4]===31?1.65:1.35;for(let j=0;j<24;j++){if(j%3===Math.floor(this.time/.6)%2)continue;const a=j*Math.PI/12;this.box(e[o]+Math.cos(a)*r,e[o+1]+Math.sin(a)*r,this.ground(e[o],e[o+1])+.08,.2,.2,.035,54);}}
-  this.ambient(this.time);
-  this.worldCount=this.count;
-  const previewCount=Math.min(this.placementCount,MAX-this.count);
-  this.stats.placementTiles=previewCount?this.placementTileCount:0;
-  if(previewCount){
-   for(let i=0;i<previewCount*STRIDE;i++)this.data[this.count*STRIDE+i]=this.placementData[i];
-   this.owners.fill(-1,this.count,this.count+previewCount);this.count+=previewCount;
-  }
-  this.dropped+=this.placementCount-previewCount;
-  if(this.hudVisible)this.hud(e,alloy,charge);
-  this.markContours(yaw,zoom);
-  this.camera[0]=Math.round(Math.cos(yaw*Math.PI/2));this.camera[1]=Math.round(Math.sin(yaw*Math.PI/2));this.camera[2]=1/zoom;this.camera[4]=this.camX;this.camera[5]=this.camY;
-  const d=this.device;d.queue.writeBuffer(this.uniform,0,this.camera);d.queue.writeBuffer(this.buffer,0,this.data.buffer,0,this.count*32);d.queue.writeBuffer(this.actorBuffer,0,this.actorData.buffer,0,this.count*16);
-  d.queue.writeTexture(this.contourUpload,this.contourData,this.contourLayout,this.contourSize);
-  const encoder=d.createCommandEncoder();const pass=encoder.beginRenderPass(this.scenePass);pass.setPipeline(this.pipeline);pass.setBindGroup(0,this.group);pass.setVertexBuffer(0,this.vertex);pass.setVertexBuffer(1,this.buffer);pass.setVertexBuffer(2,this.actorBuffer);pass.draw(36,this.count);pass.end();
-  this.presentPass.colorAttachments[0].view=this.context.getCurrentTexture().createView();const post=encoder.beginRenderPass(this.presentPass);post.setPipeline(this.post);post.setBindGroup(0,this.postGroup);post.draw(3);post.end();d.queue.submit(this.commands(encoder.finish()));this.stats.triangles=this.count*12+1;this.stats.saturated=this.dropped>0;this.stats.degraded=this.degraded;
+  render(e:Float32Array,n:number,yaw:number,zoom:number,alloy:number,charge:number,tick:number) {
+   this.time=tick/60;this.maybeBake(yaw,zoom);this.count=this.staticCount;this.emissiveCount=this.staticEmissiveCount;this.selected=null;this.dropped=0;
+   if(this.terrainSide>32)this.markBuildable(e,n);
+   for(let id=0;id<n;id++){const o=id*12,k=e[o+4];if(e[o+8]===1)this.selected=id;
+    if(buildingFootprints[k])this.building(e,o,id);
+    else if(dawnUnits.has(k)||cinderUnits.has(k))this.unit(e,o,id);
+    else if(k===40){
+     if(this.terrainSide>32)this.worldOre(e[o],e[o+1],e[o+2],e[o+10],e[o+11],id);
+     else {const h=e[o+10]>0?1.3+id%3*.35:e[o+11]*1.4;this.shard(e[o],e[o+1],e[o+2],Math.max(.08,h*1.4),31);}
+    }
+    else if(k===41){this.box(e[o],e[o+1],e[o+2],.38,.36,.23,40);this.box(e[o],e[o+1],e[o+2]-.16,.18,.18,.14,18);}
+    else if(effectKinds.has(k))this.effects(e,o);
+   }
+    for(let selId=0;selId<n;selId++){const o=selId*12;if(e[o+8]!==1)continue;const r=buildingFootprints[e[o+4]]?(cinderBuildings.has(e[o+4])?Math.max(...buildingFootprints[e[o+4]])/2+.3:e[o+4]===10?2.5:e[o+4]===16?1.5:1.8):e[o+4]===20?.65:e[o+4]===31?1.65:1.35;for(let j=0;j<24;j++){if(j%3===Math.floor(this.time/.6)%2)continue;const a=j*Math.PI/12;this.box(e[o]+Math.cos(a)*r,e[o+1]+Math.sin(a)*r,this.ground(e[o],e[o+1])+.08,.2,.2,.035,54);}}
+   if(this.showInterface)this.ambient(this.time);
+   this.worldCount=this.count;
+   const previewCount=Math.min(this.placementCount,MAX-this.count);
+   this.stats.placementTiles=previewCount?this.placementTileCount:0;
+   if(previewCount){
+    for(let i=0;i<previewCount*STRIDE;i++)this.data[this.count*STRIDE+i]=this.placementData[i];
+    this.owners.fill(-1,this.count,this.count+previewCount);this.count+=previewCount;
+   }
+   this.dropped+=this.placementCount-previewCount;
+   if(this.showInterface&&this.hudVisible)this.hud(e,alloy,charge);
+   this.markContours(yaw,zoom);
+   this.camera[0]=Math.round(Math.cos(yaw*Math.PI/2));this.camera[1]=Math.round(Math.sin(yaw*Math.PI/2));this.camera[2]=1/zoom;this.camera[4]=this.camX;this.camera[5]=this.camY;
+   const d=this.device;d.queue.writeBuffer(this.uniform,0,this.camera);d.queue.writeBuffer(this.buffer,0,this.data.buffer,0,this.count*32);d.queue.writeBuffer(this.actorBuffer,0,this.actorData.buffer,0,this.count*16);
+   d.queue.writeTexture(this.contourUpload,this.contourData,this.contourLayout,this.contourSize);
+   const encoder=d.createCommandEncoder();const pass=encoder.beginRenderPass(this.scenePass);pass.setPipeline(this.pipeline);pass.setBindGroup(0,this.group);pass.setVertexBuffer(0,this.vertex);pass.setVertexBuffer(1,this.buffer);pass.setVertexBuffer(2,this.actorBuffer);pass.draw(36,this.count);pass.end();
+   this.frameTexture=this.context.getCurrentTexture();this.presentPass.colorAttachments[0].view=this.frameTexture.createView();const post=encoder.beginRenderPass(this.presentPass);post.setPipeline(this.post);post.setBindGroup(0,this.postGroup);post.draw(3);post.end();d.queue.submit(this.commands(encoder.finish()));this.stats.triangles=this.count*12+1;this.stats.saturated=this.dropped>0;this.stats.degraded=this.degraded;
  }
  private commandList:any[]=[null];
  private commands(command:any) {this.commandList[0]=command;return this.commandList;}

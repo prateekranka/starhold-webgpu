@@ -1,3 +1,5 @@
+import {mountMatchResearch} from './research-panel';
+import type {ContentAbi} from './content-api';
 import './style.css';
 import {Renderer, RENDER_WIDTH, RENDER_HEIGHT, buttonGlyphPixels, type PlacementPreview} from './renderer';
 import {State, names, jobs} from './kinds';
@@ -981,6 +983,7 @@ function updateSelection() {
   selection.textContent=`${names[entities[o+4]]} — HP ${hp}% — ${jobs[job]}${job===5?` ${progress}%`:""}`;
  }
 }
+let researchUI:ReturnType<typeof mountMatchResearch>|null=null;
 let previous=0,accumulator=0,windowStart=0,frames=0,tick=0;
 function frame(now:number) {
  if(window.__APP.error||!sim)return;
@@ -988,7 +991,7 @@ function frame(now:number) {
   if(previous===0){previous=now;windowStart=now;}
   accumulator+=Math.min(now-previous,250);previous=now;
   while(accumulator>=1000/60){sim.sim_step(1000/60);tick++;accumulator-=1000/60;}
-  refreshEntities();updateSelection();syncHud();minimapDraw();
+  refreshEntities();updateSelection();syncHud();minimapDraw();researchUI?.update();
   renderer.hudVisible=simMode()===1&&!document.body.classList.contains('game-menu-open');
   renderer.hudButtons=!touchLayout&&!document.body.classList.contains('cinematic-fill');
   renderer.render(entities,entityCount,yawSteps,zooms[zoomIndex],sim.sim_alloy(),sim.sim_charge(),tick);
@@ -1004,6 +1007,9 @@ async function boot() {
  if(sim.sim_entity_stride()!==12)throw new Error('Simulation ABI mismatch: expected 12 floats per entity.');
  const value=new URLSearchParams(location.search).get('seed');const requested=value===null?73129:Number(value);seed=Number.isFinite(requested)?requested>>>0:73129;sim.sim_init(seed);refreshEntities();
  syncHud();
- await renderer.init(canvas,new Float32Array(sim.memory.buffer,sim.sim_terrain_ptr(),1024));renderer.onError(fatal);requestAnimationFrame(frame);
+ await renderer.init(canvas,new Float32Array(sim.memory.buffer,sim.sim_terrain_ptr(),1024));renderer.onError(fatal);
+ researchUI=mountMatchResearch(sim as unknown as ContentAbi);researchUI.update();
+ renderer.kindHealth=(kind:number)=>(sim as unknown as ContentAbi).sim_kind_stat(kind,9);
+ requestAnimationFrame(frame);
 }
 void boot().catch(fatal);
