@@ -1706,6 +1706,103 @@ export class Renderer {
   }
   else if(k===52)this.wreck(x,y,z,sub);
  }
+ /** A service apron is scenery attached to a completed, living building, never
+  * an actor or an indication of resource throughput. Ten aprons, at most 32
+  * boxes each. Spend only spare capacity after reserving the entire HUD cache
+  * and placement buffer; gameplay geometry always has first claim. */
+ private settlementService(e:Float32Array,n:number,yaw:number,zoom:number) {
+  if(this.placementCount>0)return;
+  const reserve=this.showInterface&&this.hudVisible?this.hudData.length/STRIDE:0;
+  const limit=Math.min(this.count+320,MAX-reserve-this.placementCount);
+  const c=Math.round(Math.cos(yaw*Math.PI/2)),s=Math.round(Math.sin(yaw*Math.PI/2));
+  let stations=0;
+  for(let id=0;id<n&&stations<10&&this.count+32<=limit;id++){
+   const o=id*12,k=e[o+4],footprint=buildingFootprints[k];
+   if(!footprint||e[o+10]<1||e[o+7]<=0||e[o+5]===4||e[o+5]===2)continue;
+   // Leave defensive silhouettes quiet; the economy and inhabited structures
+   // carry the activity. The original building and unit rigs are untouched.
+   if(k===16||k===66)continue;
+   const x=e[o],y=e[o+1],z=e[o+2],cinder=cinderBuildings.has(k);
+   const energy=k===12||k===62;
+   let ay=0,site=false;
+   // Stable preference, followed by the opposite wall if terrain/structures
+   // occupy it. Moving actors never change which wall the machinery belongs to.
+   for(let side=0;side<2;side++){
+    const sign=((id+k)%2===side)?1:-1;
+    ay=y+sign*(footprint[1]/2+1.05);
+    if(x<2||ay<1||x>this.terrainSide-2||ay>this.terrainSide-1)continue;
+    if(Math.abs(this.ground(x-1.4,ay)-z)>.2||Math.abs(this.ground(x+1.4,ay)-z)>.2)continue;
+    let blocked=false;
+    for(let other=0;other<n;other++){
+     if(other===id)continue;
+     const q=other*12,kind=e[q+4],f=buildingFootprints[kind];
+     if(!f&&kind!==40)continue;
+     const halfW=f?f[0]/2:1,halfD=f?f[1]/2:1;
+     if(Math.abs(e[q]-x)<halfW+1.65&&Math.abs(e[q+1]-ay)<halfD+.65){blocked=true;break;}
+    }
+    if(!blocked){site=true;break;}
+   }
+   if(!site)continue;
+   const rx=(x-this.camX)*c-(ay-this.camY)*s,ry=(x-this.camX)*s+(ay-this.camY)*c;
+   const px=480+12*(rx-ry)/zoom,py=272+(6.9282032*(rx+ry)-13.8564064*z)/zoom;
+   if(px<32||px>RENDER_WIDTH-32||py<64||py>RENDER_HEIGHT-60)continue;
+   // Protect native-size unit silhouettes, including flying scouts. A service
+   // bay yields as a whole instead of drawing fragments through an actor.
+   let occupied=false;
+   for(let other=0;other<n;other++){
+    const q=other*12,kind=e[q+4];
+    if(!dawnUnits.has(kind)&&!cinderUnits.has(kind))continue;
+    const dx=e[q]-x,dy=e[q+1]-ay;
+    const ux=12*((dx*c-dy*s)-(dx*s+dy*c))/zoom;
+    const uy=(6.9282032*((dx*c-dy*s)+(dx*s+dy*c))-13.8564064*(e[q+2]-z))/zoom;
+    if(Math.abs(ux)<24/zoom+4&&uy>-12/zoom-4&&uy<10/zoom+8){occupied=true;break;}
+   }
+   if(occupied)continue;
+   stations++;
+   // Six-step motion stays visibly mechanical at the fixed physical raster.
+   // A damaged installation slows down; no sim fields or entity positions are
+   // written. Independent phases keep the starting three buildings busy.
+   const cycle=(this.time/(e[o+7]<.4?8:4.8)+(id*17+k*7)%29/29)%1;
+   const shuttle=Math.floor(Math.min(1,Math.max(0,(cycle<.5?cycle:1-cycle)*2))*6)/6;
+   const body=cinder?24:12,trim=cinder?6:8,signal=energy?(cinder?26:17):(cinder?25:21);
+   // Two bolted rails, an open bed and end stops make the moving load read as
+   // part of a machine, not a new worker or an unselectable gameplay unit.
+   this.box(x,ay,z+.07,3.05,.91,.1,cinder?23:11);
+   for(let side=-1;side<=1;side+=2){
+    this.box(x,ay+side*.39,z+.17,3.1,.1,.14,trim);
+    this.box(x+side*1.46,ay,z+.18,.14,.87,.23,body);
+   }
+   for(let j=0;j<4;j++)this.box(x-1.14+j*.72,ay,z+.18,.09,.65,.065,6);
+   const loadX=x-.9+shuttle*1.65;
+   this.box(loadX,ay,z+.25,.63,.64,.12,trim);
+   if(cinder){
+    // Low broken plate bundle, suspended press and a travelling chain tooth.
+    this.box(loadX-.12,ay-.06,z+.37,.56,.45,.19,24,-1,-6);
+    this.box(loadX+.13,ay+.09,z+.55,.35,.32,.13,25,-1,-1);
+    for(let j=0;j<3;j++)this.box(x-1.1+j*.9+shuttle*.18,ay-.39,z+.31,.2,.14,.08,6);
+    this.box(x+.97,ay-.31,z+.27,.13,.15,.54,24,-1,-6);
+    this.box(x+.97,ay+.31,z+.27,.13,.15,.54,24,-1,-6);
+    const press=cycle>.38&&cycle<.58?.17:0;
+    this.box(x+.97,ay,z+.75-press,.49,.8,.15,24,-1,-6);
+    this.box(x+1.23,ay,z+.31,.1,.37,.22,cycle>.38&&cycle<.58?26:23);
+   }else{
+    // Strapped freight and an ivory inspection gate: measured civic logistics.
+    this.box(loadX,ay,z+.37,.48,.48,.35,energy?16:12);
+    this.box(loadX,ay,z+.72,.12,.5,.035,energy?18:21);
+    this.box(loadX+.25,ay,z+.4,.04,.12,.29,trim);
+    for(let side=-1;side<=1;side+=2)this.box(x+.97,ay+side*.32,z+.27,.13,.15,.53,8);
+    this.box(x+.97,ay,z+.8,.18,.8,.1,8);
+    this.box(x+1.08,ay,z+.65,.06,.35,.1,cycle>.38&&cycle<.58?17:15);
+   }
+   // Fixed stores at the quiet end anchor the cycle even in a still frame.
+   this.box(x-1.12,ay+.02,z+.27,.5,.54,.31,body,-1,cinder?-6:0);
+   this.box(x-1.12,ay+.02,z+.58,.12,.56,.035,signal);
+   // A three-cell mechanical indicator advances with the carriage. No bloom,
+   // smoke, screen-space particle, palette extension or independently lit halo.
+   for(let j=0;j<3;j++)this.box(x-.53+j*.34,ay+.44,z+.23,.2,.09,.11,
+    j===Math.min(2,Math.floor(shuttle*3))?(energy?(cinder?27:18):22):body);
+  }
+ }
  private ambient(t:number) {
   for(let j=0;j<16;j++){const x=19+j*17%76/10,y=25.6+j*11%31/10,z=this.ground(x,y),sway=Math.floor(t/1.4+j)%2*.18;this.box(x+sway,y,z,.13,.12,.38,21);this.box(x+.2+sway,y+.08,z,.12,.13,.48,20);this.box(x-.18,y,z,.13,.12,.27,21);}
   for(let j=0;j<3;j++){const q=(t/5+j/3)%1;for(let a=0;a<9;a++)this.box(19+j*2+q*2+a*.24,26+j*.6+(a%3)*.09,this.ground(19+j*2,26+j*.6)+.15,.18,.16,.05,a%3===0?21:20);}
@@ -1769,6 +1866,7 @@ export class Renderer {
   // supplies its one-pixel ink gap. Small segments now retain endpoint 22.
   if(this.selected!==null){const o=this.selected*12,r=buildingFootprints[e[o+4]]?(cinderBuildings.has(e[o+4])?Math.max(...buildingFootprints[e[o+4]])/2+.3:e[o+4]===10?2.5:e[o+4]===16?1.5:1.8):e[o+4]===20?.65:e[o+4]===31?1.65:1.35;for(let j=0;j<24;j++){if(j%3===Math.floor(this.time/.6)%2)continue;const a=j*Math.PI/12;this.box(e[o]+Math.cos(a)*r,e[o+1]+Math.sin(a)*r,this.ground(e[o],e[o+1])+.08,.2,.2,.035,54);}}
   if(this.showInterface)this.ambient(this.time);
+  this.settlementService(e,n,yaw,zoom);
   this.worldCount=this.count;
   const previewCount=Math.min(this.placementCount,MAX-this.count);
   this.stats.placementTiles=previewCount?this.placementTileCount:0;
