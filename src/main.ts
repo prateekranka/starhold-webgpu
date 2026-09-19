@@ -524,6 +524,12 @@ function resize() {
  viewport.style.width=`${RENDER_WIDTH*scale}px`;viewport.style.height=`${RENDER_HEIGHT*scale}px`;
  clampMinimap();
 }
+window.addEventListener('starhold-cinematic-fill',event=>{
+ const detail=(event as CustomEvent<{hudLeftInset?:number;hudBottomInset?:number}>).detail;
+ const left=detail?.hudLeftInset,bottom=detail?.hudBottomInset;
+ renderer.hudLeftInset=Number.isFinite(left)?Math.max(0,Math.floor(left!)):0;
+ renderer.hudBottomInset=Number.isFinite(bottom)?Math.max(0,Math.floor(bottom!)):0;
+});
 /** Keep a dragged minimap inside the viewport. A panel moved in portrait keeps
  *  inline pixel offsets, so after a rotation it can end up off-screen; pull it
  *  back instead of leaving the player without it. */
@@ -640,6 +646,12 @@ function frame(now:number) {
   accumulator+=Math.min(now-previous,250);previous=now;
   while(accumulator>=1000/60){sim.sim_step(1000/60);tick++;accumulator-=1000/60;}
   refreshEntities();updateSelection();syncHud();minimapDraw();researchUI?.update();
+  // The title/showcase is presentation, not a second command surface. A live
+  // match restores the full canvas HUD as soon as the menu closes.
+  renderer.hudVisible=simMode()===1&&!document.body.classList.contains('game-menu-open');
+  // Full-bleed mouse layouts expose real 48px HTML controls above the command
+  // bar. Suppress only their duplicate glyphs inside the canvas.
+  renderer.hudButtons=!touchLayout&&!document.body.classList.contains('cinematic-fill');
   renderer.render(entities,entityCount,yawSteps,zooms[zoomIndex],sim.sim_alloy(),sim.sim_charge(),tick);
   frames++;if(now-windowStart>=1000){fps=frames*1000/(now-windowStart);frames=0;windowStart=now;}
   window.__APP.ready=true;requestAnimationFrame(frame);

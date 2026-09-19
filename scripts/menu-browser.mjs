@@ -48,6 +48,11 @@ try{
  const laptopMatch=await assertCinematicCoverage(page,'laptop match');
  assert.equal(await page.locator('#hud-bar').evaluate(el=>getComputedStyle(el).display==='none'),false);
  assert.notEqual(await page.locator('#viewport nav').evaluate(el=>getComputedStyle(el).display),'none','camera controls should remain available during play');
+ const cameraControls=await page.locator('#viewport nav button').evaluateAll(buttons=>buttons.map(button=>{const r=button.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2,hit=document.elementFromPoint(x,y);return {id:button.id,width:r.width,height:r.height,inside:r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight,hit:!!hit&&button.contains(hit)};}));
+ assert.equal(cameraControls.length,4,'active match should retain all four camera controls');
+ assert.ok(cameraControls.every(control=>control.width>=44&&control.height>=44&&control.inside&&control.hit),`camera controls must be visible and hit-test to themselves: ${JSON.stringify(cameraControls)}`);
+ const minimapClearance=await page.evaluate(()=>{const map=document.querySelector('#minimap').getBoundingClientRect(),buttons=[...document.querySelectorAll('#viewport nav button')].map(button=>button.getBoundingClientRect());return Math.min(...buttons.map(button=>button.top))-map.bottom;});
+ assert.ok(minimapClearance>=8,`minimap must clear the camera row by at least 8px, got ${minimapClearance}px`);
  await page.locator('#game-menu-toggle').click();await page.waitForFunction(()=>document.querySelector('#game-menu')?.open===true);
  const resume=page.locator('[data-action="resume"]');assert.equal(await resume.isEnabled(),true);await resume.click();assert.equal(await page.locator('#game-menu').evaluate(d=>d.open),false);
  await page.locator('#game-menu-toggle').click();await page.locator('[data-action="options"]').click();await page.locator('#gm-minimap-start').uncheck();

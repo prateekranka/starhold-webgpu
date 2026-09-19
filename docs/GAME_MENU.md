@@ -19,7 +19,7 @@ Menu preferences use `localStorage` key `starhold.game-menu.v1`. This is prefere
 
 `src/game-menu.ts` creates the menu and wraps the public `window.__APP.startMatch` / `resetShowcase` entry points so programmatic starts and browser automation leave the menu in the correct state. `src/game-menu.css` owns the menu presentation.
 
-The original showcase simulation and renderer are unchanged. While the showcase is active, the old skirmish HUD is hidden and the renderer continues to advance behind the menu. Closing the menu in showcase mode exposes the live scene plus camera controls. Starting a real match restores the normal HUD.
+The showcase simulation continues to advance unchanged behind the menu. While the menu is open or the showcase is active, all command chrome is hidden: the DOM command bar, the HTML camera controls, and the canvas HUD (top resources, selected-entity plaque, and camera glyphs). Closing the menu in showcase mode exposes only the clean live scene. Starting a real match restores the full in-game HUD and camera controls; opening the menu during that match hides them only until play resumes. In full-bleed cover layouts, left-anchored match HUD text uses the canvas crop as an inset, the selected-entity plaque clears the overlaid DOM command bar, and the 48×48 HTML camera controls replace the duplicate canvas glyphs. Match labels and controls must remain fully visible.
 
 The menu uses the existing Starhold palette and remains responsive for desktop, phone and tablet layouts. Native `<dialog>` semantics provide focus/inert behavior while the menu is open.
 

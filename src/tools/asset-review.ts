@@ -12,7 +12,7 @@ interface HumanReview {
 }
 const root=document.querySelector<HTMLElement>('#workshop')!;
 const key=(revision:string)=>`starhold.asset-review.v2.${revision}`;
-const ESCAPE:Record<string,string>={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'};
+const ESCAPE:Record<string,string>={'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
 const html=(value:unknown)=>String(value??'').replace(/[&<>"']/g,ch=>ESCAPE[ch]??ch);
 const stage=(value:string)=>value.split('-').map(word=>word[0]?.toUpperCase()+word.slice(1)).join(' ');
 function blank(candidate:AssetCandidate):HumanReview{
@@ -37,6 +37,7 @@ function download(filename:string,payload:unknown){
  a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),0);
 }
 let panel:HTMLElement|null=null;
+let panelRevision:string|null=null,panelGateIds='';
 function currentVariant():JackalVariant{
  return (document.querySelector<HTMLSelectElement>('#variant')?.value==='longbow'?'longbow':'field');
 }
@@ -57,24 +58,41 @@ function exportReview(){
   policy:'Human approval is review evidence only. It never promotes a candidate, rewrites source, or changes the runtime default.',
  });
 }
-function syncHumanControls(candidate:AssetCandidate,review:HumanReview){
+function syncHumanControls(candidate:AssetCandidate,review:HumanReview,gates:ReturnType<typeof evaluateAshJackalCandidate>){
  if(!panel)return;
  const technical=allRequiredGatesPass(candidate.id),humanComplete=ASH_JACKAL_HUMAN_CRITERIA.every(c=>review.checks[c.id]);
+ const summary=panel.querySelector<HTMLElement>('#gate-summary');
+ if(summary){
+  const text=`${gates.filter(g=>g.pass).length}/${gates.length} required gates pass`;
+  if(summary.textContent!==text)summary.textContent=text;
+  const klass=technical?'pass':'fail';if(summary.className!==klass)summary.className=klass;
+ }
+ for(const row of panel.querySelectorAll<HTMLElement>('#asset-gates [data-gate]')){
+  const gate=gates.find(g=>g.id===row.dataset.gate);if(!gate)continue;
+  if(row.dataset.pass!==String(gate.pass)){row.dataset.pass=String(gate.pass);row.className=gate.pass?'pass':'fail';}
+  const mark=row.querySelector('span'),detail=row.querySelector('small'),symbol=gate.pass?'✓':'×';
+  if(mark&&mark.textContent!==symbol)mark.textContent=symbol;
+  if(detail&&detail.textContent!==gate.detail)detail.textContent=gate.detail;
+ }
+ // Keep the interactive nodes alive: replacing one between pointer-down and
+ // change loses the click and also destroys focus for keyboard review.
+ for(const input of panel.querySelectorAll<HTMLInputElement>('[data-human]')){
+  const wanted=!!review.checks[input.dataset.human!];if(input.checked!==wanted)input.checked=wanted;
+ }
  const approve=panel.querySelector<HTMLButtonElement>('#asset-approve-human'),status=panel.querySelector<HTMLElement>('#review-status');
  if(approve)approve.disabled=!technical||!humanComplete;
  if(status){
   const decision=review.decision==='approved'?'Approved locally — not promoted':review.decision==='rework'?'Rework requested':'Pending human review';
-  status.textContent=decision;status.className=`decision-${review.decision}`;
+  if(status.textContent!==decision)status.textContent=decision;
+  const klass=`decision-${review.decision}`;if(status.className!==klass)status.className=klass;
  }
+ const note=panel.querySelector<HTMLTextAreaElement>('#asset-review-note');
+ if(note&&document.activeElement!==note&&note.value!==review.note)note.value=review.note;
 }
-function render(){
+/** Build once per candidate revision. Normal refreshes update the mounted nodes in place. */
+function mount(candidate:AssetCandidate,review:HumanReview,gates:ReturnType<typeof evaluateAshJackalCandidate>){
  if(!panel)return;
- const state=workshopState();
- if(!state||state.kind!==ASH_JACKAL_CONTRACT.kind||state.civ!==ASH_JACKAL_CONTRACT.civilization){
-  panel.hidden=true;panel.dataset.ready='true';return;
- }
- panel.hidden=false;
- const {candidate,review,gates}=currentReview(),technical=gates.every(g=>g.pass),humanComplete=ASH_JACKAL_HUMAN_CRITERIA.every(c=>review.checks[c.id]);
+ const technical=gates.every(g=>g.pass),humanComplete=ASH_JACKAL_HUMAN_CRITERIA.every(c=>review.checks[c.id]);
  const decision=review.decision==='approved'?'Approved locally — not promoted':review.decision==='rework'?'Rework requested':'Pending human review';
  const candidates=ASH_JACKAL_CANDIDATES.map(c=>`<li class="${c.revision===candidate.revision?'current':''}"><strong>${html(c.revision)}</strong><span>${html(stage(c.stage))}</span><small>${html(c.summary)}</small>${c.parentRevision?`<em>parent ${html(c.parentRevision)}</em>`:'<em>root candidate</em>'}</li>`).join('');
  const gateRows=gates.map(g=>`<li data-gate="${html(g.id)}" data-pass="${g.pass}" class="${g.pass?'pass':'fail'}"><span aria-hidden="true">${g.pass?'✓':'×'}</span><div><strong>${html(g.label)}</strong><small>${html(g.detail)}</small></div></li>`).join('');
@@ -88,7 +106,7 @@ function render(){
  <section class="human-review"><div class="gate-title"><h3>Human visual review</h3><strong id="review-status" class="decision-${review.decision}">${html(decision)}</strong></div><div id="human-review" class="human-checks">${humanRows}</div><label class="review-note">Review note<textarea id="asset-review-note" rows="3" placeholder="What works? What needs another pass?">${html(review.note)}</textarea></label><div class="review-actions"><button id="asset-approve-human" ${!technical||!humanComplete?'disabled':''}>Approve candidate</button><button id="asset-rework-human">Request rework</button><button id="asset-clear-human">Clear decision</button></div><p class="gate-rule">Approval is stored only as local review evidence and can be exported. It does not change the game’s production default or commit anything to Git.</p></section>`;
  panel.dataset.ready='true';
  for(const input of panel.querySelectorAll<HTMLInputElement>('[data-human]'))input.onchange=()=>{
-  const next=load(candidate);next.checks[input.dataset.human!]=input.checked;if(next.decision==='approved')next.decision='pending';next.decidedAt=null;save(next);syncHumanControls(candidate,next);
+  const next=load(candidate);next.checks[input.dataset.human!]=input.checked;if(next.decision==='approved')next.decision='pending';next.decidedAt=null;save(next);render();
  };
  const note=panel.querySelector<HTMLTextAreaElement>('#asset-review-note')!;note.oninput=()=>{const next=load(candidate);next.note=note.value;save(next);};
  panel.querySelector<HTMLButtonElement>('#asset-approve-human')!.onclick=()=>{
@@ -97,6 +115,20 @@ function render(){
  };
  panel.querySelector<HTMLButtonElement>('#asset-rework-human')!.onclick=()=>{const next=load(candidate);next.decision='rework';next.decidedAt=new Date().toISOString();save(next);render();};
  panel.querySelector<HTMLButtonElement>('#asset-clear-human')!.onclick=()=>{const next=load(candidate);next.decision='pending';next.decidedAt=null;save(next);render();};
+ panelRevision=candidate.revision;panelGateIds=gates.map(g=>g.id).join('|');
+}
+/** Refresh without replacing form controls unless the candidate contract changes. */
+function render(){
+ if(!panel)return;
+ const state=workshopState();
+ if(!state||state.kind!==ASH_JACKAL_CONTRACT.kind||state.civ!==ASH_JACKAL_CONTRACT.civilization){
+  panel.hidden=true;panel.dataset.ready='true';return;
+ }
+ panel.hidden=false;
+ const {candidate,review,gates}=currentReview(),gateIds=gates.map(g=>g.id).join('|');
+ if(panelRevision!==candidate.revision||panelGateIds!==gateIds)mount(candidate,review,gates);
+ syncHumanControls(candidate,review,gates);
+ panel.dataset.ready='true';
 }
 function install(){
  if(document.querySelector('#asset-governance'))return;
@@ -108,7 +140,9 @@ function install(){
  exportButton.onclick=exportReview;
  document.querySelector<HTMLSelectElement>('#variant')?.addEventListener('input',()=>queueMicrotask(render));
  document.querySelector<HTMLSelectElement>('#civ')?.addEventListener('change',()=>queueMicrotask(render));
- root.addEventListener('click',event=>{if((event.target as HTMLElement).closest('#asset-governance'))return;queueMicrotask(render);});
+ // Only actor selection can change which governed asset the panel represents.
+ // Unrelated workshop controls must not disturb focus or replace form nodes.
+ root.addEventListener('click',event=>{if((event.target as Element|null)?.closest?.('[data-kind]'))queueMicrotask(render);});
  render();
  Object.assign(window,{__ASSET_REVIEW:{
   getState:()=>{const {candidate,review,gates}=currentReview();return {candidate,review,gates,technicalPass:gates.every(g=>g.pass)};},

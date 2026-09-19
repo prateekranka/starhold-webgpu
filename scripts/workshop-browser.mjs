@@ -24,6 +24,14 @@ try{
   await page.waitForFunction(()=>document.querySelector('#asset-governance')?.dataset.ready==='true'&&document.querySelector('#candidate-revision')?.textContent==='jackal-longbow-1',null,{timeout:5000});
   assert.match(await page.locator('#gate-summary').textContent(),/required gates pass/);
   assert.equal(await page.locator('#asset-gates [data-pass="false"]').count(),0,'Ash Jackal technical asset gates must all pass');
+  const stableControls=await page.evaluate(async()=>{
+   const note=document.querySelector('#asset-review-note'),checkbox=document.querySelector('#human-review input[type="checkbox"]');
+   note.value='focus-preservation probe';note.dispatchEvent(new Event('input',{bubbles:true}));note.focus();
+   document.querySelector('.workshop-layout').dispatchEvent(new MouseEvent('click',{bubbles:true}));
+   await new Promise(resolve=>queueMicrotask(resolve));
+   return {noteSame:document.querySelector('#asset-review-note')===note,checkboxSame:document.querySelector('#human-review input[type="checkbox"]')===checkbox,focused:document.activeElement===note,value:note.value};
+  });
+  assert.deepEqual(stableControls,{noteSame:true,checkboxSame:true,focused:true,value:'focus-preservation probe'},'Unrelated workshop clicks must not replace asset-review form nodes or destroy focus');
   for(const input of await page.locator('#human-review input[type="checkbox"]').all())await input.check();
   await page.locator('#asset-approve-human').click();
   assert.match(await page.locator('#review-status').textContent(),/Approved locally — not promoted/);

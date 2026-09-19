@@ -7,7 +7,10 @@ body.cinematic-fill #viewport{position:fixed;margin:0;max-width:none;max-height:
 
 /* Keep camera chrome available during actual play, but never over the title or
    showcase. The showcase is presentation, not an interactive camera-debug view. */
-body.cinematic-fill.mouse #viewport nav{position:fixed;z-index:8;left:auto;top:auto;right:calc(var(--safe-r) + 12px);bottom:calc(var(--safe-b) + var(--hud-h) + 12px);display:flex;gap:8px;pointer-events:none}
+/* A transformed viewport becomes the containing block for its fixed descendants.
+   Add the cover crop so the controls anchor to the visible edge, not the hidden
+   canvas edge. The viewport is already centred inside the safe area. */
+body.cinematic-fill.mouse #viewport nav{position:fixed;z-index:8;left:auto;top:auto;right:calc(var(--cinematic-crop-x,0px) + 12px);bottom:calc(var(--cinematic-crop-y,0px) + var(--hud-h) + 12px);display:flex;gap:8px;pointer-events:none}
 body.cinematic-fill.mouse #viewport nav button{position:static;width:48px;height:48px;min-width:44px;min-height:44px;border:2px solid #747C91;background:#1B1E30;padding:0;display:grid;place-items:center;pointer-events:auto}
 body.cinematic-fill.mouse #viewport nav button:hover,body.cinematic-fill.mouse #viewport nav button:focus-visible{border-color:#F1CE72;background:#2B2D46;outline:none}
 body.cinematic-fill.mouse #viewport canvas.glyph{display:block;width:36px;height:36px;image-rendering:pixelated}
