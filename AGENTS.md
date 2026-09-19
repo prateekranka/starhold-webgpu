@@ -29,3 +29,10 @@ Game development standards and instructions for AI agents, integrating the **Dim
    - Minimum 44×44 px touch targets for all interactive controls.
    - Bar elements must never be squeezed below their own content.
    - Landscape is the primary gameplay mode; portrait viewports display the rotate advisory.
+
+6. **User Communication (ASD-STE100 Simplified Technical English)**:
+   - Only ever talk to the user in ASD-STE100 Simplified Technical English (STE).
+   - The user is a beginner in programming.
+   - Explain all concepts simply.
+   - Use short and clear sentences (maximum 20 words for instructions).
+   - Do not use complex programming jargon without simple explanation.
