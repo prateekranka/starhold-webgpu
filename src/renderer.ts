@@ -14,9 +14,9 @@ const combatUnits=new Set([21,22,23,25,26,30,31,34,36]);
 const effectKinds=new Set([50,51,52]);
 // A handful of service islands, in starting-slot coordinates. No scatter field.
 const settlementStations:ReadonlyArray<readonly [number,number,number]>=[
- [-8,-3.7,0],[-16,-3.7,1],[-3.7,-10,0],[-3.7,-19,1],
- [-14,11,2],[-8,11,1],[15,-11,2],[15,-6,1],
- [12,16,2],[19,16,0],[8.3,3,0],[3,8,1]
+ [-8,-3.7,0],[-12,-3.7,1],[-3.7,-10,0],[-3.7,-13,1],
+ [-11,9,2],[-7,10,1],[11,-9,2],[11,-5,1],
+ [10,12,2],[14,12,0],[8.3,3,0],[3,9,1]
 ];
 const maxHealth:Readonly<Record<number,number>>={10:1500,11:600,12:600,13:600,14:600,15:600,16:900,17:600,20:70,21:180,22:180,23:110,24:150,25:100,26:360,30:80,31:240,32:60,33:150,34:150,35:120,36:90,60:1350,61:525,62:500,65:450,63:525,64:650,66:750,67:550};
 export interface PlacementPreview {active:boolean;kind:number|null;tx:number;ty:number;valid:boolean}
@@ -137,49 +137,55 @@ fn basalt(world:vec2f, province:u32, local:vec2f)->u32 {
  // The old showcase branch below stays unchanged, including its sky pool.
  let role=province%128u;
  if role>=96u {
-  // Dark travelled bed, continuous kerbs and a stone threshold at the base.
+  // Midstone travelled bed with broad, quiet shoulders. Keep the full route
+  // footprint, but let its outer half-tile merge into the clearing's material.
   // Edge bits come from adjoining route tiles, so corners stay connected.
   let edge=province/128u;let q=fract(world);
-  if ((edge&1u)!=0u && q.x<.18) || ((edge&2u)!=0u && q.x>.82) ||
-     ((edge&4u)!=0u && q.y<.18) || ((edge&8u)!=0u && q.y>.82) {return 5u;}
   if (edge&16u)!=0u {return select(5u,3u,q.x<.08 || q.y<.08);}
+  if ((edge&1u)!=0u && q.x<.55) || ((edge&2u)!=0u && q.x>.45) ||
+     ((edge&4u)!=0u && q.y<.55) || ((edge&8u)!=0u && q.y>.45) {return 4u;}
   // Sparse centre dashes on the two real departure roads; do not fabricate
   // lanes across the surrounding buildable soil or distant curved routes.
   if max(abs(local.x),abs(local.y))<32. &&
-     ((abs(local.x)<.10 && fract(local.y/3.)<.42) ||
-      (abs(local.y)<.10 && fract(local.x/3.)<.42)) {return 5u;}
-  return 2u;
+     ((abs(local.x)<.10 && fract(local.y/4.)<.24) ||
+      (abs(local.y)<.10 && fract(local.x/4.)<.24)) {return 5u;}
+  return 3u;
  }
  if role>=64u {
   // A settlement is a few large paved courts within quiet cleared soil.
   // These are flush finishes on the SAME buildable caps, never new roads or
   // raised obstacles. Live occupancy still controls the construction ticks.
-  let apron=local.x> -5.5 && local.x<6.5 && local.y> -5.5 && local.y<6.5;
-  let westCourt=local.x> -16.5 && local.x< -6.5 && local.y>4.5 && local.y<12.5;
-  let eastCourt=local.x>7.5 && local.x<16.5 && local.y> -13.5 && local.y< -4.5;
-  let outerCourt=local.x>10.5 && local.x<20.5 && local.y>8.5 && local.y<17.5;
+  // Unequal working wings join the mine, stores and service bays to the core.
+  // Broaden the occupied finish, not the building or buildable footprint.
+  let apron=(local.x> -9.5 && local.x<7.5 && local.y> -7.5 && local.y<8.5) ||
+            (local.x> -5.5 && local.x<9.5 && local.y> -10.5 && local.y<10.5);
+  let westCourt=local.x> -13.5 && local.x< -5.5 && local.y>4.5 && local.y<11.5;
+  let eastCourt=local.x>7.5 && local.x<13.5 && local.y> -11.5 && local.y< -3.5;
+  let outerCourt=local.x>8.5 && local.x<15.5 && local.y>8.5 && local.y<14.5;
   let court=westCourt || eastCourt || outerCourt;
-  let service=(local.x>7. && local.x<9.5 && local.y> -14. && local.y<18.) ||
-              (local.y>6.5 && local.y<9. && local.x> -17. && local.x<20.5);
+  let service=(local.x>7. && local.x<9.5 && local.y> -11.5 && local.y<14.5) ||
+              (local.y>6.5 && local.y<9. && local.x> -13.5 && local.x<15.5);
   let grid=fract(world/2.);
   let joint=grid.x<.025 || grid.y<.025;
   var c=4u;
   if apron {c=select(5u,4u,joint);}
-  if court {c=select(3u,4u,joint);}
-  if service {c=3u;}
+  if court {c=select(4u,3u,joint);}
+  if service {c=select(5u,4u,joint);}
   // Corners, rather than full yellow rectangles, leave future construction
   // sites visually open. The painted elbows belong only to these three courts.
   var q=vec2f(100.);var extent=vec2f(0.);
-  if westCourt {q=local-vec2f(-16.5,4.5);extent=vec2f(10.,8.);}
-  if eastCourt {q=local-vec2f(7.5,-13.5);extent=vec2f(9.,9.);}
-  if outerCourt {q=local-vec2f(10.5,8.5);extent=vec2f(10.,9.);}
+  if westCourt {q=local-vec2f(-13.5,4.5);extent=vec2f(8.,7.);}
+  if eastCourt {q=local-vec2f(7.5,-11.5);extent=vec2f(6.,8.);}
+  if outerCourt {q=local-vec2f(8.5,8.5);extent=vec2f(7.,6.);}
   let corner=min(q,extent-q);
   if court && min(corner.x,corner.y)<.16 && max(corner.x,corner.y)<1.15 {return 21u;}
   if service && fract((local.x+local.y)/3.)<.18 &&
      ((local.x>7.25 && local.x<7.4) || (local.y>6.75 && local.y<6.9)) {return 5u;}
   // Small survey crosses replace the screen-filling wire mesh. Calm soil
   // and occupied caps remain quiet; these still describe vacant flat sites.
-  if province>=128u && ((grid.x<.04 && grid.y<.19) || (grid.y<.04 && grid.x<.19)) {return 5u;}
+  let survey=fract(world/4.);
+  if province>=128u && !apron && !court && !service && max(abs(local.x),abs(local.y))<20. &&
+     ((survey.x<.02 && survey.y<.095) || (survey.y<.02 && survey.x<.095)) {return 5u;}
   return c;
  }
 
@@ -860,7 +866,7 @@ export class Renderer {
     if(south!==h||this.worldMaterial(x,y+1,south)!==6)edge|=8;
     for(const [bx,by] of this.worldStarts){
      const distance=Math.hypot(x-bx,y-by);
-     if(distance<5.5)edge|=16;
+     if(distance<9.5)edge|=16;
      if(distance<34){this.actorData[surface*4]=bx+.5;this.actorData[surface*4+1]=by+.5;}
     }
     this.actorData[surface*4+2]=edge;
@@ -942,7 +948,7 @@ export class Renderer {
      if(Math.abs(e[o]-x)<(foot?foot[0]/2+1.8:2)&&Math.abs(e[o+1]-y)<(foot?foot[1]/2+1.5:1.7)){occupied=true;break;}
     }
     if(occupied)continue;
-    this.groundMark(x,y,2.8,1.8,3,.012);
+    this.groundMark(x,y,2.8,1.8,4,.012);
     this.groundMark(x,y+.82,2.8,.12,5,.018);
     this.groundMark(x-1.3,y,.12,1.6,5,.018);
     const type=station[2];
@@ -958,10 +964,10 @@ export class Renderer {
     }else if(type===1){
      // Low stacked supply cases: no actor contour, roof or resource facets.
      this.box(x-.48,y,z+.02,.95,.9,.5,metal,-1,-6);
-     this.box(x-.48,y,z+.52,.95,.9,.08,5,-1,-6);
+     this.box(x-.48,y,z+.52,.95,.9,.08,6,-1,-6);
      this.box(x-.48,y,z+.61,.15,.9,.02,panel,-1,-6);
      this.box(x+.56,y+.15,z+.02,.68,.68,.34,panel,-1,-6);
-     this.box(x+.56,y+.15,z+.36,.7,.7,.07,4,-1,-6);
+     this.box(x+.56,y+.15,z+.36,.7,.7,.07,6,-1,-6);
      this.box(x-.48,y-.46,z+.18,.34,.025,.14,trim,-1,-6);
     }else{
      // Paired service canisters on a skid and a horizontal coupling. Kept
