@@ -411,6 +411,7 @@ function spawnTouchRipple(clientX:number,clientY:number,type:'move'|'target'|'se
 }
 function issueOrder(clientX:number,clientY:number):boolean {
  if(!sim||selected===null||simMode()!==1)return false;
+ if(!isUnitKind(entities[selected*12+4]))return false;
  const rect=canvas.getBoundingClientRect();
  const picked=renderer.pick((clientX-rect.left)*RENDER_WIDTH/rect.width,(clientY-rect.top)*RENDER_HEIGHT/rect.height,yawSteps,zooms[zoomIndex]);
  if(picked!==null&&picked!==selected){
@@ -440,7 +441,7 @@ function movePlacement(x:number,y:number):void {
 function reprojectPlacement():void {
  if(placementPointerX!==null)movePlacement(placementPointerX,placementPointerY);
 }
-function worldTap(x:number,y:number):void {
+function worldTap(x:number,y:number,isTouch=false):void {
  if(placementState.active){
   movePlacement(x,y);
   if(!placementState.active||!placementState.valid||!sim)return;
@@ -453,18 +454,41 @@ function worldTap(x:number,y:number):void {
   selectAt(x,y);
   return;
  }
- if(selected!==null&&entities[selected*12+9]===simPlayer()){
   const rect=canvas.getBoundingClientRect();
-  const picked=renderer.pick((x-rect.left)*RENDER_WIDTH/rect.width,(y-rect.top)*RENDER_HEIGHT/rect.height,yawSteps,zooms[zoomIndex]);
+  let picked=renderer.pick((x-rect.left)*RENDER_WIDTH/rect.width,(y-rect.top)*RENDER_HEIGHT/rect.height,yawSteps,zooms[zoomIndex]);
+  if(picked===null){
+   const pt=screenToWorld(x,y);
+   if(pt){
+    let nearest=-1,nearestDist=1.2;
+    for(let i=0;i<entityCount;i++){
+     if(entities[i*12+9]!==simPlayer()||entities[i*12+5]===State.Death)continue;
+     const d=Math.hypot(entities[i*12]-pt.tx,entities[i*12+1]-pt.ty);
+     if(d<nearestDist){nearestDist=d;nearest=i;}
+    }
+    if(nearest!==-1)picked=nearest;
+   }
+  }
+  if(picked!==null){
   if(picked===selected){
    sim?.sim_select(-1);refreshEntities();updateSelection();syncHud();
    return;
   }
-  if(picked!==null&&entities[picked*12+9]===simPlayer()){
-   selectEntity(picked);
-   return;
+  if(isTouch&&selected!==null&&entities[selected*12+9]===simPlayer()&&isUnitKind(entities[selected*12+4])){
+   const targetFaction=entities[picked*12+9];
+   const targetKind=entities[picked*12+4];
+   if(targetFaction!==simPlayer()||targetKind===40){
+    sim?.sim_command?.(5,picked,0);
+    spawnTouchRipple(x,y,'target');
+    refreshEntities();updateSelection();syncHud();
+    return;
+   }
   }
-  if(issueOrder(x,y))return;
+  selectEntity(picked);
+  return;
+ }
+ if(isTouch&&selected!==null&&entities[selected*12+9]===simPlayer()&&isUnitKind(entities[selected*12+4])){
+  issueOrder(x,y);
+  return;
  }
  selectAt(x,y);
 }
@@ -554,11 +578,15 @@ function entityScreen(kind:number,faction:number):{x:number;y:number}|null {
   // read-only, so the scan changes no state.
   const offsets:[number,number][]=[[0,0]];
   for(let r=4;r<=56;r+=4)for(let a=0;a<10;a++)offsets.push([Math.round(Math.cos(a*Math.PI/5)*r),Math.round(Math.sin(a*Math.PI/5)*r)]);
-  const centre={x:rect.left+px*rect.width/RENDER_WIDTH,y:rect.top+py*rect.height/RENDER_HEIGHT};
-  if(!fallback)fallback=centre;
+  const centreX=Math.round(rect.left+px*rect.width/RENDER_WIDTH),centreY=Math.round(rect.top+py*rect.height/RENDER_HEIGHT);
+  if(!fallback)fallback={x:centreX,y:centreY};
   for(const [ox,oy] of offsets) {
-   if(renderer.pick(px+ox,py+oy,yawSteps,zoom)!==i)continue;
-   return {x:rect.left+(px+ox)*rect.width/RENDER_WIDTH,y:rect.top+(py+oy)*rect.height/RENDER_HEIGHT};
+   const screenX=Math.round(rect.left+(px+ox)*rect.width/RENDER_WIDTH);
+   const screenY=Math.round(rect.top+(py+oy)*rect.height/RENDER_HEIGHT);
+   const testPx=(screenX-rect.left)*RENDER_WIDTH/rect.width;
+   const testPy=(screenY-rect.top)*RENDER_HEIGHT/rect.height;
+   if(renderer.pick(testPx,testPy,yawSteps,zoom)!==i)continue;
+   return {x:screenX,y:screenY};
   }
   // This entity is buried under a neighbour's art; try the next one of its kind
   // and remember this centre in case none is reachable.
@@ -680,8 +708,9 @@ function pointerDistance() {
  return Math.hypot(a.x-b.x,a.y-b.y);
 }
 canvas.addEventListener('pointerdown',e=>{
- suppressPointerClick=e.pointerType!=='mouse';
- if(e.pointerType==='mouse')return;
+ if(e.pointerType==='mouse'){suppressPointerClick=false;return;}
+ mouseDown=false;
+ suppressPointerClick=true;
  e.preventDefault();
  if(activePointers.size===0){resetGesture();downX=e.clientX;downY=e.clientY;downAt=e.timeStamp;}
  activePointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
@@ -711,10 +740,10 @@ canvas.addEventListener('pointermove',e=>{
 canvas.addEventListener('pointerup',e=>{
  if(e.pointerType==='mouse'||!activePointers.has(e.pointerId))return;
  e.preventDefault();
- if(activePointers.size===1&&!pinched&&!panning&&Math.hypot(e.clientX-downX,e.clientY-downY)<=12&&e.timeStamp-downAt<=400)worldTap(e.clientX,e.clientY);
+ if(activePointers.size===1&&!pinched&&!panning&&Math.hypot(e.clientX-downX,e.clientY-downY)<=12&&e.timeStamp-downAt<=400)worldTap(e.clientX,e.clientY,true);
  activePointers.delete(e.pointerId);
  if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId);
- if(activePointers.size===0)resetGesture();
+ if(activePointers.size===0){resetGesture();setTimeout(()=>{suppressPointerClick=false;},350);}
 });
 canvas.addEventListener('pointercancel',e=>{
  if(e.pointerType==='mouse')return;
