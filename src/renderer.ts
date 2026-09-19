@@ -1,6 +1,10 @@
 import {palette, names, jobs} from './kinds';
 import {glyphs} from './font';
 import {drawAshJackal, type JackalVariant} from './assets/ash-jackal';
+import {drawCinderStrider} from './assets/cinder-strider';
+import {drawPackBeetle} from './assets/pack-beetle';
+import {drawSiegeJuggernaut} from './assets/siege-juggernaut';
+import {drawWardSentinel} from './assets/ward-sentinel';
 // 16000 was enough for the authored 32x32 island. The 10 km world bakes the
 // visible window with three detail tiers, so the ceiling is raised and the bake
 // itself stops at BAKE_LIMIT instead of dropping instances one by one.
@@ -939,7 +943,9 @@ export class Renderer {
    this.box(x,y,z+.3,1.8,1.8,.3,13,id,-1);
    for(let j=0;j<6;j++){const a=j*Math.PI/3;this.box(x+Math.cos(a)*.8,y+Math.sin(a)*.8,z+.25,.45,.45,.45,8,id);}
    if(p>=.2)for(let a=-1;a<=1;a+=2)this.box(x+a*.8,y,z+.55,.24,.46,p<.5?1.3:2.5,8,id);
-   if(p>=.5){const bob=Math.floor(phase*4)%2*.08;this.shard(x,y,z+.65+bob,2.9,17,id);for(let j=0;j<3;j++){this.box(x,y,z+.85+j*.65,.75,.75,.12,16,id);this.box(x-.18,y+.26,z+.9+j*.65,.08,.08,.48,17,id);this.emissive(x-.18,y+.31,z+1.14+j*.65,Math.floor(phase*4)===j?18:17,id);}this.emissive(x,y,z+3.75,18,id);}
+   if(p>=.5){const bob=Math.floor(phase*4)%2*.08;this.shard(x,y,z+.65+bob,2.9,17,id);for(let j=0;j<3;j++){this.box(x,y,z+.85+j*.65,.75,.75,.12,16,id);this.box(x-.18,y+.26,z+.9+j*.65,.08,.08,.48,17,id);this.emissive(x-.18,y+.31,z+1.14+j*.65,Math.floor(phase*4)===j?18:17,id);}this.emissive(x,y,z+3.75,18,id);
+    for(let m=0;m<3;m++){const mq=(this.time*1.5+m*.33)%1,ma=m*Math.PI*2/3+this.time;this.box(x+Math.cos(ma)*.35,y+Math.sin(ma)*.35,z+1.2+mq*2.2,.14,.14,.14,mq<.5?18:17);}
+   }
   } else if(k===16){
    const levels=p<.5?1:p<.85?2:3;
    for(let j=0;j<levels;j++){if(p>=.85||j===0)this.box(x,y,z+.3+j*.85,1.65-j*.28,1.65-j*.28,.72,p>=.85?13:12,id);
@@ -976,8 +982,11 @@ export class Renderer {
    for(let a=-1;a<=1;a+=2)this.box(x+a*1.3,y,z+.3,.25,2.6,1.8,8,id);
    if(p>=.5){this.box(x,y,z+1.7,2.8,2.7,.22,7,id);this.box(x-.7,y-.6,z+1.9,.55,.6,1.1,4,id);this.box(x-.7,y-.6,z+2.95,.68,.7,.15,7,id);this.box(x+.65,y-.5,z+1.9,.4,.4,.85,7,id);this.box(x+.65,y-.5,z+2.75,.4,.4,.15,22,id);
     this.box(x,y+1.34,z+.3,1.25,.18,1.3,1,id);this.box(x,y+1.45,z+.35,.9,.12,.95,25,id);this.box(x,y+1.53,z+.4,.45,.1,.65,27,id);this.box(x,y+1.8,z+.21,.5,.6,.06,26,id);this.emissive(x,y+1.6,z+.73,27,id,2,2);
-    for(let j=0;j<8;j++){const a=(j/8+phase)*Math.PI*2;this.box(x+1.48,y+Math.cos(a)*.55,z+1.+Math.sin(a)*.55,.2,.24,.24,21,id);}
-    for(let j=0;j<5;j++){const q=(this.time/2+j/5)%1,size=.32+Math.floor(q*3)*.24;this.box(x-.7+q*.95,y-.6+q*.25,z+3.1+q*2.1,size,size,.28+q*.2,q<.65?6:4);}}
+     for(let j=0;j<8;j++){const a=(j/8+phase)*Math.PI*2;this.box(x+1.48,y+Math.cos(a)*.55,z+1.+Math.sin(a)*.55,.2,.24,.24,21,id);}
+     const hammerCycle=(this.time*2.5)%1,hammerDown=hammerCycle<.25;
+     this.box(x+.4,y-.3,z+1.6+(hammerDown?0:Math.sin(hammerCycle*Math.PI)*.4),.35,.35,.45,6,id);
+     if(hammerDown){for(let s=0;s<4;s++){const sa=s*Math.PI/2+this.time*4;this.box(x+.4+Math.cos(sa)*.25,y-.3+Math.sin(sa)*.25,z+1.45,.1,.1,.1,27);}}
+     for(let j=0;j<5;j++){const q=(this.time/2+j/5)%1,size=.32+Math.floor(q*3)*.24;this.box(x-.7+q*.95,y-.6+q*.25,z+3.1+q*2.1,size,size,.28+q*.2,q<.65?6:4);}}
   }
   if(p>=.5)this.facade(x,y,z,k,p,id);
   if(p>=.85&&k!==12&&k!==16){for(let j=0;j<2;j++)this.crate(x+w*.5+.3,y+.6*j,z,.38,id);}
@@ -1318,23 +1327,8 @@ export class Renderer {
    if(strike)this.wardRing(x,y,z+.16,.7+(q-.5)*2.2,18);
    return;
   }
-  if(k===26){ // Star Ram: paired tracks, ribs, square ram sliding on rails.
-   const settle=active?0:(moving?.12*Math.abs(walk):idle*.18);
-   for(let side=-1;side<=1;side+=2){
-    this.box(x-.1,y+side*.53,z,1.85,.34,.31,4,id);
-    for(let j=0;j<4;j++)this.box(x-.74+j*.42+(moving?walk*.14:0),y+side*.71,z+.05,.17,.06,.22,6,id);
-    this.box(x-.12,y+side*.48,z+.29+settle,1.57,.29,.26,13,id,-1);
-    this.box(x+.44,y+side*.3,z+.62+settle,1.36,.11,.12,7,id);
-   }
-   this.box(x-.25,y,z+.34+settle,1.47,.88,.54,13,id);
-   for(let j=0;j<3;j++)this.box(x-.73+j*.39,y,z+.86+settle,.12,.91,.16,8,id);
-   const ram=stroke*1.3;
-   this.box(x+.58+ram,y,z+.65+settle,1.02,.25,.21,6,id);
-   this.box(x+1.01+ram,y,z+.49+settle,.39,.92,.67,8,id);
-   this.box(x+1.22+ram,y,z+.61+settle,.045,.56,.4,21,id);
-   this.box(x-.8,y-.28,z+.93+settle,.17,.18,.5,4,id);
-   this.box(x-.8,y-.28,z+1.42+settle+(active?0:idle*.06),.19,.2,.08,7,id);
-   if(strike){this.emissive(x+1.28+ram,y,z+.87,22,-1,2,2);this.wardRing(x+1.34+ram,y,z+.59,.32+(q-.5),22);}
+  if(k===26){
+   drawSiegeJuggernaut(this,x,y,z,id,{kind:26,state,phase:q,tick});
    return;
   }
   if(k===32){ // Ashhand: low hood, bent knees, hand hook and levered pry bar.
@@ -1380,61 +1374,14 @@ export class Renderer {
    this.box(x-.42,y,z+1.51+settle,.11,.58,.06,6,id);
    return;
   }
-  if(k===34){ // Hookguard: crouched boarder; plank shield opposite the hook.
-   for(let side=-1;side<=1;side+=2){
-    this.box(x+.05+gait*side,y+side*.25,z,.35,.22,.2,23,id);
-    this.box(x-.12,y+side*.22,z+.18,.27,.2,.3,24,id,-1);
+   if(k===34){
+    drawSiegeJuggernaut(this,x,y,z,id,{kind:34,state,phase:q,tick});
+    return;
    }
-   this.box(x-.12+stroke*.25,y,z+.34+bob,.6,.55,.45,24,id,-1);
-   this.box(x+.1+stroke*.25,y,z+.77+bob,.4,.4,.3,23,id,-1);
-   this.box(x+.29,y,z+.83+bob,.08,.22,.11,25,id);
-   for(let j=0;j<3;j++)this.box(x+.23,y-.4+j*.12,z+.22+bob,.13,.105,.72,24,id);
-   this.box(x+.31,y-.28,z+.43+bob,.06,.41,.09,6,id);
-   const hookStroke=active?stroke:idle*.1;
-   this.box(x+.32+hookStroke,y+.32,z+.58+bob,.39,.18,.17,25,id);
-   const chop=strike?-.08:raise*.12;
-   this.strut(x+.45+hookStroke,y+.34,z+.62+bob,.17,0,.23+chop,.075,6,id,2);
-   this.hook(x+.62+hookStroke,y+.34,z+.83+bob+chop,.53,6,id);
-   if(strike)this.box(x+.98,y+.34,z+.59,.18,.18,.14,32+26);
-   return;
-  }
-  if(k===30){ // Ash Jackal: jointed centaur chassis fused to a bow-bearing torso.
-   const settle=active?0:(moving?.1*Math.abs(walk):.17*idle);
-   for(let end=-1;end<=1;end+=2)for(let side=-1;side<=1;side+=2){
-    const step=moving?gait*end*side:idle*.12*end*side;
-    this.box(x+end*.65+step,y+side*.42,z,.28,.22,.16,23,id);
-    this.strut(x+end*.65+step,y+side*.42,z+.14,-end*.2,0,.33,.12,24,id,2);
-    this.strut(x+end*.45,y+side*.42,z+.47,end*.12,0,.26,.13,25,id,2);
+   if(k===30){
+    drawAshJackal(this,x,y,z,id,{state,phase:q,tick,cooldown:e[o+11]},this.jackalVariant);
+    return;
    }
-   this.box(x-.16,y,z+.59+settle,1.48,.64,.34,24,id,-1);
-   this.box(x-.54,y,z+.9+settle,.48,.7,.13,25,id,-1);
-   const recoil=strike?-.15:0,torso=x+.36+recoil;
-   this.box(torso,y,z+.86+settle,.43,.46,.46,24,id,-1);
-   this.box(torso+.06,y,z+1.32+settle,.35,.36,.27,23,id,-1);
-   this.box(torso+.23,y,z+1.37+settle,.08,.2,.09,26,id);
-   // Quiver behind the fused waist, with three distinct arrow nocks.
-   this.box(x-.19,y-.37,z+.88+settle,.32,.22,.53,23,id);
-   for(let j=0;j<3;j++)this.box(x-.28+j*.1,y-.37,z+1.3+settle,.045,.07,.29,25,id);
-   this.box(x-.98,y+(active?0:idle*.12),z+.68+settle,.4,.14,.24,25,id,-1);
-   const draw=active?(q<.36?windup:q<.5?1:q<.68?0:recover*.3):.4+idle*.12;
-   const bow=x+.97+recoil,hand=x+.65-draw*.2+recoil;
-   this.box(torso+.24,y+.22,z+1.09+settle,.45,.15,.14,25,id);
-   this.strut(torso,y-.25,z+1.11+settle,hand-torso,.42,0,.1,24,id,2);
-   // Vertical recurved bow, taut V string, and nocked ember arrow. Its
-   // open gap and high archer head remain legible at all four camera yaws.
-   for(let side=-1;side<=1;side+=2){
-    this.strut(bow,y+.24,z+1.13+settle,-.13,0,side*.26,.075,26,id,2);
-    this.strut(bow-.13,y+.24,z+1.13+side*.26+settle,-.16,0,side*.14,.065,25,id,2);
-    this.strut(bow-.29,y+.24,z+1.13+side*.4+settle,hand-(bow-.29),0,-side*.4,.032,27,id,2);
-   }
-   if(!strike)this.box((hand+bow)/2,y+.24,z+1.14+settle,bow-hand+.18,.045,.045,26,id);
-   if(strike){
-    const flight=(q-.5)/.18;
-    this.box(x+1.2+flight*.65,y+.24,z+1.14,.42,.055,.055,32+26);
-    this.box(x+1.44+flight*.65,y+.24,z+1.14,.1,.09,.08,32+27);
-   }
-   return;
-  }
   if(k===35){ // Sootwing: soot-black swept wings and two ember dart pods.
    const hover=active?0:(moving?walk*.1:idle*.12),recoil=strike?-.16:0;
    this.box(x+recoil,y,z+hover,1.14,.36,.24,2,id,-1);
@@ -1485,7 +1432,15 @@ export class Renderer {
   // Brief numeric roles: 21 tall lancer, 22 wing/disc, 23 rifle knight.
   // Keep the simulation's existing kind names, cargo and action fields intact.
   const attacking=state===2,recoil=attacking&&phase<.18?.23:0;
-  if(k===21||k===23){
+  if(k===21){
+   drawPackBeetle(this,x,y,z,id,{state,phase,tick:Math.round(this.time*60),cargo:e[o+10]});
+   return;
+  }
+  if(k===22){
+   drawWardSentinel(this,x,y,z,id,{state,phase,tick:Math.round(this.time*60)});
+   return;
+  }
+  if(k===23){
    const brace=attacking?.34:.23;
    for(let side=-1;side<=1;side+=2){
     this.box(x+gait*side,y+side*brace,z,.28,.24,.42,10,id);
@@ -1499,49 +1454,14 @@ export class Renderer {
    this.box(x-recoil,y,z+1.32,.42,.44,.16,1,id);
    this.box(x-recoil,y,z+1.48,.36,.38,.27,8,id,-2);
    this.box(x+.19-recoil,y,z+1.52,.16,.22,.14,18,id);
-   // One shoulder carries an ivory glint inside the unchanged actor contour.
    for(let side=-1;side<=1;side+=2)this.box(x-recoil,y+side*.3,z+1.02,.46,.27,.26,side<0?9:8,id);
-   // Side-mounted barrel has a continuous large fill and a long tip.
    this.box(x+.38-recoil,y+.32,z+.96,.92,.2,.2,10,id);
    this.box(x+.95-recoil,y+.32,z+.99,.14,.08,.14,22,id);
-   if(k===21&&e[o+10]>0)this.crate(x-.36,y-.24,z+.55,.38,id);
-   if(attacking&&e[o+11]>.8)this.emissive(x+1.23-recoil,y+.32,z+1.11,k===23?18:22,id,2,2);
-   return;
-  }
-  if(k===22){
-   // Low teal hub and swept wings, ivory tips, split landing feet.
-   const spread=attacking?.16:0;
-   for(let side=-1;side<=1;side+=2){
-    this.box(x-.12+gait*side,y+side*.4,z,.35,.25,.24,10,id);
-    this.box(x-.15-recoil,y+side*(.49+spread),z+.42,.63,.68,.22,14,id);
-    this.box(x-.15-recoil,y+side*(.49+spread),z+.65,.18,.68,.08,10,id);
-    this.box(x-.35-recoil,y+side*(.85+spread),z+.44,.4,.3,.16,8,id);
-   }
-   this.box(x-recoil,y,z+.28,.75,.76,.4,13,id,-1);
-   this.box(x+.12-recoil,y,z+.67,.48,.5,.12,1,id);
-   this.box(x+.22-recoil,y,z+.79,.35,.38,.23,9,id,-1);
-   this.box(x-recoil,y,z+.88,.13,.13,.04,17,id);
-   this.box(x+.65-recoil,y,z+.78,.65,.22,.2,10,id);
-   this.box(x+.95-recoil,y,z+.81,.14,.08,.14,22,id);
-   if(attacking&&e[o+11]>.8)this.emissive(x+.98-recoil,y,z+.95,22,id,2,2);
+   if(attacking&&e[o+11]>.8)this.emissive(x+1.23-recoil,y+.32,z+1.11,18,id,2,2);
    return;
   }
   if(k===31){
-   // Heavy low chassis: broad armored rails and a stepped siege gun.
-   const brace=attacking?.12:0;
-   for(let side=-1;side<=1;side+=2){
-    this.box(x,y+side*(.62+brace),z,1.54,.36,.32,1,id);
-    this.box(x-.1,y+side*(.6+brace),z+.3,1.5,.34,.38,25,id,-1);
-   }
-   this.box(x-.14-recoil,y,z+.46,1.65,1.25,.59,25,id,-1);
-   this.box(x-.43-recoil,y,z+.94,.75,.97,.2,25,id,-1);
-   this.box(x+.41-recoil,y,z+.67,.76,.61,.4,23,id);
-   this.box(x+.53-recoil,y,z+.8,.46,.43,.29,26,id);
-   this.box(x+.84-recoil,y,z+.79,.78,.28,.25,23,id);
-   this.box(x+1.2-recoil,y,z+.85,.18,.1,.16,27,id);
-   this.box(x-.2-recoil,y,z+1.06,.2,1.25,.12,23,id);
-   this.box(x+.22-recoil,y,z+.98,.47,.5,attacking?.8:.55,25,id,-2);
-   if(attacking&&e[o+11]>.88)this.emissive(x+1.27-recoil,y,z+.95,27,id,2,2);
+   drawCinderStrider(this,x,y,z,id,{state,phase,tick:Math.round(this.time*60),cooldown:e[o+11]});
    return;
   }
   // Riveter: compact round hood and backpack, with a warm face/tool cluster.
@@ -1560,40 +1480,81 @@ export class Renderer {
   if(strike){this.box(x+.6,y,z+.4,.15,.15,.15,18);this.box(x+.8,y,z+.58,.1,.1,.1,22);}
  }
 
- private wreck(x:number,y:number,z:number,kind:number) {
-  const cinder=cinderUnits.has(kind)||cinderBuildings.has(kind);
-  this.box(x,y,z,.48,.45,.2,cinder?23:4);
-  this.box(x+.28,y+.12,z,.2,.2,.14,cinder?24:7);
- }
- private effects(e:Float32Array,o:number) {
-  const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],sub=e[o+10],age=e[o+11],dx=Math.cos(e[o+3]),dy=Math.sin(e[o+3]);
-  if(k===50&&sub===30&&this.authoritativeActors){
-   this.strut(x,y,z,-dx*.36,-dy*.36,0,.035,26,-1,3);
-   this.box(x,y,z,.08,.08,.075,32+27);return;
+  private wreck(x:number,y:number,z:number,kind:number) {
+   const cinder=cinderUnits.has(kind)||cinderBuildings.has(kind);
+   this.box(x,y,z,.72,.65,.24,cinder?23:4);
+   this.box(x+.2,y+.1,z+.2,.35,.32,.18,cinder?24:7);
+   this.box(x-.22,y-.15,z+.08,.28,.4,.14,cinder?25:11);
+   this.box(x+.05,y-.05,z+.22,.14,.14,.08,cinder?27:22);
+   for(let j=0;j<3;j++){
+    const sq=(this.time*.8+j*.33)%1,sw=Math.sin(this.time*2+j)*.12;
+    this.box(x+sw,y+sw*.5,z+.35+sq*1.4,.22+sq*.18,.22+sq*.18,.22,sq<.4?(cinder?26:5):(sq<.7?4:3));
+   }
   }
-  if(k===50){const color=sub===30||sub===31?26:sub===22?22:17;
-   const steps=sub===30?3:sub===23?7:sub===31?5:4;
-   for(let j=steps-1;j>=0;j--){const q=j*(sub===30?.48:.26);this.box(x-dx*q,y-dy*q,z-(sub===31?j*.035:0),.13,.13,.115,32+color);}
-   this.emissive(x,y,z+.12,32+(sub===30||sub===31?27:sub===22?22:18),-1,2,1);
-   if(sub===31)this.box(x,y,this.ground(x,y)+.05,.22,.22,.02,2);
-  }else if(k===51){
-   const blast=sub===31,r=.18+Math.floor(age*12)*(blast?.23:.1);
-   if(age<.2)this.box(x,y,z,.38,.38,.46,32+(blast?27:9),-1,-2);
-   for(let j=0;j<6;j++){const a=j*Math.PI/3;this.box(x+Math.cos(a)*r,y+Math.sin(a)*r,z+.08+(j%2)*.16,.24,.24,.23,32+(age<.25?(sub===30||blast?26:18):20));}
-   if(blast&&age>.2)for(let j=0;j<5;j++)this.box(x+(j-2)*r*.45,y+(j%2)*.4,this.ground(x,y)+.1,.3,.35,.12,age<.5?5:4);
+  private effects(e:Float32Array,o:number) {
+   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],sub=e[o+10],age=e[o+11],dx=Math.cos(e[o+3]),dy=Math.sin(e[o+3]);
+   if(k===50&&sub===30&&this.authoritativeActors){
+    this.strut(x,y,z,-dx*.36,-dy*.36,0,.035,26,-1,3);
+    this.box(x,y,z,.08,.08,.075,32+27);return;
+   }
+   if(k===50){const color=sub===30||sub===31?26:sub===22?22:17;
+    const steps=sub===30?3:sub===23?7:sub===31?5:4;
+    for(let j=steps-1;j>=0;j--){const q=j*(sub===30?.48:.26);this.box(x-dx*q,y-dy*q,z-(sub===31?j*.035:0),.13,.13,.115,32+color);}
+    this.emissive(x,y,z+.12,32+(sub===30||sub===31?27:sub===22?22:18),-1,2,1);
+    if(sub===31)this.box(x,y,this.ground(x,y)+.05,.22,.22,.02,2);
+   }else if(k===51){
+    const blast=sub===31||sub===26||sub===34,r=.18+Math.floor(age*12)*(blast?.28:.12);
+    if(age<.3)this.box(x,y,z,.48,.48,.52,32+(blast?27:9),-1,-2);
+    for(let j=0;j<8;j++){
+     const a=j*Math.PI/4;
+     this.box(x+Math.cos(a)*r,y+Math.sin(a)*r,z+.08+(j%2)*.16,.24,.24,.23,32+(age<.25?(sub===30||blast?26:18):20));
+     this.box(x+Math.cos(a)*(r+.12),y+Math.sin(a)*(r+.12),this.ground(x,y)+.03,.16,.16,.02,32+(blast?25:17));
+    }
+    for(let j=0;j<6;j++){
+     const sa=j*Math.PI/3,traj=age*2.2;
+     this.box(x+Math.cos(sa)*traj,y+Math.sin(sa)*traj,z+.2+Math.sin(age*Math.PI)*.7-traj*.35,.12,.12,.12,j%2===0?21:26);
+    }
+    if(age>.2){const sq=(age-.2)/.8;this.box(x,y,z+.2+sq*1.2,.35+sq*.25,.35+sq*.25,.3,sq<.5?5:3);}
+   }
+   else if(k===52)this.wreck(x,y,z,sub);
   }
-  else if(k===52)this.wreck(x,y,z,sub);
- }
- private ambient(t:number) {
-  for(let j=0;j<16;j++){const x=19+j*17%76/10,y=25.6+j*11%31/10,z=this.ground(x,y),sway=Math.floor(t/1.4+j)%2*.18;this.box(x+sway,y,z,.13,.12,.38,21);this.box(x+.2+sway,y+.08,z,.12,.13,.48,20);this.box(x-.18,y,z,.13,.12,.27,21);}
-  for(let j=0;j<3;j++){const q=(t/5+j/3)%1;for(let a=0;a<9;a++)this.box(19+j*2+q*2+a*.24,26+j*.6+(a%3)*.09,this.ground(19+j*2,26+j*.6)+.15,.18,.16,.05,a%3===0?21:20);}
-  for(let j=0;j<12;j++){const q=(t/(7+j%3*2)+j*.27)%1,x=7+j*17%58/10+q*.4,y=3+j*7%40/10;this.box(x,y,1.5+q*.6,.07,.07,.08,30);}
-  for(let j=0;j<4;j++){if((Math.floor(t*5)+j*3)%18>5)continue;const x=j===0?8:j===1?9:j===2?11:12,y=j%2===0?4:6,h=j===0?1.9:j===1?2.3:j===2?1.4:1.8;this.emissive(x+.12,y-.25,this.ground(x+.12,y-.25)+h,31,-1,1,1);}
-  const warning=t>=33&&(t-33)%30<3&&Math.floor(t*2)%2===0;
-  for(let j=0;j<3;j++){const x=29+j*.65,y=4+j*.6;this.box(x,y,this.ground(x,y)+.15,.18,.18,.4,warning?22:19);}
-  // Freighter and haze remain behind the north rim at every discrete camera yaw.
-  const q=t%45;if(q<9){const x=3+q*1.1,y=1.;this.box(x,y,3.2,2.,.45,.25,4);this.box(x-.6,y,3.45,.55,.5,.18,5);this.box(x-1.2,y,3.2,.18,.2,.12,21);}
- }
+  private drawSkybox() {
+   const cx=88,cy=44,r=22;
+   for(let dy=-r;dy<=r;dy++){
+    const span=Math.round(Math.sqrt(r*r-dy*dy));
+    if(span<=0)continue;
+    const y=cy+dy,xLeft=cx-span,width=span*2;
+    const crescentW=Math.max(1,Math.round(span*.35)),midW=Math.max(1,Math.round(span*.4));
+    const darkW=Math.max(1,width-crescentW-midW);
+    this.box(xLeft+crescentW*.5,y,0,crescentW,1,0,9,-1,2);
+    this.box(xLeft+crescentW+midW*.5,y,0,midW,1,0,7,-1,2);
+    this.box(xLeft+crescentW+midW+darkW*.5,y,0,darkW,1,0,2,-1,2);
+   }
+   this.box(cx-4,cy-5,0,5,3,0,4,-1,2);
+   this.box(cx+6,cy+4,0,4,3,0,3,-1,2);
+   this.box(cx+1,cy+9,0,5,3,0,3,-1,2);
+   for(const [hy,hw,c] of [[68,420,28],[76,440,29],[84,460,23],[92,480,19]] as const){
+    this.box(240,hy,0,hw,1.5,0,c,-1,2);
+   }
+  }
+  private ambient(t:number) {
+   this.drawSkybox();
+   for(let j=0;j<16;j++){const x=19+j*17%76/10,y=25.6+j*11%31/10,z=this.ground(x,y),sway=Math.floor(t/1.4+j)%2*.18;this.box(x+sway,y,z,.13,.12,.38,21);this.box(x+.2+sway,y+.08,z,.12,.13,.48,20);this.box(x-.18,y,z,.13,.12,.27,21);}
+   for(let j=0;j<3;j++){const q=(t/5+j/3)%1;for(let a=0;a<9;a++)this.box(19+j*2+q*2+a*.24,26+j*.6+(a%3)*.09,this.ground(19+j*2,26+j*.6)+.15,.18,.16,.05,a%3===0?21:20);}
+   for(let j=0;j<12;j++){const q=(t/(7+j%3*2)+j*.27)%1,x=7+j*17%58/10+q*.4,y=3+j*7%40/10;this.box(x,y,1.5+q*.6,.07,.07,.08,30);}
+   for(let j=0;j<4;j++){if((Math.floor(t*5)+j*3)%18>5)continue;const x=j===0?8:j===1?9:j===2?11:12,y=j%2===0?4:6,h=j===0?1.9:j===1?2.3:j===2?1.4:1.8;this.emissive(x+.12,y-.25,this.ground(x+.12,y-.25)+h,31,-1,1,1);}
+   const warning=t>=33&&(t-33)%30<3&&Math.floor(t*2)%2===0;
+   for(let j=0;j<3;j++){const x=29+j*.65,y=4+j*.6;this.box(x,y,this.ground(x,y)+.15,.18,.18,.4,warning?22:19);}
+   for(let j=0;j<24;j++){
+    const speed=.4+(j%3)*.2;
+    const px=((this.camX+((t*speed+j*4.2)%36)-18)+this.terrainSide)%this.terrainSide;
+    const py=((this.camY+((t*speed*.6+j*2.3)%30)-15)+this.terrainSide)%this.terrainSide;
+    const pz=this.ground(px,py)+.3+Math.sin(t*2+j)*.2;
+    this.box(px,py,pz,.08,.08,.08,j%4===0?21:(j%4===1?17:30));
+   }
+   // Freighter and haze remain behind the north rim at every discrete camera yaw.
+   const q=t%45;if(q<9){const x=3+q*1.1,y=1.;this.box(x,y,3.2,2.,.45,.25,4);this.box(x-.6,y,3.45,.55,.5,.18,5);this.box(x-1.2,y,3.2,.18,.2,.12,21);}
+  }
  private rect(x:number,y:number,w:number,h:number,c:number) {this.box(x+w/2,y+h/2,0,w,h,0,c,-1,1);}
  private text(value:string,x:number,y:number,color=9) {for(let i=0;i<value.length;i++){const g=glyphs[value[i]]||glyphs[' '];for(let p=0;p<g.pixels.length;p++)if(g.pixels[p])this.rect(x+p%g.width,y+Math.floor(p/g.width),1,1,color);x+=g.width+1;}}
  private buttonGlyph(kind:number,x:number,y:number) {
