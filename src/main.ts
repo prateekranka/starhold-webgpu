@@ -2,6 +2,7 @@ import {mountMatchResearch} from './research-panel';
 import type {ContentAbi} from './content-api';
 import './style.css';
 import {Renderer, RENDER_WIDTH, RENDER_HEIGHT, buttonGlyphPixels, type PlacementPreview} from './renderer';
+import {sound} from './audio';
 import {State, names, jobs} from './kinds';
 import {Hud, HQ_POP_CAP, isBuildingKind, isUnitKind, type HudView, type SimAbi} from './hud';
 import {palette} from './kinds';
@@ -441,6 +442,7 @@ function command(op:number,a:number,b:number):number {
  }
  if(!sim||typeof sim.sim_command!=='function')return 0;
  const accepted=sim.sim_command(op>>>0,a>>>0,b>>>0);
+ if(accepted)sound.playOrder(op);
  refreshEntities();updateSelection();syncHud();
  return accepted?1:0;
 }
@@ -662,6 +664,7 @@ function selectDefault() {
 function selectEntity(index:number):boolean {
  if(!sim||!Number.isInteger(index)||index<0||index>=entityCount)return false;
  sim.sim_select(index);refreshEntities();updateSelection();syncHud();
+ if(selected===index)sound.playSelect(entities[index*12+4]);
  return selected===index;
 }
 function selectKind(kind:number):boolean {
@@ -1066,6 +1069,7 @@ function updateSelection() {
 }
 let researchUI:ReturnType<typeof mountMatchResearch>|null=null;
 let previous=0,accumulator=0,windowStart=0,frames=0,tick=0;
+let lastAudioOutcome=0,lastAudioRaidActive=0,lastAudioBreach=0;
 function frame(now:number) {
  if(window.__APP.error||!sim)return;
  try {
@@ -1073,6 +1077,28 @@ function frame(now:number) {
   accumulator+=Math.min(now-previous,250);previous=now;
   while(accumulator>=1000/60){sim.sim_step(1000/60);tick++;accumulator-=1000/60;}
   refreshEntities();updateSelection();syncHud();minimapDraw();researchUI?.update();
+  if(simMode()===1){
+   const outcome=simOutcome();
+   if(outcome!==lastAudioOutcome){
+    if(outcome===1)sound.playAlarm('victory');
+    else if(outcome===2)sound.playAlarm('defeat');
+    lastAudioOutcome=outcome;
+   }
+   const raidActive=sim.sim_raid_active?sim.sim_raid_active():0;
+   const raidBreach=sim.sim_raid_breach?sim.sim_raid_breach():0;
+   if(raidBreach>0&&lastAudioBreach===0){sound.playAlarm('breach');}
+   else if(raidActive>0&&lastAudioRaidActive===0){sound.playAlarm('raid');}
+   lastAudioRaidActive=raidActive;
+   lastAudioBreach=raidBreach;
+   if(tick%8===0&&entityCount>0){
+    for(let i=0;i<entityCount;i++){
+     const k=entities[i*12+4];
+     if(k===50){sound.playCombat('laser');break;}
+     else if(k===51){sound.playCombat('hit');break;}
+     else if(k===52){sound.playCombat('explosion');break;}
+    }
+   }
+  }
   renderer.hudVisible=simMode()===1&&!document.body.classList.contains('game-menu-open');
   renderer.hudButtons=!touchLayout&&!document.body.classList.contains('cinematic-fill');
   renderer.render(entities,entityCount,yawSteps,zooms[zoomIndex],sim.sim_alloy(),sim.sim_charge(),tick);
