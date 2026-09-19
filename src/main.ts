@@ -9,13 +9,14 @@ interface App {
  ready:boolean;error:string|null;
  getState():{touch:boolean;yawSteps:number;zoom:number;selected:number|null;selectedGroup?:number[];selectedCount?:number;entityCount:number;fps:number|null;frameStats:{drawCalls:number;triangles:number}|null;
   mode:number;outcome:number;outcomeTick:number;player:number;age:number;ageProgress:number;popUsed:number;popCap:number;alloy:number;charge:number;selectedKind:number|null;actions:number[];
+  raidActive?:number;raidLane?:number;raidBreach?:number;raidEta?:number;
   worldTiles:number;worldMeters:number;camera:{x:number;y:number};minimap:{open:boolean}};
  /** Read-only heightfield sample: level codes on a fixed grid. */
  terrainSample(step:number):{side:number;stride:number;levels:number[]};
  /** Read-only actor view: one row per live entity. */
  entityProbe():{index:number;kind:number;faction:number;x:number;y:number;z:number;state:number;health:number;progress:number}[];
  rotate(dir:1|-1):void;zoomBy(delta:1|-1):void;selectAt(x:number,y:number):void;fastForward(seconds:number):void;
- startMatch(faction:0|1):void;resetShowcase():void;command(op:number,a:number,b:number):number;
+ startMatch(faction:0|1):void;resetShowcase():void;command(op:number,a:number,b:number):number;triggerRaid?(lane?:number):number;
  selectEntity(index:number):boolean;selectKind(kind:number):boolean;selectMultiple?(indices:number[]):void;
  /** Distinct entity kinds in the current snapshot (read-only coverage probe). */
  kinds():number[];
@@ -110,6 +111,30 @@ function minimapDraw(force=false):void {
   minimapContext.fillStyle=minimapHex(27);
   minimapContext.fillRect(b1x-2,b1y-2,5,5);
  }
+ const raidActive=worldSide>0&&sim&&sim.sim_raid_active?sim.sim_raid_active():0;
+ const raidBreach=raidActive>0&&sim&&sim.sim_raid_breach?sim.sim_raid_breach():0;
+ const raidLane=raidActive>0&&sim&&sim.sim_raid_lane?sim.sim_raid_lane():0;
+ if(raidActive>0&&sim&&sim.sim_corridor_wp){
+  minimap.classList.add('alert');
+  minimap.classList.toggle('breach',raidBreach>0);
+  minimapContext.save();
+  minimapContext.strokeStyle=raidBreach?'#E2C044':'#BC4A45';
+  minimapContext.lineWidth=raidBreach?2:1.5;
+  minimapContext.setLineDash([4,3]);
+  minimapContext.lineDashOffset=-(performance.now()/60)%7;
+  minimapContext.beginPath();
+  for(let wp=0;wp<=10;wp++){
+   const wx=sim.sim_corridor_wp(raidLane,wp,0);
+   const wy=sim.sim_corridor_wp(raidLane,wp,1);
+   const mx=Math.floor(wx*scale),my=Math.floor(wy*scale);
+   if(wp===0)minimapContext.moveTo(mx,my);else minimapContext.lineTo(mx,my);
+  }
+  minimapContext.stroke();
+  minimapContext.restore();
+ } else {
+  minimap.classList.remove('alert');
+  minimap.classList.remove('breach');
+ }
  for(let i=0;i<entityCount;i++) {
   const kind=entities[i*12+4];
   const ore=kind===40;
@@ -127,6 +152,12 @@ function minimapDraw(force=false):void {
   } else {
    minimapContext.fillStyle=minimapHex(f===1?26:14);
    minimapContext.fillRect(ex-1,ey-1,2,2);
+   if(raidActive>0&&f!==simPlayer()){
+    minimapContext.strokeStyle=raidBreach?'#E2C044':'#BC4A45';
+    minimapContext.lineWidth=1;
+    const pulse=3+Math.floor((performance.now()/250)%3);
+    minimapContext.strokeRect(ex-pulse,ey-pulse,pulse*2+1,pulse*2+1);
+   }
   }
  }
  const reach=Math.max(5,24*zooms[zoomIndex]);
@@ -282,6 +313,47 @@ function buildTile():number {
  return tileOf(x,y);
 }
 const view:HudView={ready:false,match:false,mode:0,outcome:0,player:0,age:0,ageProgress:1,ageCost:0,ageCostCharge:0,alloy:0,charge:0,popUsed:0,popCap:0,selected:null,selectedKind:null,selectedState:-1,tile:0,placementKind:null,placementValid:false};
+const raidWarning=document.getElementById('raid-warning') as HTMLDivElement|null;
+const raidBadge=document.getElementById('raid-badge') as HTMLSpanElement|null;
+const raidDetail=document.getElementById('raid-detail') as HTMLSpanElement|null;
+
+function updateRaidWarning():void {
+ if(!raidWarning||!raidBadge||!raidDetail)return;
+ if(!sim||simMode()!==1){
+  raidWarning.classList.add('off');
+  return;
+ }
+ const active=sim.sim_raid_active?sim.sim_raid_active():0;
+ if(active>0){
+  const lane=sim.sim_raid_lane?sim.sim_raid_lane():0;
+  const breach=sim.sim_raid_breach?sim.sim_raid_breach():0;
+  const laneName=lane===0?'EAST CANYON':'WEST CANYON';
+  raidWarning.classList.remove('off');
+  if(breach>0){
+   raidWarning.classList.add('breach');
+   raidBadge.textContent='🚨 CANYON BREACH';
+   raidDetail.textContent=`${active} RAIDERS ASSAULTING BASE VIA ${laneName}`;
+  }else{
+   raidWarning.classList.remove('breach');
+   raidBadge.textContent='⚠ RAID WARNING';
+   raidDetail.textContent=`${active} RAIDERS APPROACHING VIA ${laneName}`;
+  }
+ }else{
+  raidWarning.classList.add('off');
+ }
+}
+raidWarning?.addEventListener('click',()=>{
+ if(!sim||worldSide<=0)return;
+ const foe=1-simPlayer();
+ for(let i=0;i<entityCount;i++){
+  if(entities[i*12+9]===foe&&isUnitKind(entities[i*12+4])&&entities[i*12+5]!==State.Death){
+   renderer.setView(entities[i*12],entities[i*12+1]);
+   camX=renderer.viewX;camY=renderer.viewY;
+   reprojectPlacement();minimapDraw(true);
+   break;
+  }
+ }
+});
 /** Push the current sim/selection state into the DOM bar. The view object is
  *  reused, so the bar never allocates per frame. */
 function syncHud() {
@@ -306,6 +378,7 @@ function syncHud() {
  view.placementKind=placementState.active?placementState.kind:null;
  view.placementValid=placementState.valid;
  hud.update(sim,view);
+ updateRaidWarning();
 }
 function startMatch(faction:0|1) {
  if(!sim||typeof sim.sim_match_init!=='function')return;
@@ -662,8 +735,9 @@ function tileScreen(tx:number,ty:number):{x:number;y:number}|null {
 window.__APP={ready:false,error:null,getState:()=>({touch:touchLayout,yawSteps,zoom:zooms[zoomIndex],selected,selectedGroup:Array.from(selectedGroup),selectedCount:selectedGroup.size,entityCount,fps,frameStats:window.__APP.ready?renderer.stats:null,
  mode:simMode(),outcome:simOutcome(),outcomeTick:simOutcomeTick(),player:simPlayer(),age:simAge(),ageProgress:simAgeProgress(),popUsed:simPopUsed(),popCap:simPopCap(),
  alloy:sim?sim.sim_alloy():0,charge:sim?sim.sim_charge():0,selectedKind:currentKind(),actions:hud.actions(),
+ raidActive:sim&&sim.sim_raid_active?sim.sim_raid_active():0,raidLane:sim&&sim.sim_raid_lane?sim.sim_raid_lane():0,raidBreach:sim&&sim.sim_raid_breach?sim.sim_raid_breach():0,raidEta:sim&&sim.sim_raid_eta?sim.sim_raid_eta():0,
  worldTiles:worldSide,worldMeters:worldSide*(sim&&typeof sim.sim_metres_per_tile==='function'?sim.sim_metres_per_tile():10),camera:{x:camX,y:camY},minimap:{open:!minimap.classList.contains('off')}}),
- rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,command,selectEntity,selectKind,selectMultiple,kinds,entityScreen,tileScreen,terrainSample,entityProbe,placement:()=>({...placementState})};
+ rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,command,triggerRaid:(lane=0)=>command(8,lane,0),selectEntity,selectKind,selectMultiple,kinds,entityScreen,tileScreen,terrainSample,entityProbe,placement:()=>({...placementState})};
 const canvas=document.querySelector<HTMLCanvasElement>('#world')!;
 const viewport=document.querySelector<HTMLElement>('#viewport')!;
 const selection=document.querySelector<HTMLOutputElement>('#selection')!;

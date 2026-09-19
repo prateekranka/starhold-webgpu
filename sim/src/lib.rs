@@ -854,6 +854,12 @@ impl Sim {
             5 => self.order_target_group(f, if (a as usize) < self.count { self.ids[a as usize] } else { a as usize }),
             6 => self.order_move(f, if (a as usize) < self.count { self.ids[a as usize] } else { a as usize }, (b >> 16) & 0xFFFF, b & 0xFFFF),
             7 => self.order_target(f, if (a as usize) < self.count { self.ids[a as usize] } else { a as usize }, if (b as usize) < self.count { self.ids[b as usize] } else { b as usize }),
+            8 => {
+                let foe = 1 - self.game.player;
+                let lane = (a % 2) as usize;
+                self.dispatch_raid(foe, lane, true);
+                true
+            }
             _ => false,
         };
         if accepted { self.pack(); }
@@ -1457,23 +1463,42 @@ impl Sim {
         // At 150 s, then every 90 s: dispatch at most 3, 4, 5, then 6 paid
         // combat units, keeping two defenders. Raids last 35 s, then return.
         if t >= self.game.next_raid {
-            let limit = (3 + self.game.waves as usize).min(6);
-            let mut sent = 0;
+            let lane = (self.game.waves % 2) as usize;
+            self.dispatch_raid(f, lane, false);
+            self.game.waves += 1;
+            self.game.next_raid += 90 * 60;
+        }
+    }
+    fn dispatch_raid(&mut self, f: usize, lane: usize, allow_defenders: bool) -> u32 {
+        let t = self.tick;
+        let limit = (3 + self.game.waves as usize).min(6);
+        let mut sent = 0;
+        for id in 0..MATCH_ACTORS {
+            if sent == limit { break; }
+            if !self.complete(id, f) || self.game.defenders.contains(&id)
+                || self.game.orders[id] != Order::Defend { continue; }
+            let k = roster(self.entities[id].data[4] as u32).unwrap();
+            if k.klass != 1 || k.damage == 0. || aircraft(k.kind) { continue; }
+            let march = (990. / k.speed.max(0.1)).ceil() as u32;
+            self.game.orders[id] = Order::Raid(t + (120 + march) * 60);
+            self.game.waypoints[id] = 1;
+            self.game.lanes[id] = (lane % 2) as u8;
+            sent += 1;
+        }
+        if sent == 0 && allow_defenders {
             for id in 0..MATCH_ACTORS {
-                if sent == limit { break; }
-                if !self.complete(id, f) || self.game.defenders.contains(&id)
-                    || self.game.orders[id] != Order::Defend { continue; }
+                if !self.complete(id, f) { continue; }
                 let k = roster(self.entities[id].data[4] as u32).unwrap();
                 if k.klass != 1 || k.damage == 0. || aircraft(k.kind) { continue; }
                 let march = (990. / k.speed.max(0.1)).ceil() as u32;
                 self.game.orders[id] = Order::Raid(t + (120 + march) * 60);
                 self.game.waypoints[id] = 1;
-                self.game.lanes[id] = (self.game.waves % 2) as u8;
+                self.game.lanes[id] = (lane % 2) as u8;
                 sent += 1;
+                if sent >= 2 { break; }
             }
-            self.game.waves += 1;
-            self.game.next_raid += 90 * 60;
         }
+        sent as u32
     }
     // Count only live roster actors, including unfinished sites. Neutral ore,
     // projectiles and lingering wrecks cannot keep a defeated side alive. Read
@@ -1606,6 +1631,74 @@ impl Sim {
 #[no_mangle] pub extern "C" fn sim_can_train(kind: u32) -> u32 { SIM.with(|s| {
     let s = s.borrow(); (s.mode == 1 && s.can_train(s.game.player, kind, s.selected)) as u32
 }) }
-#[no_mangle] pub extern "C" fn sim_can_build(kind: u32) -> u32 { SIM.with(|s| {
-    let s = s.borrow(); (s.mode == 1 && s.can_build(s.game.player, kind, s.selected)) as u32
-}) }
+#[no_mangle] pub extern "C" fn sim_can_build(kind: u32) -> u32 {
+    SIM.with(|s| {
+        let s = s.borrow(); (s.mode == 1 && s.can_build(s.game.player, kind, s.selected)) as u32
+    })
+}
+#[no_mangle] pub extern "C" fn sim_raid_active() -> u32 {
+    SIM.with(|s| {
+        let s = s.borrow();
+        if s.mode != 1 { return 0; }
+        let foe = 1 - s.game.player;
+        let mut count = 0;
+        for id in 0..MATCH_ACTORS {
+            if s.complete(id, foe) && matches!(s.game.orders[id], Order::Raid(_)) {
+                count += 1;
+            }
+        }
+        count
+    })
+}
+#[no_mangle] pub extern "C" fn sim_raid_lane() -> u32 {
+    SIM.with(|s| {
+        let s = s.borrow();
+        if s.mode != 1 { return 0; }
+        let foe = 1 - s.game.player;
+        for id in 0..MATCH_ACTORS {
+            if s.complete(id, foe) && matches!(s.game.orders[id], Order::Raid(_)) {
+                return s.game.lanes[id] as u32;
+            }
+        }
+        0
+    })
+}
+#[no_mangle] pub extern "C" fn sim_raid_breach() -> u32 {
+    SIM.with(|s| {
+        let s = s.borrow();
+        if s.mode != 1 { return 0; }
+        let foe = 1 - s.game.player;
+        let (bx, by) = s.game.base[s.game.player];
+        for id in 0..MATCH_ACTORS {
+            if s.complete(id, foe) && matches!(s.game.orders[id], Order::Raid(_)) {
+                if s.game.waypoints[id] >= 5 { return 1; }
+                let px = s.entities[id].data[0];
+                let py = s.entities[id].data[1];
+                if ((bx - px).powi(2) + (by - py).powi(2)).sqrt() <= 60. {
+                    return 1;
+                }
+            }
+        }
+        0
+    })
+}
+#[no_mangle] pub extern "C" fn sim_raid_eta() -> u32 {
+    SIM.with(|s| {
+        let s = s.borrow();
+        if s.mode != 1 { return 0; }
+        if s.game.next_raid > s.tick {
+            (s.game.next_raid - s.tick) / 60
+        } else {
+            0
+        }
+    })
+}
+#[no_mangle] pub extern "C" fn sim_corridor_wp(lane: u32, wp: u32, coord: u32) -> f32 {
+    SIM.with(|s| {
+        let s = s.borrow();
+        let foe = if s.mode == 1 { 1 - s.game.player } else { 1 };
+        let path = corridor_path(foe, (lane % 2) as usize, (lane % 2) as usize);
+        let idx = (wp as usize).min(path.len() - 1);
+        if coord == 0 { path[idx].0 } else { path[idx].1 }
+    })
+}

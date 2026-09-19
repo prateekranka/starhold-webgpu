@@ -54,6 +54,11 @@ export interface SimAbi {
   sim_metres_per_tile?(): number;
   sim_base_x?(faction: number): number;
   sim_base_y?(faction: number): number;
+  sim_raid_active?(): number;
+  sim_raid_lane?(): number;
+  sim_raid_breach?(): number;
+  sim_raid_eta?(): number;
+  sim_corridor_wp?(lane: number, wp: number, coord: number): number;
 }
 
 /** One roster row, docs/MATCH_SPEC.md §3. */
