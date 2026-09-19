@@ -1396,27 +1396,66 @@ export class Renderer {
    }
    else if(k===52)this.wreck(x,y,z,sub);
   }
-  private drawSkybox() {
-   const cx=88,cy=44,r=22;
-   for(let dy=-r;dy<=r;dy++){
-    const span=Math.round(Math.sqrt(r*r-dy*dy));
-    if(span<=0)continue;
-    const y=cy+dy,xLeft=cx-span,width=span*2;
-    const crescentW=Math.max(1,Math.round(span*.35)),midW=Math.max(1,Math.round(span*.4));
-    const darkW=Math.max(1,width-crescentW-midW);
-    this.box(xLeft+crescentW*.5,y,0,crescentW,1,0,9,-1,2);
-    this.box(xLeft+crescentW+midW*.5,y,0,midW,1,0,7,-1,2);
-    this.box(xLeft+crescentW+midW+darkW*.5,y,0,darkW,1,0,2,-1,2);
-   }
-   this.box(cx-4,cy-5,0,5,3,0,4,-1,2);
-   this.box(cx+6,cy+4,0,4,3,0,3,-1,2);
-   this.box(cx+1,cy+9,0,5,3,0,3,-1,2);
-   for(const [hy,hw,c] of [[68,420,28],[76,440,29],[84,460,23],[92,480,19]] as const){
-    this.box(240,hy,0,hw,1.5,0,c,-1,2);
+  private drawSkybox(t:number) {
+   const dayProgress=(t/160)%1;
+   const isDay=dayProgress<0.5;
+   if(isDay){
+    // Daytime: Solar orb tracking across the sky with radiant corona
+    const sunAngle=dayProgress*Math.PI*2;
+    const sx=120+Math.cos(sunAngle)*180,sy=28+Math.sin(sunAngle)*18;
+    const sr=12;
+    for(let dy=-sr;dy<=sr;dy++){
+     const span=Math.round(Math.sqrt(sr*sr-dy*dy));
+     if(span<=0)continue;
+     const y=sy+dy,xLeft=sx-span,width=span*2;
+     this.box(xLeft+width*.5,y,0,width,1,0,9,-1,2);
+    }
+    // Solar corona rim
+    for(let dy=-(sr+4);dy<=sr+4;dy++){
+     const span=Math.round(Math.sqrt((sr+4)*(sr+4)-dy*dy));
+     if(span<=0)continue;
+     const y=sy+dy,xLeft=sx-span,width=span*2;
+     this.box(xLeft+width*.5,y,0,width,1,0,22,-1,2);
+    }
+    // Warm morning / midday horizon haze bands
+    for(const [hy,hw,c] of [[68,420,22],[76,440,21],[84,460,20],[92,480,19]] as const){
+     this.box(240,hy,0,hw,1.5,0,c,-1,2);
+    }
+   } else {
+    // Nighttime: Twin sister moons, twinkling starfield, and indigo cosmic nebula
+    const cx=88,cy=44,r=20;
+    for(let dy=-r;dy<=r;dy++){
+     const span=Math.round(Math.sqrt(r*r-dy*dy));
+     if(span<=0)continue;
+     const y=cy+dy,xLeft=cx-span,width=span*2;
+     const crescentW=Math.max(1,Math.round(span*.35)),midW=Math.max(1,Math.round(span*.4));
+     const darkW=Math.max(1,width-crescentW-midW);
+     this.box(xLeft+crescentW*.5,y,0,crescentW,1,0,9,-1,2);
+     this.box(xLeft+crescentW+midW*.5,y,0,midW,1,0,7,-1,2);
+     this.box(xLeft+crescentW+midW+darkW*.5,y,0,darkW,1,0,2,-1,2);
+    }
+    // Secondary distant satellite moon
+    const c2x=320,c2y=32,r2=8;
+    for(let dy=-r2;dy<=r2;dy++){
+     const span=Math.round(Math.sqrt(r2*r2-dy*dy));
+     if(span<=0)continue;
+     this.box(c2x,c2y+dy,0,span*2,1,0,8,-1,2);
+    }
+    // Twinkling stars
+    for(let s=0;s<24;s++){
+     const starX=(s*37+Math.floor(t*0.5)*11)%440+20;
+     const starY=(s*23)%60+10;
+     const starBlink=(Math.floor(t*2+s)%3)===0;
+     this.box(starX,starY,0,1.5,1.5,0,starBlink?9:7,-1,2);
+    }
+    // Deep cosmic nebula bands
+    for(const [hy,hw,c] of [[68,420,28],[76,440,29],[84,460,23],[92,480,1]] as const){
+     this.box(240,hy,0,hw,1.5,0,c,-1,2);
+    }
    }
   }
   private ambient(t:number) {
-   this.drawSkybox();
+   this.drawSkybox(t);
    for(let j=0;j<16;j++){const x=19+j*17%76/10,y=25.6+j*11%31/10,z=this.ground(x,y),sway=Math.floor(t/1.4+j)%2*.18;this.box(x+sway,y,z,.13,.12,.38,21);this.box(x+.2+sway,y+.08,z,.12,.13,.48,20);this.box(x-.18,y,z,.13,.12,.27,21);}
    for(let j=0;j<3;j++){const q=(t/5+j/3)%1;for(let a=0;a<9;a++)this.box(19+j*2+q*2+a*.24,26+j*.6+(a%3)*.09,this.ground(19+j*2,26+j*.6)+.15,.18,.16,.05,a%3===0?21:20);}
    for(let j=0;j<12;j++){const q=(t/(7+j%3*2)+j*.27)%1,x=7+j*17%58/10+q*.4,y=3+j*7%40/10;this.box(x,y,1.5+q*.6,.07,.07,.08,30);}
@@ -1429,6 +1468,27 @@ export class Renderer {
     const py=((this.camY+((t*speed*.6+j*2.3)%30)-15)+this.terrainSide)%this.terrainSide;
     const pz=this.ground(px,py)+.3+Math.sin(t*2+j)*.2;
     this.box(px,py,pz,.08,.08,.08,j%4===0?21:(j%4===1?17:30));
+   }
+   // Atmospheric sandstorm gust front (periodic 15s windstorm every 70s)
+   const stormTime=t%70;
+   if(stormTime>45&&stormTime<62){
+    const gustStrength=(stormTime-45)/17;
+    for(let s=0;s<28;s++){
+     const sx=((this.camX+(t*18+s*4.5)%48-24)+this.terrainSide)%this.terrainSide;
+     const sy=((this.camY+(t*4+s*2.1)%36-18)+this.terrainSide)%this.terrainSide;
+     const sz=this.ground(sx,sy)+0.2+(s%5)*0.35;
+     this.box(sx,sy,sz,0.15+gustStrength*0.18,0.06,0.06,s%3===0?22:21);
+    }
+   }
+   // Dust devil vortex spinning across barren dunes
+   const dvX=((this.camX+Math.sin(t*0.25)*16)+this.terrainSide)%this.terrainSide;
+   const dvY=((this.camY+Math.cos(t*0.2)*14)+this.terrainSide)%this.terrainSide;
+   const dvBase=this.ground(dvX,dvY);
+   for(let v=0;v<12;v++){
+    const vh=v*0.18;
+    const vr=0.12+v*0.06;
+    const va=t*7+v*0.75;
+    this.box(dvX+Math.cos(va)*vr,dvY+Math.sin(va)*vr,dvBase+vh,0.09,0.09,0.08,v%2===0?21:20);
    }
    // Freighter and haze remain behind the north rim at every discrete camera yaw.
    const q=t%45;if(q<9){const x=3+q*1.1,y=1.;this.box(x,y,3.2,2.,.45,.25,4);this.box(x-.6,y,3.45,.55,.5,.18,5);this.box(x-1.2,y,3.2,.18,.2,.12,21);}
