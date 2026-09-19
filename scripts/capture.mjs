@@ -388,6 +388,7 @@ async function hudSnapshot(page) {
     const st = window.__APP.getState();
     const viewport = { vw: innerWidth, vh: innerHeight, dpr: devicePixelRatio };
     const bar = document.querySelector('#hud-bar');
+    const menu = document.querySelector('#game-menu');
     if (!bar) return { st, present: false, ...viewport };
     const cs = getComputedStyle(bar);
     const r = bar.getBoundingClientRect();
@@ -395,15 +396,16 @@ async function hudSnapshot(page) {
       const s = getComputedStyle(el);
       return s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity) > 0.01;
     };
-    const controls = [...bar.querySelectorAll('button, [role="button"], [data-action]')].map((el) => {
+    const sources = [bar, menu && menu.open ? menu : null].filter(Boolean);
+    const controls = sources.flatMap((src) => [...src.querySelectorAll('button, [role="button"], [data-action], [data-faction]')]).map((el) => {
       const b = el.getBoundingClientRect();
       return {
         id: el.id || null,
-        action: el.getAttribute('data-action'),
-        kind: el.getAttribute('data-kind'),
+        action: el.getAttribute('data-action') || el.getAttribute('data-faction'),
+        kind: el.getAttribute('data-kind') || el.getAttribute('data-faction'),
         name: `${el.getAttribute('aria-label') || ''} ${el.textContent || ''}`.replace(/\s+/g, ' ').trim().slice(0, 60),
         disabled: el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true' || el.classList.contains('disabled'),
-        visible: shown(el),
+        visible: shown(el) && b.width > 0 && b.height > 0,
         x: b.x, y: b.y, w: b.width, h: b.height, right: b.right, bottom: b.bottom,
       };
     });
@@ -426,11 +428,12 @@ async function hudSnapshot(page) {
         w: b.width, h: b.height,
       };
     }
+    const combinedText = menu && menu.open ? `${readText(bar)} ${readText(menu)}` : readText(bar);
     return {
       st, present: true, ...viewport,
       display: cs.display, visibility: cs.visibility, opacity: Number(cs.opacity), hiddenAttr: bar.hasAttribute('hidden'),
       x: r.x, y: r.y, w: r.width, h: r.height, right: r.right, bottom: r.bottom,
-      text: readText(bar).slice(0, 500),
+      text: combinedText.slice(0, 500),
       ageText: ageEl ? readText(ageEl).slice(0, 80) : null,
       resText: resEl ? readText(resEl).slice(0, 160) : null,
       controls, progress,
@@ -1017,6 +1020,11 @@ function gate(name, pass, detail) {
       results.shots.push('shot-main.png');
 
       // camera rotation via the REAL buttons
+      const menuOpenOnStart = await page.evaluate(() => document.querySelector('#game-menu')?.open);
+      if (menuOpenOnStart) {
+        await page.evaluate(() => window.__APP.startMatch(0));
+        await page.waitForTimeout(450);
+      }
       const yawBefore = (await state(page)).yawSteps;
       await page.click('#rotate-right');
       await page.waitForTimeout(450);
@@ -1120,6 +1128,12 @@ function gate(name, pass, detail) {
       await guarded('hud-skirmish-entry', async () => {
         await page.evaluate(() => window.__APP.resetShowcase());
         await page.waitForTimeout(500);
+        const menuOpen = await page.evaluate(() => document.querySelector('#game-menu')?.open);
+        if (menuOpen) {
+          const newBtn = page.locator('#game-menu [data-action="new"]');
+          if (await newBtn.isVisible()) await newBtn.click();
+          await page.waitForTimeout(200);
+        }
         const show = await hudSnapshot(page);
         if (!show.present) return { pass: false, detail: 'no #hud-bar' };
         const startButton = (snap, re) => namedControl(snap.controls, re);
@@ -1134,6 +1148,12 @@ function gate(name, pass, detail) {
         const afterDawnward = dawnward ? await start(dawnward) : null;
         await page.evaluate(() => window.__APP.resetShowcase());
         await page.waitForTimeout(450);
+        const menuOpenAgain = await page.evaluate(() => document.querySelector('#game-menu')?.open);
+        if (menuOpenAgain) {
+          const newBtn = page.locator('#game-menu [data-action="new"]');
+          if (await newBtn.isVisible()) await newBtn.click();
+          await page.waitForTimeout(200);
+        }
         const back = await hudSnapshot(page);
         const cinderwakeAgain = startButton(back, /cinderwake/i) || cinderwake;
         const afterCinderwake = cinderwakeAgain ? await start(cinderwakeAgain) : null;

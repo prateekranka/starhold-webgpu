@@ -8,7 +8,8 @@
     "dev": "npm run wasm && vite --port 5199 --strictPort",
     "build": "npm run wasm && tsc --noEmit && vite build",
     "preview": "vite preview --port 5199 --strictPort",
-    "capture": "node scripts/capture.mjs"
+    "capture": "node scripts/capture.mjs",
+    "test:menu:browser": "node scripts/menu-browser.mjs"
   },
   "devDependencies": {
     "playwright": "^1.63.0",

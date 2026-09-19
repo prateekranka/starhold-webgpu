@@ -977,6 +977,7 @@ function frame(now:number) {
   accumulator+=Math.min(now-previous,250);previous=now;
   while(accumulator>=1000/60){sim.sim_step(1000/60);tick++;accumulator-=1000/60;}
   refreshEntities();updateSelection();syncHud();minimapDraw();
+  renderer.hudVisible=simMode()===1&&!document.body.classList.contains('game-menu-open');
   renderer.render(entities,entityCount,yawSteps,zooms[zoomIndex],sim.sim_alloy(),sim.sim_charge(),tick);
   frames++;if(now-windowStart>=1000){fps=frames*1000/(now-windowStart);frames=0;windowStart=now;}
   window.__APP.ready=true;requestAnimationFrame(frame);

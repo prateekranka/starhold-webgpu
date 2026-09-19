@@ -3,5 +3,6 @@ dist/
 sim/target/
 .dream-loop/
 evidence*/
+workshop-evidence/
 *.log
 .tmp/

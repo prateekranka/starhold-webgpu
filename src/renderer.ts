@@ -249,6 +249,7 @@ const buttonPatterns=Array.from({length:4},(_,kind)=>{
 export function buttonGlyphPixels(kind:number):Uint8Array {return buttonPatterns[kind];}
 export class Renderer {
  hudButtons=true;
+ hudVisible=true;
  worldSide=0;
  readonly data=new Float32Array(MAX*STRIDE);
  readonly owners=new Int32Array(MAX);
@@ -1601,7 +1602,7 @@ export class Renderer {
    this.owners.fill(-1,this.count,this.count+previewCount);this.count+=previewCount;
   }
   this.dropped+=this.placementCount-previewCount;
-  this.hud(e,alloy,charge);
+  if(this.hudVisible)this.hud(e,alloy,charge);
   this.markContours(yaw,zoom);
   this.camera[0]=Math.round(Math.cos(yaw*Math.PI/2));this.camera[1]=Math.round(Math.sin(yaw*Math.PI/2));this.camera[2]=1/zoom;this.camera[4]=this.camX;this.camera[5]=this.camY;
   const d=this.device;d.queue.writeBuffer(this.uniform,0,this.camera);d.queue.writeBuffer(this.buffer,0,this.data.buffer,0,this.count*32);d.queue.writeBuffer(this.actorBuffer,0,this.actorData.buffer,0,this.count*16);

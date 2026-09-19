@@ -12,7 +12,7 @@ body { margin:0; overflow:hidden; overscroll-behavior:none; width:100%; height:1
 canvas { display:block; width:100%; height:100%; image-rendering:pixelated; }
 #world { touch-action:none; }
 nav { position:absolute; inset:0; pointer-events:none; }
-#viewport nav button { position:absolute; top:90.37037%; width:4.583333%; height:7.407407%; border:0; background:transparent; cursor:pointer; pointer-events:auto; padding:0; }
+#viewport nav button { position:absolute; top:90.37037%; width:4.583333%; height:7.407407%; min-width:44px; min-height:44px; border:0; background:transparent; cursor:pointer; pointer-events:auto; padding:0; }
 #viewport nav button:focus-visible { outline:2px solid #F1CE72; outline-offset:0; }
 #rotate-left { left:77.083333%; } #rotate-right { left:82.291667%; } #zoom-out { left:87.5%; } #zoom-in { left:92.708333%; }
 #selection { position:absolute; top:12px; left:12px; z-index:10; padding:4px 10px; background:#1B1E30; border:1.5px solid #F1CE72; color:#F3F0D7; font:11px/1.2 monospace; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; pointer-events:auto; white-space:nowrap; max-width:calc(100% - 24px); overflow:hidden; text-overflow:ellipsis; }
