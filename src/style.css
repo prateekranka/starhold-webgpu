@@ -76,6 +76,7 @@ body.mouse #viewport canvas.glyph { display:none; }
 #hud-resources { display:flex; align-items:center; gap:10px; min-width:0; flex:0 0 auto; }
 #hud-resources .m { display:flex; align-items:baseline; gap:4px; font-size:10px; color:#98A4AE; white-space:nowrap; }
 #hud-resources .m .v { color:#F3F0D7; }
+#hud-resources .m .r { font-size:9px; color:#8BD7BE; white-space:nowrap; }
 #hud-alloy .v { color:#F1CE72; }
 #hud-charge .v { color:#58BED4; }
 #hud-pop .v { color:#8BD7BE; }

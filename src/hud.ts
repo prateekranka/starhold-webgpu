@@ -335,28 +335,30 @@ export class Hud {
     const pop = `${view.popUsed}/${view.popCap}`;
     if (this.lastPop !== pop) { this.lastPop = pop; this.setText(this.popValue, pop); }
 
-    // Track resource delta over the last 60 ticks (1 second).
+    // Track resource delta over a 2-second sliding window.  Sample every
+    // 50 ms so the history stays small.  The wider window smooths the
+    // discrete chunk arrivals that made the old 1-second window flicker.
     if (this.lastMode !== view.mode || this.lastPlayer !== view.player) {
       this.lastMode = view.mode;
       this.history = [];
       this.lastSampleTime = 0;
     }
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    if (this.history.length === 0 || now - this.lastSampleTime >= 12) {
+    if (this.history.length === 0 || now - this.lastSampleTime >= 50) {
       this.lastSampleTime = now;
       this.history.push({ alloy: view.alloy, charge: view.charge, time: now });
-      if (this.history.length > 60) {
+      if (this.history.length > 120) {
         this.history.shift();
       }
     } else {
       this.history[this.history.length - 1] = { alloy: view.alloy, charge: view.charge, time: now };
     }
-    while (this.history.length > 1 && now - this.history[0].time > 1050) {
+    while (this.history.length > 1 && now - this.history[0].time > 2100) {
       this.history.shift();
     }
     const oldest = this.history[0];
     const elapsedSec = oldest ? (now - oldest.time) / 1000 : 0;
-    const canRate = this.history.length >= 2 && elapsedSec >= 0.1;
+    const canRate = this.history.length >= 3 && elapsedSec >= 0.5;
     const rateAlloy = canRate ? (view.alloy - oldest.alloy) / elapsedSec : 0;
     const rateCharge = canRate ? (view.charge - oldest.charge) / elapsedSec : 0;
     const alloyRateVal = Number(rateAlloy.toFixed(1));
