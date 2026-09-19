@@ -3,6 +3,7 @@ import type {ContentAbi} from './content-api';
 import './style.css';
 import {Renderer, RENDER_WIDTH, RENDER_HEIGHT, buttonGlyphPixels, type PlacementPreview} from './renderer';
 import {sound} from './audio';
+import {scenarioManager} from './scenarios';
 import {State, names, jobs} from './kinds';
 import {Hud, HQ_POP_CAP, isBuildingKind, isUnitKind, type HudView, type SimAbi} from './hud';
 import {palette} from './kinds';
@@ -499,6 +500,7 @@ function startMatch(faction:0|1) {
 function resetShowcase() {
  if(!sim)return;
  cancelPlacement();
+ scenarioManager.clearScenario();
  fogExplored.fill(0);
  fogVisible.fill(0);
  worldSide=0;worldTerrain=new Float32Array(0);showcaseTerrain=new Float32Array(0);camX=16;camY=16;renderer.setShowcase();minimapInvalidate();
@@ -1209,6 +1211,7 @@ function frame(now:number) {
   while(accumulator>=1000/60){sim.sim_step(1000/60);tick++;accumulator-=1000/60;}
   refreshEntities();updateSelection();syncHud();minimapDraw();researchUI?.update();
   if(simMode()===1){
+   scenarioManager.updateProgress(entities, entityCount, simPlayer(), (sim as any).sim_waves ? (sim as any).sim_waves() : 0, simOutcome());
    const outcome=simOutcome();
    if(outcome!==lastAudioOutcome){
     if(outcome===1)sound.playAlarm('victory');

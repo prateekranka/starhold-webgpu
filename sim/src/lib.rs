@@ -1745,6 +1745,11 @@ impl Sim {
         let s = s.borrow(); (s.mode == 1 && s.can_build(s.game.player, kind, s.selected)) as u32
     })
 }
+#[no_mangle] pub extern "C" fn sim_waves() -> u32 {
+    SIM.with(|s| {
+        let s = s.borrow(); if s.mode != 1 { 0 } else { s.game.waves }
+    })
+}
 #[no_mangle] pub extern "C" fn sim_raid_active() -> u32 {
     SIM.with(|s| {
         let s = s.borrow();
