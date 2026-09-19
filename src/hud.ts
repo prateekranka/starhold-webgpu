@@ -206,6 +206,9 @@ export class Hud {
   private readonly prev: HTMLButtonElement;
   private readonly next: HTMLButtonElement;
   private readonly status: HTMLElement;
+  private readonly receipt: HTMLElement;
+  private feedbackUntil = 0;
+  private feedbackButton: HTMLButtonElement | null = null;
   private readonly texts = new Map<HTMLElement, string>();
   private view: HudView;
   private sim: SimAbi | undefined;
@@ -256,6 +259,14 @@ export class Hud {
     this.prev = pick('hud-prev') as HTMLButtonElement;
     this.next = pick('hud-next') as HTMLButtonElement;
     this.status = pick('hud-status');
+    // A stable receipt in the bar's existing padding: it never takes space from
+    // actions, paging or camera controls, including when the action set changes.
+    this.receipt = document.createElement('span');
+    this.receipt.id = 'hud-action-receipt';
+    this.receipt.setAttribute('role', 'status');
+    this.receipt.setAttribute('aria-live', 'polite');
+    this.receipt.setAttribute('aria-atomic', 'true');
+    pick('hud-bar').append(this.receipt);
     // Seed the text cache from the markup so the first update only writes what
     // actually differs (index.html starts at "MATCH UNAVAILABLE").
     for (const element of [this.alloyValue, this.chargeValue, this.popValue, this.faction, this.ageName, this.ageCost, this.status]) {
@@ -334,6 +345,7 @@ export class Hud {
     const costText = showAdvance && !advancing ? `${cost}A ${costCharge}C` : '';
     if (this.lastCost !== costText) { this.lastCost = costText; this.setText(this.ageCost, costText); }
     this.setOff(this.ageCost, costText === '');
+    this.setFlag(this.ageCluster, 'advancing', advancing);
 
     // Right: context actions for the current selection, from the roster table.
     // A construction site in progress also offers CANCEL, so the cancel flag is
@@ -351,6 +363,16 @@ export class Hud {
     const status = this.statusText(match, inMatch);
     this.setText(this.status, status);
     this.setOff(this.status, status === '');
+    const context = !inMatch ? '' : view.placementKind !== null ? 'place'
+      : this.cancelable ? 'cancel' : this.rows.length ? (this.rows[0].klass === 0 ? 'build' : 'train') : '';
+    if (this.list.dataset.context !== context) this.list.dataset.context = context;
+    if (!inMatch || outcome !== 0 || (this.feedbackUntil !== 0 && performance.now() >= this.feedbackUntil)) {
+      this.clearFeedback();
+    }
+    if (this.feedbackUntil === 0) {
+      this.setText(this.receipt, inMatch && outcome === 0 && view.placementKind !== null
+        ? `PLACE ${label(view.placementKind)}` : '');
+    }
   }
 
   private statusText(match: boolean, inMatch: boolean): string {
@@ -399,13 +421,17 @@ export class Hud {
       button.type = 'button';
       button.dataset.action = build ? 'build' : 'train';
       button.dataset.kind = String(row.kind);
+      const verb = document.createElement('span');
+      verb.className = 'verb';
+      verb.setAttribute('aria-hidden', 'true');
+      verb.textContent = build ? 'BUILD' : 'TRAIN';
       const name = document.createElement('span');
       name.className = 'n';
       name.textContent = label(row.kind);
       const cost = document.createElement('span');
       cost.className = 'c';
       cost.textContent = costLabel(row.alloy, row.charge);
-      button.append(name, cost);
+      button.append(verb, name, cost);
       const accessible = `${build ? 'Build' : 'Train'} ${label(row.kind)}, ${costWords(row)}`;
       button.setAttribute('aria-label', accessible);
       button.title = accessible;
@@ -460,10 +486,46 @@ export class Hud {
     const kind = Number(button.dataset.kind ?? '0');
     if (action === 'match') this.wiring.startMatch(kind === 1 ? 1 : 0);
     else if (action === 'reset') this.wiring.resetShowcase();
-    else if (action === 'advance') this.wiring.command(2, 0, 0);
-    else if (action === 'train') this.wiring.command(0, kind, this.view.selected ?? 0);
-    else if (action === 'build') this.wiring.build(kind);
-    else if (action === 'cancel') this.wiring.command(3, 0, 0);
+    else if (action === 'advance' || action === 'train' || action === 'build' || action === 'cancel') {
+      // Wiring may synchronously refresh this HUD and replace the action set.
+      // Capture the intent first; only the returned result confirms acceptance.
+      const placement = this.view.placementKind !== null;
+      const subject = action === 'build' || action === 'train' ? label(kind)
+        : action === 'cancel' ? (placement ? 'PLACEMENT' : 'CONSTRUCTION') : 'AGE';
+      const accepted = action === 'build' ? this.wiring.build(kind)
+        : action === 'train' ? this.wiring.command(0, kind, this.view.selected ?? 0)
+        : this.wiring.command(action === 'advance' ? 2 : 3, 0, 0);
+      const message = !accepted ? `${action.toUpperCase()} ${subject} · NOT ACCEPTED`
+        : action === 'build' ? (this.view.placementKind === kind ? `PLACE ${subject}` : `BUILD ${subject} · ACCEPTED`)
+        : action === 'train' ? `TRAIN ${subject} · ACCEPTED`
+        : action === 'cancel' ? `${subject} · CANCELLED` : 'ADVANCE · ACCEPTED';
+      this.clearFeedback();
+      this.feedbackUntil = performance.now() + 2200;
+      this.receipt.dataset.result = accepted ? 'accepted' : 'rejected';
+      this.setText(this.receipt, message);
+      // A removed BUILD/CANCEL button is represented by the receipt, never by
+      // highlighting an unrelated replacement at the same position.
+      if (button.isConnected) {
+        this.feedbackButton = button;
+        button.dataset.feedback = accepted ? 'accepted' : 'rejected';
+      }
+    }
+  }
+
+  private clearFeedback(): void {
+    if (this.feedbackButton) {
+      delete this.feedbackButton.dataset.feedback;
+      this.feedbackButton = null;
+    }
+    if (this.feedbackUntil !== 0) {
+      this.feedbackUntil = 0;
+      delete this.receipt.dataset.result;
+      this.setText(this.receipt, '');
+    }
+  }
+
+  private setFlag(element: HTMLElement, name: string, value: boolean): void {
+    if (element.classList.contains(name) !== value) element.classList.toggle(name, value);
   }
 
   private setText(element: HTMLElement, value: string): void {

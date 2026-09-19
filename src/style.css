@@ -91,6 +91,44 @@ body.mouse #viewport canvas.glyph { display:none; }
 #hud-faction.off, #hud-age-progress.off, #hud-age-cost.off, #hud-status.off { visibility:hidden; }
 #hud-prev.off, #hud-next.off { display:none; }
 
+/* Context cards keep the same footprint. The small verb distinguishes choosing
+   a site from ordering a unit; the name and quoted cost remain stable. */
+#hud-bar button[data-action="build"] { --action-ink:#D5A64B; }
+#hud-bar button[data-action="train"] { --action-ink:#4FB7AA; }
+#hud-bar button[data-action="cancel"],
+#hud-bar button[data-action="advance"] { --action-ink:#F1CE72; }
+#hud-bar button[data-action="cancel"] { border-color:var(--action-ink); }
+#hud-bar button .verb { font-size:8px; line-height:9px; letter-spacing:.1em; color:var(--action-ink); }
+#hud-bar button[data-action="build"]:enabled .c { color:#F1CE72; }
+#hud-bar button[data-action="train"]:enabled .c { color:#B7C8C6; }
+/* Disabled cards must override the action-colour borders above, so an available
+   order has a clear edge even among unaffordable or age-gated choices. */
+#hud-bar button[data-action]:disabled { border-color:#41435E; }
+#hud-bar button:disabled .verb { color:#565B73; }
+@media (hover:hover) {
+ #hud-bar button[data-action]:enabled:hover { background:#41435E; }
+}
+#hud-bar button[data-action]:enabled:active {
+ background:#10121C; border-color:#F3F0D7; box-shadow:inset 0 0 0 2px var(--action-ink, #747C91); }
+#hud-bar button[data-feedback="accepted"],
+#hud-bar button[data-feedback="accepted"]:disabled {
+ border-color:#8BD7BE; box-shadow:inset 0 -3px 0 #4FB7AA; }
+#hud-bar button[data-feedback="rejected"],
+#hud-bar button[data-feedback="rejected"]:disabled {
+ border-color:#BC4A45; box-shadow:inset 0 -3px 0 #BC4A45; }
+#hud-action-list[data-context="place"] button[data-action="cancel"] {
+ border-color:#F1CE72; box-shadow:inset 0 -3px 0 #D5A64B; }
+#hud-age.advancing #hud-age-name { color:#F3F0D7; }
+#hud-age.advancing #hud-age-progress { border-color:#F1CE72; }
+/* A receipt survives a synchronous action-set refresh. It uses only padding,
+   never displaces a control, and never intercepts a pointer. No animation or
+   progress is inferred from its display duration. */
+#hud-action-receipt { position:absolute; top:0; right:8px; max-width:calc(100% - 16px);
+ height:8px; font-size:8px; line-height:8px; color:#F1CE72;
+ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; pointer-events:none; }
+#hud-action-receipt[data-result="accepted"] { color:#8BD7BE; }
+#hud-action-receipt[data-result="rejected"] { color:#BC4A45; }
+
 /* Portrait: the bar becomes three rows so every cluster keeps its full size and
    the canvas still fits the width above it (docs/MATCH_SPEC.md §8). */
 @media (orientation:portrait) {
@@ -99,6 +137,7 @@ body.mouse #viewport canvas.glyph { display:none; }
  #hud-resources { flex:1 1 0; min-height:44px; gap:12px; }
  #hud-middle { flex:1 1 0; min-height:44px; }
  #hud-actions { flex:1 1 0; min-height:44px; }
+ #hud-action-receipt { top:auto; bottom:0; height:6px; font-size:7px; line-height:6px; }
 }
 
 /* --- Floating minimap (LARGEMAP_SPEC §6). Sits above the bar, moves with a
