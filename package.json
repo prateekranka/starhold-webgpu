@@ -16,6 +16,7 @@
     "test:workshop": "npm run build && npm run wasm:workshop && npm run baseline:ensure && node --experimental-strip-types --test tests/workshop.test.mjs",
     "test:workshop:browser": "npm run wasm:all && node scripts/workshop-browser.mjs",
     "test:menu:browser": "npm run wasm && node scripts/menu-browser.mjs",
+    "test:soak": "npm run wasm && node scripts/overnight-soak.mjs",
     "verify:workshop": "cargo test --manifest-path sim/Cargo.toml --features workshop && npm run build && npm run wasm:workshop && bash scripts/build-baseline.sh && npm run test:workshop"
   },
   "devDependencies": {
