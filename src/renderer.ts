@@ -13,6 +13,7 @@ import {drawAshhand} from './assets/ashhand';
 import {drawChainMule} from './assets/chain-mule';
 import {drawSootwing} from './assets/sootwing';
 import {drawBrandcaller} from './assets/brandcaller';
+import {renderDawnwardBuildingDetails, renderCinderwakeBuildingDetails} from './assets/buildings';
 // 16000 was enough for the authored 32x32 island. The 10 km world bakes the
 // visible window with three detail tiers, so the ceiling is raised and the bake
 // itself stops at BAKE_LIMIT instead of dropping instances one by one.
@@ -996,8 +997,11 @@ export class Renderer {
      if(hammerDown){for(let s=0;s<4;s++){const sa=s*Math.PI/2+this.time*4;this.box(x+.4+Math.cos(sa)*.25,y-.3+Math.sin(sa)*.25,z+1.45,.1,.1,.1,27);}}
      for(let j=0;j<5;j++){const q=(this.time/2+j/5)%1,size=.32+Math.floor(q*3)*.24;this.box(x-.7+q*.95,y-.6+q*.25,z+3.1+q*2.1,size,size,.28+q*.2,q<.65?6:4);}}
   }
-  if(p>=.5)this.facade(x,y,z,k,p,id);
-  if(p>=.85&&k!==12&&k!==16){for(let j=0;j<2;j++)this.crate(x+w*.5+.3,y+.6*j,z,.38,id);}
+   if(p>=.5){
+    this.facade(x,y,z,k,p,id);
+    renderDawnwardBuildingDetails((bx,by,bz,sx,sy,sz,c,o,s)=>this.box(bx,by,bz,sx,sy,sz,c,o,s),(ex,ey,ez,c,o,w,h)=>this.emissive(ex,ey,ez,c,o,w,h),x,y,z,k,p,phase,this.time,id);
+   }
+   if(p>=.85&&k!==12&&k!==16){for(let j=0;j<2;j++)this.crate(x+w*.5+.3,y+.6*j,z,.38,id);}
  }
  // Short overlapping prisms make raked struts, elbows and bow limbs using
  // the existing mesh. Keep subdivision bounded even on long building beams.
@@ -1160,7 +1164,8 @@ export class Renderer {
    if(panels){this.box(x-1.65,y,z+.5,.28,2.35,.18,24,id);this.box(x+1.57,y,z+1.05,.3,1.27,.23,25,id);}
    if(lit)for(let j=0;j<4;j++)this.box(x-1.3+j*.83,y-.44,z+.61+j*.17,.3,.08,.06,j===Math.floor(cycle*4)?27:26,id);
   }
- }
+   renderCinderwakeBuildingDetails((bx,by,bz,sx,sy,sz,c,o,s)=>this.box(bx,by,bz,sx,sy,sz,c,o,s),(ex,ey,ez,c,o,w,h)=>this.emissive(ex,ey,ez,c,o,w,h),x,y,z,k,p,cycle,sway,this.time,id);
+  }
  private facade(x:number,y:number,z:number,k:number,p:number,id:number) {
   // Flush fittings on existing wall planes, all yaws. No new footprint or
   // roof volume; these small regular accents sit above the ground vocabulary.
