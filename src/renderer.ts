@@ -12,6 +12,12 @@ const cinderUnits=new Set([30,31,32,33,34,35,36]);
 const wave2Units=new Set([25,26,30,32,33,34,35,36]);
 const combatUnits=new Set([21,22,23,25,26,30,31,34,36]);
 const effectKinds=new Set([50,51,52]);
+// A handful of service islands, in starting-slot coordinates. No scatter field.
+const settlementStations:ReadonlyArray<readonly [number,number,number]>=[
+ [-8,-3.7,0],[-16,-3.7,1],[-3.7,-10,0],[-3.7,-19,1],
+ [-14,11,2],[-8,11,1],[15,-11,2],[15,-6,1],
+ [12,16,2],[19,16,0],[8.3,3,0],[3,8,1]
+];
 const maxHealth:Readonly<Record<number,number>>={10:1500,11:600,12:600,13:600,14:600,15:600,16:900,17:600,20:70,21:180,22:180,23:110,24:150,25:100,26:360,30:80,31:240,32:60,33:150,34:150,35:120,36:90,60:1350,61:525,62:500,65:450,63:525,64:650,66:750,67:550};
 export interface PlacementPreview {active:boolean;kind:number|null;tx:number;ty:number;valid:boolean}
 export const RENDER_WIDTH=960, RENDER_HEIGHT=540;
@@ -24,9 +30,9 @@ const resolution=vec2f(${RENDER_WIDTH}.,${RENDER_HEIGHT}.);
 const grid=${GRID}.;
 struct Camera { rotation:vec2f, magnification:f32, padding:f32, center:vec2f, pad2:vec2f }
 @group(0) @binding(0) var<uniform> camera:Camera;
-struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @location(1) unit:f32, @location(2) rim:vec2f, @location(3) cliff:vec2f, @location(4) ground:vec2f, @location(5) @interpolate(flat) material:u32 }
+struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @location(1) unit:f32, @location(2) rim:vec2f, @location(3) cliff:vec2f, @location(4) ground:vec2f, @location(5) @interpolate(flat) material:u32, @location(6) settlement:vec2f }
 @vertex fn vs(@location(0) vertex:vec3f,@location(1) shade:f32,@location(2) origin:vec3f,@location(3) size:vec3f,@location(4) color:f32,@location(5) screen:f32,@location(6) actor:vec4f)->Out {
- var o:Out;o.cliff=vec2f(-1.,0.);o.ground=vec2f(0.);o.material=0u;
+ var o:Out;o.cliff=vec2f(-1.,0.);o.ground=vec2f(0.);o.material=0u;o.settlement=vec2f(1000.);
  let pigment=color%32.;o.unit=floor((color%32768.)/32.);
  // 18/19 mark combat composites; 17 identifies the worker/skiff contour.
  let combat=floor(color/32768.);o.rim=vec2f(select(0.,1.,combat>=18.),0.);
@@ -113,8 +119,8 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  // Match surface roles use -7..-9; the frozen island never uses these modes.
  if screen<=-7. && screen>=-9. && shade==0. {
   o.ground=p.xy;o.material=u32(pigment)+33u+u32(-screen-7.)*32u;
-  if screen == -9. {o.material+=u32(actor.z)*128u;}
-  if screen == -8. {o.material+=u32(actor.w)*128u;}
+  if screen == -9. {o.material+=u32(actor.z)*128u;o.settlement=p.xy-actor.xy;}
+  if screen == -8. {o.material+=u32(actor.w)*128u;if actor.z!=0. {o.settlement=(p.xy-actor.xy)*actor.z;}}
  }
  if screen == -3. || screen == -4. {o.color=palette[u32(pigment)];}
  if screen == -4. {o.unit=1.;o.rim=vec2f(0.);}
@@ -126,7 +132,7 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
 struct Fragment { @location(0) color:vec4f, @location(1) mask:vec4f }
 // Authored plate vocabulary in world space: staggered shoulders, a bent seam,
 // paired chips and a three-step ore fracture. No pixel hash or screen grid.
-fn basalt(world:vec2f, province:u32)->u32 {
+fn basalt(world:vec2f, province:u32, local:vec2f)->u32 {
  // Match-only surface roles turn detail up on rock and down in the clearing.
  // The old showcase branch below stays unchanged, including its sky pool.
  let role=province%128u;
@@ -137,20 +143,46 @@ fn basalt(world:vec2f, province:u32)->u32 {
   if ((edge&1u)!=0u && q.x<.18) || ((edge&2u)!=0u && q.x>.82) ||
      ((edge&4u)!=0u && q.y<.18) || ((edge&8u)!=0u && q.y>.82) {return 5u;}
   if (edge&16u)!=0u {return select(5u,3u,q.x<.08 || q.y<.08);}
-  return select(2u,3u,fract((world.x+world.y)/3.)<.07);
+  // Sparse centre dashes on the two real departure roads; do not fabricate
+  // lanes across the surrounding buildable soil or distant curved routes.
+  if max(abs(local.x),abs(local.y))<32. &&
+     ((abs(local.x)<.10 && fract(local.y/3.)<.42) ||
+      (abs(local.y)<.10 && fract(local.x/3.)<.42)) {return 5u;}
+  return 2u;
  }
  if role>=64u {
-  // Quiet, open construction grid. Only live, vacant 2x2-compatible sites
-  // carry this flag; terrain steps, occupied sites and routes never do.
+  // A settlement is a few large paved courts within quiet cleared soil.
+  // These are flush finishes on the SAME buildable caps, never new roads or
+  // raised obstacles. Live occupancy still controls the construction ticks.
+  let apron=local.x> -5.5 && local.x<6.5 && local.y> -5.5 && local.y<6.5;
+  let westCourt=local.x> -16.5 && local.x< -6.5 && local.y>4.5 && local.y<12.5;
+  let eastCourt=local.x>7.5 && local.x<16.5 && local.y> -13.5 && local.y< -4.5;
+  let outerCourt=local.x>10.5 && local.x<20.5 && local.y>8.5 && local.y<17.5;
+  let court=westCourt || eastCourt || outerCourt;
+  let service=(local.x>7. && local.x<9.5 && local.y> -14. && local.y<18.) ||
+              (local.y>6.5 && local.y<9. && local.x> -17. && local.x<20.5);
   let grid=fract(world/2.);
-  if province>=128u && (grid.x<.035 || grid.y<.035) {return 5u;}
-  // Matte cleared soil: occasional shallow scuffs, never the dark repeated
-  // debris marks of the rough country. One close-value step, no ink chips.
-  let cell=floor(world/7.3);let q=fract(world/7.3);
-  let motif=(u32(cell.x)*7u+u32(cell.y)*11u)%23u;
-  if motif==2u && q.x>.23 && q.x<.37 && q.y>.41 && q.y<.45 {return 29u;}
-  return 4u;
+  let joint=grid.x<.025 || grid.y<.025;
+  var c=4u;
+  if apron {c=select(5u,4u,joint);}
+  if court {c=select(3u,4u,joint);}
+  if service {c=3u;}
+  // Corners, rather than full yellow rectangles, leave future construction
+  // sites visually open. The painted elbows belong only to these three courts.
+  var q=vec2f(100.);var extent=vec2f(0.);
+  if westCourt {q=local-vec2f(-16.5,4.5);extent=vec2f(10.,8.);}
+  if eastCourt {q=local-vec2f(7.5,-13.5);extent=vec2f(9.,9.);}
+  if outerCourt {q=local-vec2f(10.5,8.5);extent=vec2f(10.,9.);}
+  let corner=min(q,extent-q);
+  if court && min(corner.x,corner.y)<.16 && max(corner.x,corner.y)<1.15 {return 21u;}
+  if service && fract((local.x+local.y)/3.)<.18 &&
+     ((local.x>7.25 && local.x<7.4) || (local.y>6.75 && local.y<6.9)) {return 5u;}
+  // Small survey crosses replace the screen-filling wire mesh. Calm soil
+  // and occupied caps remain quiet; these still describe vacant flat sites.
+  if province>=128u && ((grid.x<.04 && grid.y<.19) || (grid.y<.04 && grid.x<.19)) {return 5u;}
+  return c;
  }
+
  if province>=32u {
   let row=floor(world.y/1.7);
   let p=vec2f((world.x+select(.2,.85,u32(row)%2u==0u))/2.3,world.y/1.7);
@@ -199,7 +231,7 @@ fn basalt(world:vec2f, province:u32)->u32 {
   f.color=vec4f(palette[u32(max(1.,i.cliff.y-10.-band))],1.);
  }
  else if i.cliff.x>=0. {let band=select(0.,1.,i.cliff.x<.85)+select(0.,1.,i.cliff.x<.65)+select(0.,1.,i.cliff.x<.40);f.color=vec4f(palette[u32(max(1.,i.cliff.y-band+select(1.,-1.,band>=1.)))],1.);}
- else if i.material!=0u {f.color=vec4f(palette[basalt(i.ground,i.material-1u)],1.);}
+ else if i.material!=0u {f.color=vec4f(palette[basalt(i.ground,i.material-1u,i.settlement)],1.);}
  f.mask=vec4f(i.unit,i.position.z,i.rim);return f;}
 `;
 const postWGSL=paletteWGSL+`
@@ -773,7 +805,7 @@ export class Renderer {
      if(px<-32||px>RENDER_WIDTH+32||py<-32||py>RENDER_HEIGHT+32)continue;
      const d=Math.hypot(px-mx,py-my);
      if((d<=170?0:d<=380?1:2)!==tier)continue;
-     if(this.count>=BAKE_LIMIT){this.degraded=true;break;}
+     if(this.count+12>=BAKE_LIMIT){this.degraded=true;break;}
      this.worldTile(x,y,h,tier,this.worldMaterial(x,y,h));
     }
     if(this.degraded)break;
@@ -810,14 +842,27 @@ export class Renderer {
    // Mode -6 is the pre-existing exact-palette hard face table, no new shader.
    const surface=this.count;
    this.box(x+.5,y+.5,h-.12,1,1,.12,cap,-1,h===1?-7:cap===29?-8:cap===6?-9:-6);
+   this.actorData[surface*4]=0;this.actorData[surface*4+1]=0;
    this.actorData[surface*4+2]=0;this.actorData[surface*4+3]=0;
+   if(cap===29){
+    for(let slot=0;slot<this.worldStarts.length;slot++){
+     const start=this.worldStarts[slot];
+     if(Math.hypot(x-start[0],y-start[1])>=29)continue;
+     this.actorData[surface*4]=start[0]+.5;this.actorData[surface*4+1]=start[1]+.5;
+     this.actorData[surface*4+2]=slot===0?1:-1;break;
+    }
+   }
    if(cap===6){
     let edge=0;
     if(west!==h||this.worldMaterial(x-1,y,west)!==6)edge|=1;
     if(east!==h||this.worldMaterial(x+1,y,east)!==6)edge|=2;
     if(north!==h||this.worldMaterial(x,y-1,north)!==6)edge|=4;
     if(south!==h||this.worldMaterial(x,y+1,south)!==6)edge|=8;
-    for(const [bx,by] of this.worldStarts)if(Math.hypot(x-bx,y-by)<5.5)edge|=16;
+    for(const [bx,by] of this.worldStarts){
+     const distance=Math.hypot(x-bx,y-by);
+     if(distance<5.5)edge|=16;
+     if(distance<34){this.actorData[surface*4]=bx+.5;this.actorData[surface*4+1]=by+.5;}
+    }
     this.actorData[surface*4+2]=edge;
    }
    if(cap===29&&x>=3&&y>=3&&x<this.terrainSide-3&&y<this.terrainSide-3){
@@ -867,8 +912,81 @@ export class Renderer {
    this.actorData[index*4+3]=vacant?1:0;
   }
  }
+ /** Live support furniture yields to every occupied footprint. Each motif is
+  * at most 16 instances, 12 per start, with a hard shared allowance of 320.
+  * Actor geometry is submitted first; scenery can never consume its reserve.
+  * These low, nonselectable fittings create no new blockers or building sites. */
+ private settlementDetails(e:Float32Array,n:number,yaw:number,zoom:number) {
+  const limit=Math.min(this.count+320,MAX-this.placementCount-1200);
+  const c=Math.round(Math.cos(yaw*Math.PI/2)),s=Math.round(Math.sin(yaw*Math.PI/2));
+  for(let slot=0;slot<this.worldStarts.length;slot++){
+   const start=this.worldStarts[slot],bx=start[0]+.5,by=start[1]+.5,m=slot===0?1:-1;
+   let faction=-1;
+   for(let id=0;id<n;id++){
+    const o=id*12,k=e[o+4];
+    if((k===10||k===60)&&Math.abs(e[o]-bx)<4&&Math.abs(e[o+1]-by)<4){faction=k===60?1:0;break;}
+   }
+   if(faction<0)continue;
+   const metal=faction?23:10,panel=faction?24:12,trim=faction?26:17;
+   for(const station of settlementStations){
+    if(this.count+16>limit)return;
+    const x=bx+station[0]*m,y=by+station[1]*m,z=this.ground(x,y);
+    const dx=x-this.camX,dy=y-this.camY,rx=dx*c-dy*s,ry=dx*s+dy*c;
+    const px=480+12*(rx-ry)/zoom,py=272+(6.9282032*(rx+ry)-13.8564064*z)/zoom;
+    if(px< -24||px>984||py< -24||py>564||z<0||this.worldMaterial(Math.floor(x),Math.floor(y),z)!==29)continue;
+    if(this.ground(x-1.5,y-1)!==z||this.ground(x+1.5,y+1)!==z)continue;
+    let occupied=false;
+    for(let id=0;id<n;id++){
+     const o=id*12,k=e[o+4],foot=buildingFootprints[k];
+     if(!foot&&k!==40&&!dawnUnits.has(k)&&!cinderUnits.has(k))continue;
+     if(Math.abs(e[o]-x)<(foot?foot[0]/2+1.8:2)&&Math.abs(e[o+1]-y)<(foot?foot[1]/2+1.5:1.7)){occupied=true;break;}
+    }
+    if(occupied)continue;
+    this.groundMark(x,y,2.8,1.8,3,.012);
+    this.groundMark(x,y+.82,2.8,.12,5,.018);
+    this.groundMark(x-1.3,y,.12,1.6,5,.018);
+    const type=station[2];
+    if(type===0){
+     // Narrow utility mast with a hooded signal, and a recessed cable trench.
+     this.box(x,y,z+.02,.48,.48,.12,metal,-1,-6);
+     this.box(x,y,z+.14,.14,.14,1.25,metal,-1,-6);
+     this.box(x,y,z+1.12,.27,.24,.34,panel,-1,-6);
+     this.box(x-.035,y-.13,z+1.19,.12,.035,.19,trim,-1,-6);
+     this.box(x,y,z+1.46,.34,.31,.08,5,-1,-6);
+     this.groundMark(x+.7,y,1.2,.18,1,.022);
+     this.groundMark(x+.7,y+.17,1.2,.08,5,.023);
+    }else if(type===1){
+     // Low stacked supply cases: no actor contour, roof or resource facets.
+     this.box(x-.48,y,z+.02,.95,.9,.5,metal,-1,-6);
+     this.box(x-.48,y,z+.52,.95,.9,.08,5,-1,-6);
+     this.box(x-.48,y,z+.61,.15,.9,.02,panel,-1,-6);
+     this.box(x+.56,y+.15,z+.02,.68,.68,.34,panel,-1,-6);
+     this.box(x+.56,y+.15,z+.36,.7,.7,.07,4,-1,-6);
+     this.box(x-.48,y-.46,z+.18,.34,.025,.14,trim,-1,-6);
+    }else{
+     // Paired service canisters on a skid and a horizontal coupling. Kept
+     // below unit heads so the settlement gains occupancy without false towers.
+     this.box(x,y,z+.025,2.1,1.1,.1,metal,-1,-6);
+     for(let j=0;j<2;j++){
+      const xx=x-.55+j*1.1;
+      this.box(xx,y,z+.13,.62,.68,.74,panel,-1,-1);
+      this.box(xx,y,z+.87,.44,.49,.09,5,-1,-6);
+      this.box(xx,y-.35,z+.38,.43,.045,.12,metal,-1,-6);
+     }
+     this.box(x,y+.35,z+.27,1.25,.12,.12,metal,-1,-6);
+     this.groundMark(x,y-.68,1.4,.12,21,.02);
+    }
+   }
+  }
+ }
  private worldOre(x:number,y:number,z:number,amount:number,phase:number,id:number) {
   const scale=amount>0?1:Math.max(.12,phase),h=(.9+id%3*.08)*scale;
+  if(this.count+8<MAX-1200){
+   // A continuous dark extraction bed joins the starter seam into one resource
+   // landmark; cold sleepers frame it without adding counterfeit amber shards.
+   this.groundMark(x-.45,y-.45,1.75,1.9,3,.009);
+   this.groundMark(x-.45,y+.48,1.4,.12,5,.013);
+  }
   // Leave the near half of the mining tile open for the worker's silhouette.
   // The simulation's work point is unchanged; crystals occupy its far shoulder.
   x-=.55;y-=.55;
@@ -1646,6 +1764,7 @@ export class Renderer {
    else if(k===41){this.box(e[o],e[o+1],e[o+2],.38,.36,.23,40);this.box(e[o],e[o+1],e[o+2]-.16,.18,.18,.14,18);}
    else if(effectKinds.has(k))this.effects(e,o);
   }
+  if(this.terrainSide>32)this.settlementDetails(e,n,yaw,zoom);
   // Mask 1 protects the gold segment fill; the existing neighbor contour
   // supplies its one-pixel ink gap. Small segments now retain endpoint 22.
   if(this.selected!==null){const o=this.selected*12,r=buildingFootprints[e[o+4]]?(cinderBuildings.has(e[o+4])?Math.max(...buildingFootprints[e[o+4]])/2+.3:e[o+4]===10?2.5:e[o+4]===16?1.5:1.8):e[o+4]===20?.65:e[o+4]===31?1.65:1.35;for(let j=0;j<24;j++){if(j%3===Math.floor(this.time/.6)%2)continue;const a=j*Math.PI/12;this.box(e[o]+Math.cos(a)*r,e[o+1]+Math.sin(a)*r,this.ground(e[o],e[o+1])+.08,.2,.2,.035,54);}}
