@@ -43,6 +43,11 @@ nav { position:absolute; inset:0; pointer-events:none; }
 .sel-stat { display:flex; flex-direction:column; align-items:center; background:#1B1E30; padding:2px 3px; border:1px solid #2B2D46; }
 .sel-stat .lbl { font-size:7px; color:#747C91; letter-spacing:.08em; }
 .sel-stat .val { font-size:9px; color:#F3F0D7; font-weight:bold; }
+.sel-tactics-row { display:flex; gap:4px; margin-top:3px; border-top:1px solid #2B2D46; padding-top:4px; }
+.sel-tactic-btn { flex:1; min-height:26px; background:#1B1E30; border:1px solid #41435E; color:#98A4AE; font:9px/1 monospace; text-transform:uppercase; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px; }
+.sel-tactic-btn:hover { border-color:#8BD7BE; color:#F3F0D7; }
+.sel-tactic-btn.active { background:#2B2D46; border-color:#F1CE72; color:#F1CE72; font-weight:bold; }
+body.touch .sel-tactic-btn { min-height:44px; font-size:11px; }
 #selection-box { position:absolute; border:1.5px solid #58BED4; background:rgba(88, 190, 212, 0.18); box-shadow:0 0 8px rgba(88, 190, 212, 0.4), inset 0 0 8px rgba(88, 190, 212, 0.2); pointer-events:none; z-index:10; display:none; }
 #raid-warning { position:absolute; top:48px; left:50%; transform:translateX(-50%); z-index:10; display:flex; align-items:center; gap:8px; padding:6px 14px; min-height:36px; max-width:calc(100% - 24px); background:#1B1E30; border:1.5px solid #BC4A45; color:#F3F0D7; font:11px/1.2 monospace; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; pointer-events:auto; box-shadow:0 2px 10px rgba(188, 74, 69, 0.4); white-space:nowrap; }
 #raid-warning.off { display:none !important; }

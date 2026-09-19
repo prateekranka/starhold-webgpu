@@ -518,6 +518,28 @@ function spawnTouchRipple(clientX:number,clientY:number,type:'move'|'target'|'se
  document.body.appendChild(el);
  setTimeout(()=>el.remove(),400);
 }
+type Stance = 'AGGRESSIVE' | 'DEFENSIVE' | 'HOLD';
+type Formation = 'LINE' | 'WEDGE' | 'SPREAD';
+let currentStance: Stance = 'AGGRESSIVE';
+let currentFormation: Formation = 'LINE';
+
+function cycleStance() {
+ if (currentStance === 'AGGRESSIVE') currentStance = 'DEFENSIVE';
+ else if (currentStance === 'DEFENSIVE') currentStance = 'HOLD';
+ else currentStance = 'AGGRESSIVE';
+ sound.playOrder(2);
+ if (currentStance === 'HOLD') sim?.sim_command?.(3, 0, 0);
+ updateSelection();
+}
+
+function cycleFormation() {
+ if (currentFormation === 'LINE') currentFormation = 'WEDGE';
+ else if (currentFormation === 'WEDGE') currentFormation = 'SPREAD';
+ else currentFormation = 'LINE';
+ sound.playOrder(2);
+ updateSelection();
+}
+
 function issueOrder(clientX:number,clientY:number):boolean {
  if(!sim||selected===null||simMode()!==1)return false;
  if(!isUnitKind(entities[selected*12+4]))return false;
@@ -534,9 +556,40 @@ function issueOrder(clientX:number,clientY:number):boolean {
  }
  const pt=screenToWorld(clientX,clientY);
  if(pt){
-  const fixedX=Math.round(pt.tx*10);
-  const fixedY=Math.round(pt.ty*10);
-  sim.sim_command?.(4,fixedX,fixedY);
+  const units = Array.from(selectedGroup).filter(i => i < entityCount && isUnitKind(entities[i*12+4]) && entities[i*12+9] === simPlayer());
+  if(units.length > 1){
+   const N = units.length;
+   let sumX = 0, sumY = 0;
+   for(const u of units){ sumX += entities[u*12]; sumY += entities[u*12+1]; }
+   const avgX = sumX / N, avgY = sumY / N;
+   const moveAngle = Math.atan2(pt.ty - avgY, pt.tx - avgX);
+   for(let i = 0; i < N; i++){
+    let tx = pt.tx, ty = pt.ty;
+    if(currentFormation === 'LINE'){
+     const perp = moveAngle + Math.PI / 2;
+     const offset = (i - (N - 1) / 2) * 1.35;
+     tx += Math.cos(perp) * offset;
+     ty += Math.sin(perp) * offset;
+    } else if(currentFormation === 'WEDGE'){
+     const row = Math.ceil(i / 2);
+     const side = (i % 2 === 1 ? 1 : -1) * row;
+     tx = pt.tx - Math.cos(moveAngle) * (row * 1.1) + Math.cos(moveAngle + Math.PI / 2) * (side * 0.95);
+     ty = pt.ty - Math.sin(moveAngle) * (row * 1.1) + Math.sin(moveAngle + Math.PI / 2) * (side * 0.95);
+    } else if(currentFormation === 'SPREAD'){
+     const rad = Math.max(1.5, Math.sqrt(N) * 1.1);
+     const a = (i / N) * Math.PI * 2 + moveAngle;
+     tx += Math.cos(a) * rad;
+     ty += Math.sin(a) * rad;
+    }
+    const fixedX = Math.round(tx * 10);
+    const fixedY = Math.round(ty * 10);
+    sim.sim_command?.(6, units[i], ((fixedX & 0xFFFF) << 16) | (fixedY & 0xFFFF));
+   }
+  } else {
+   const fixedX=Math.round(pt.tx*10);
+   const fixedY=Math.round(pt.ty*10);
+   sim.sim_command?.(4,fixedX,fixedY);
+  }
   spawnTouchRipple(clientX,clientY,'move');
   refreshEntities();updateSelection();syncHud();
   return true;
@@ -1040,13 +1093,13 @@ function actorRole(kind:number):string {
   default: return isUnitKind(kind) ? 'FIELD COMBATANT' : (isBuildingKind(kind) ? 'STRUCTURE' : 'ENTITY');
  }
 }
-let lastSelection=-2,lastHealth=-1,lastJob=-1,lastProgress=-1,lastGroupSize=-1;
+let lastSelection=-2,lastHealth=-1,lastJob=-1,lastProgress=-1,lastGroupSize=-1,lastStance='',lastFormation='';
 function updateSelection() {
  const count=selectedGroup.size;
  const o=selected===null?-1:selected*12;
  const hp=o<0?0:Math.round(entities[o+7]*100),job=o<0?-1:entities[o+5],progress=o<0?-1:Math.floor(entities[o+10]*100);
- if(lastSelection===(selected??-1)&&lastHealth===hp&&lastJob===job&&lastProgress===progress&&lastGroupSize===count)return;
- lastSelection=selected??-1;lastHealth=hp;lastJob=job;lastProgress=progress;lastGroupSize=count;
+ if(lastSelection===(selected??-1)&&lastHealth===hp&&lastJob===job&&lastProgress===progress&&lastGroupSize===count&&lastStance===currentStance&&lastFormation===currentFormation)return;
+ lastSelection=selected??-1;lastHealth=hp;lastJob=job;lastProgress=progress;lastGroupSize=count;lastStance=currentStance;lastFormation=currentFormation;
  selection.hidden=o<0;
  if(o<0){
   selection.innerHTML='';
@@ -1065,7 +1118,14 @@ function updateSelection() {
   const spd=abi?abi.sim_kind_stat(kind,10):0;
  const role=actorRole(kind);
  const iconSvg=actorIconSvg(kind);
- selection.innerHTML=`<div class="sel-card"><div class="sel-header"><div class="sel-icon-wrap">${iconSvg}</div><div class="sel-info"><div class="sel-title-row"><span class="sel-name">${name}</span>${count>1?`<span class="sel-count">(${count})</span>`:''}<span class="sel-state-tag">${jobDisplay}</span></div><span class="sel-role">${role}</span></div></div><div class="sel-hp-row"><div class="sel-hp-bar"><div class="sel-hp-fill ${hpFillClass}" style="width:${hp}%"></div></div><span class="sel-hp-text">${curHp}/${hpMax>0?hpMax:100}</span></div><div class="sel-stats-row"><div class="sel-stat"><span class="lbl">HP</span><span class="val">${curHp}</span></div><div class="sel-stat"><span class="lbl">DMG</span><span class="val">${dmg>0?dmg:'—'}</span></div><div class="sel-stat"><span class="lbl">RNG</span><span class="val">${rng>0?rng.toFixed(1):'—'}</span></div><div class="sel-stat"><span class="lbl">SPD</span><span class="val">${spd>0?spd.toFixed(1):'—'}</span></div></div></div>`;
+ const tacticsHtml = isUnitKind(kind) ? `<div class="sel-tactics-row"><button id="sel-btn-stance" class="sel-tactic-btn active" title="Toggle Stance"><span>⚔</span><span>${currentStance}</span></button><button id="sel-btn-formation" class="sel-tactic-btn active" title="Toggle Formation"><span>${currentFormation === 'LINE' ? '═' : currentFormation === 'WEDGE' ? '▲' : '∷'}</span><span>${currentFormation}</span></button></div>` : '';
+ selection.innerHTML=`<div class="sel-card"><div class="sel-header"><div class="sel-icon-wrap">${iconSvg}</div><div class="sel-info"><div class="sel-title-row"><span class="sel-name">${name}</span>${count>1?`<span class="sel-count">(${count})</span>`:''}<span class="sel-state-tag">${jobDisplay}</span></div><span class="sel-role">${role}</span></div></div><div class="sel-hp-row"><div class="sel-hp-bar"><div class="sel-hp-fill ${hpFillClass}" style="width:${hp}%"></div></div><span class="sel-hp-text">${curHp}/${hpMax>0?hpMax:100}</span></div><div class="sel-stats-row"><div class="sel-stat"><span class="lbl">HP</span><span class="val">${curHp}</span></div><div class="sel-stat"><span class="lbl">DMG</span><span class="val">${dmg>0?dmg:'—'}</span></div><div class="sel-stat"><span class="lbl">RNG</span><span class="val">${rng>0?rng.toFixed(1):'—'}</span></div><div class="sel-stat"><span class="lbl">SPD</span><span class="val">${spd>0?spd.toFixed(1):'—'}</span></div></div>${tacticsHtml}</div>`;
+ if (isUnitKind(kind)) {
+  const btnStance = document.getElementById('sel-btn-stance');
+  if (btnStance) btnStance.onclick = (e) => { e.stopPropagation(); cycleStance(); };
+  const btnFormation = document.getElementById('sel-btn-formation');
+  if (btnFormation) btnFormation.onclick = (e) => { e.stopPropagation(); cycleFormation(); };
+ }
 }
 let researchUI:ReturnType<typeof mountMatchResearch>|null=null;
 let previous=0,accumulator=0,windowStart=0,frames=0,tick=0;
