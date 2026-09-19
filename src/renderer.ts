@@ -5,6 +5,14 @@ import {drawCinderStrider} from './assets/cinder-strider';
 import {drawPackBeetle} from './assets/pack-beetle';
 import {drawSiegeJuggernaut} from './assets/siege-juggernaut';
 import {drawWardSentinel} from './assets/ward-sentinel';
+import {drawRiveter} from './assets/riveter';
+import {drawSunlance} from './assets/sunlance';
+import {drawHarborSkiff} from './assets/harbor-skiff';
+import {drawPrismCantor} from './assets/prism-cantor';
+import {drawAshhand} from './assets/ashhand';
+import {drawChainMule} from './assets/chain-mule';
+import {drawSootwing} from './assets/sootwing';
+import {drawBrandcaller} from './assets/brandcaller';
 // 16000 was enough for the authored 32x32 island. The 10 km world bakes the
 // visible window with three detail tiers, so the ceiling is raised and the bake
 // itself stops at BAKE_LIMIT instead of dropping instances one by one.
@@ -1276,104 +1284,31 @@ export class Renderer {
   const w=(maxX-minX)*scale,d=(maxY-minY)*scale;
   this.shadow(e[o]+ox+(minX+maxX)*scale/2,e[o+1]+oy+(minY+maxY)*scale/2,w,d,k===24||k===35?1:.45);
  }
- private wardRing(x:number,y:number,z:number,radius:number,color:number) {
-  for(let j=0;j<8;j++){
-   const a=j*Math.PI/4;
-   // Effect mask 1: rings/tracers never contribute to actor bounds or scale.
-   this.box(x+Math.cos(a)*radius,y+Math.sin(a)*radius,z,.16,.16,.05,32+color);
-  }
- }
- private wave2Unit(e:Float32Array,o:number,id:number) {
-  if(this.authoritativeActors&&e[o+4]===30){
-   drawAshJackal(this,e[o],e[o+1],e[o+2],id,{state:e[o+5],phase:e[o+6],tick:Math.round(this.time*60),cooldown:e[o+11]},this.jackalVariant);
-   return;
-  }
-  const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],state=e[o+5];
-  const tick=Math.round(this.time*60),moving=state===1||state===6,attacking=state===2;
-  const worker=k===32,working=worker&&(state===3||state===5||state===8);
-  const loading=k===33&&(attacking||state===7),active=attacking||working||loading;
-  // Idle: 72 ticks; gait/hover: 36 ticks. Snapshot phase owns action poses;
-  // a zero/unset phase still animates deterministically from the 48-tick clock.
-  const period=moving?36:72;
-  const idle=Math.sin((tick%period)*Math.PI*2/period),walk=Math.sin((tick%36)*Math.PI*2/36);
-  const phase=Number.isFinite(e[o+6])?Math.max(0,Math.min(1,e[o+6])):0;
-  const q=phase>0&&phase<1?phase:(tick%48)/48;
-  const windup=active&&q<.36?q/.36:0;
-  const strike=active&&q>=.5&&q<.68,recover=active&&q>=.68?(1-q)/.32:0;
-  const raise=active?(q<.36?windup:q<.68?1:recover):0;
-  const stroke=active?(q<.36?-.15*windup:q<.5?-.15:q<.68?.23:.23*recover):0;
-  const bob=active?0:(moving?.1*Math.abs(walk):.14*idle),gait=moving?.17*walk:0;
-  // Infantry: <=3 px, walkers: <=4 px, aircraft: <=2 px at zoom 1.
-  // These local excursions include the fixed role scale in unit(). Effects
-  // may travel beyond the rig; body, tool and wing motion remain bounded.
-  if(k===25){ // Prism Cantor: upright bearer, clear tall pole and lantern.
-   for(let side=-1;side<=1;side+=2){
-    this.box(x+gait*side,y+side*.2,z,.28,.23,.23,10,id);
-    this.box(x-.04,y+side*.19,z+.2,.21,.21,.27,7,id);
+  private wave2Unit(e:Float32Array,o:number,id:number) {
+   if(this.authoritativeActors&&e[o+4]===30){
+    drawAshJackal(this,e[o],e[o+1],e[o+2],id,{state:e[o+5],phase:e[o+6],tick:Math.round(this.time*60),cooldown:e[o+11]},this.jackalVariant);
+    return;
    }
-   this.box(x-.09,y,z+.35+bob,.52,.54,.54,13,id,-1);
-   this.box(x,y,z+.74+bob,.36,.4,.27,8,id);
-   this.box(x+.03,y,z+1.01+bob,.35,.37,.26,8,id,-1);
-   this.box(x+.21,y,z+1.06+bob,.07,.2,.1,17,id);
-   const lift=raise*.28,hand=z+.61+bob+lift;
-   this.box(x+.24,y+.25,hand,.4,.16,.16,8,id);
-   this.box(x+.48,y+.29,z+.24+bob+lift,.07,.07,1.48,21,id);
-   const sway=active?.06:idle*.14;
-   this.box(x+.15,y+.29+sway,z+1.3+bob+lift,.61,.11,.36,13,id);
-   this.box(x-.22,y+.29+sway,z+1.28+bob+lift,.23,.12,.27,12,id,-1);
-   this.box(x+.05,y+.36+sway,z+1.36+bob+lift,.09,.035,.15,22,id);
-   this.box(x+.48,y+.29,z+1.61+bob+lift,.24,.24,.3,17,id,-2);
-   this.emissive(x+.48,y+.29,z+1.77+bob+lift,18,id,!active&&idle>0?2:1,1);
-   if(strike)this.wardRing(x,y,z+.16,.7+(q-.5)*2.2,18);
-   return;
-  }
-  if(k===26){
-   drawSiegeJuggernaut(this,x,y,z,id,{kind:26,state,phase:q,tick});
-   return;
-  }
-  if(k===32){ // Ashhand: low hood, bent knees, hand hook and levered pry bar.
-   for(let side=-1;side<=1;side+=2){
-    this.box(x+.08+gait*side,y+side*.22,z,.35,.22,.18,23,id);
-    this.box(x-.13,y+side*.2,z+.17,.27,.2,.3,24,id,-1);
+   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],state=e[o+5];
+   const tick=Math.round(this.time*60);
+   const phase=Number.isFinite(e[o+6])?Math.max(0,Math.min(1,e[o+6])):0;
+   const q=phase>0&&phase<1?phase:(tick%48)/48;
+   if(k===25){
+    drawPrismCantor(this,x,y,z,id,{state,phase:q,tick});
+    return;
    }
-   this.box(x-.13,y,z+.31+bob,.61,.51,.36,24,id,-1);
-   this.box(x+.1,y,z+.61+bob,.5,.46,.33,23,id,-1);
-   this.box(x+.32,y+(active?0:idle*.1),z+.65+bob,.09,.28,.13,25,id);
-   this.box(x-.38,y-.13,z+.4+bob,.26,.29,.33,24,id);
-   this.box(x+.25,y-.27,z+.4+bob,.3,.16,.15,25,id);
-   this.hook(x+.4,y-.29,z+.35+bob,.46,6,id);
-   const tap=active?stroke:idle*.12,site=state===5?.12:0;
-   this.box(x+.24,y+.27,z+.41+bob+site,.3,.15,.17,24,id);
-   this.strut(x+.4,y+.28,z+.45+site,.18+tap,0,-.3+raise*.22,.075,6,id,2);
-   this.box(x+.58+tap,y+.28,z+.14+site+raise*.22,.24,.13,.08,6,id);
-   if(strike){
-    this.box(x+.69,y+.29,z+.19+site,.21,.23,.18,32+4);
-    this.box(x+.8,y+.35,z+.32+site,.14,.13,.13,32+6);
-    if(working)this.emissive(x+.63,y+.28,z+.27+site,27,-1,1,1);
+   if(k===26){
+    drawSiegeJuggernaut(this,x,y,z,id,{kind:26,state,phase:q,tick});
+    return;
    }
-   return;
-  }
-  if(k===33){ // Chain Mule: elongated four-legged pack frame, hanging hooks.
-   const settle=loading?-.22*raise:(moving?.1*Math.abs(walk):.18*idle);
-   for(let end=-1;end<=1;end+=2)for(let side=-1;side<=1;side+=2){
-    const step=moving?gait*side*end:idle*.08*end;
-    this.box(x+end*.66+step,y+side*.36,z,.29,.2,.18,23,id);
-    this.strut(x+end*.66+step,y+side*.36,z+.16,-end*.16,0,.44,.12,24,id,2);
+   if(k===32){
+    drawAshhand(this,x,y,z,id,{state,phase:q,tick});
+    return;
    }
-   this.box(x-.12,y,z+.6+settle,1.75,.58,.39,24,id,-1);
-   this.box(x+.88,y,z+.7+settle,.4,.42,.34,23,id,-1);
-   this.box(x+1.05,y,z+.79+settle,.1,.2,.1,26,id);
-   this.box(x-.28,y,z+1.01+settle,1.42,.86,.1,6,id);
-   for(let side=-1;side<=1;side+=2){
-    const close=loading?raise*.18:idle*.1;
-    this.box(x-.32,y+side*.49,z+.49+settle,.87,.32,.47,23,id,-1);
-    this.box(x-.32,y+side*.66,z+.64+settle,.1,.055,.39,6,id);
-    this.hook(x+.12,y+side*(.62-close),z+.27+settle,.68,6,id);
+   if(k===33){
+    drawChainMule(this,x,y,z,id,{state,phase:q,tick});
+    return;
    }
-   this.box(x-.42,y,z+1.12+settle,.7,.55,.38,24,id,-1);
-   this.box(x-.42,y,z+1.51+settle,.11,.58,.06,6,id);
-   return;
-  }
    if(k===34){
     drawSiegeJuggernaut(this,x,y,z,id,{kind:34,state,phase:q,tick});
     return;
@@ -1382,103 +1317,41 @@ export class Renderer {
     drawAshJackal(this,x,y,z,id,{state,phase:q,tick,cooldown:e[o+11]},this.jackalVariant);
     return;
    }
-  if(k===35){ // Sootwing: soot-black swept wings and two ember dart pods.
-   const hover=active?0:(moving?walk*.1:idle*.12),recoil=strike?-.16:0;
-   this.box(x+recoil,y,z+hover,1.14,.36,.24,2,id,-1);
-   this.box(x+.3+recoil,y,z+.2+hover,.39,.31,.17,23,id,-1);
-   for(let side=-1;side<=1;side+=2){
-    const sweep=active?-.1*raise:(moving?walk*.04:idle*.02);
-    this.box(x-.17+recoil,y+side*.43,z+.02+hover,.74,.66,.12,2,id,-1);
-    this.box(x-.49+sweep+recoil,y+side*.85,z+.03+hover,.49,.39,.1,1,id,-1);
-    this.box(x+.21+recoil,y+side*.43,z-.08+hover,.4,.18,.2,23,id);
-    this.box(x+.42+recoil,y+side*.43,z-.02+hover,.08,.12,.08,26,id);
+   if(k===35){
+    drawSootwing(this,x,y,z,id,{state,phase:q,tick});
+    return;
    }
-   this.box(x-.61+recoil,y,z+.17+hover,.32,.14,.29,23,id,-1);
-   if(strike)for(let side=-1;side<=1;side+=2){
-    this.box(x+.65+(q-.5)*2,y+side*.43,z+.01,.27,.055,.055,32+26);
-    this.box(x+.5,y+side*.43,z+.01,.09,.1,.08,32+27);
-   }
-   return;
-  }
-  if(k===36){ // Brandcaller: raised torch silhouette and open off-hand glyph.
-   for(let side=-1;side<=1;side+=2){
-    this.box(x+gait*side,y+side*.2,z,.29,.22,.21,23,id);
-    this.box(x-.08,y+side*.17,z+.2,.22,.22,.26,24,id);
-   }
-   this.box(x-.11,y,z+.35+bob,.5,.53,.48,24,id,-1);
-   this.box(x+.04,y,z+.83+bob,.36,.38,.3,23,id,-1);
-   this.box(x+.21,y,z+.89+bob,.08,.24,.11,25,id);
-   const lift=raise*.28;
-   this.strut(x+.06,y+.23,z+.65+bob,.25,.05,.2+lift,.11,25,id,2);
-   this.box(x+.32,y+.29,z+.77+bob+lift,.075,.075,.68,6,id);
-   this.box(x+.32,y+.29,z+1.4+bob+lift,.24,.23,.29,26,id,-2);
-   this.box(x+.32+(active?0:idle*.09),y+.29,z+1.6+bob+lift,.12,.13,.18+(active?0:idle*.03),27,id,-2);
-   this.box(x+.22,y-.29,z+.69+bob,.37,.16,.15,25,id);
-   this.box(x+.42,y-.32,z+.77+bob,.07,.35,.065,26,id);
-   this.box(x+.42,y-.32,z+.67+bob,.07,.065,.28,26,id);
-   if(strike){
-    this.wardRing(x+1.22,y,z+.15,.48+(q-.5)*1.4,26);
-    this.box(x+1.22,y,z+.41,.09,.09,.42,32+27);
-    this.box(x+1.22,y,z+.62,.11,.42,.08,32+27);
-    this.emissive(x+.32,y+.29,z+1.64+lift,27,-1,1,1);
+   if(k===36){
+    drawBrandcaller(this,x,y,z,id,{state,phase:q,tick});
+    return;
    }
   }
- }
- private unitParts(e:Float32Array,o:number,id:number) {
-  if(wave2Units.has(e[o+4])){this.wave2Unit(e,o,id);return;}
-  const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],phase=e[o+6],state=e[o+5],moving=state===1||state===6;
-  const gait=moving?(phase<.5?-.16:.16):0;
-  if(k===24){this.box(x,y,z,1.8,.8,.25,13,id);this.box(x,y,z+.25,1.25,.6,.25,14,id);for(let a=-1;a<=1;a+=2){this.box(x+a*.85,y,z,.25,1.25,.3,8,id);this.box(x+a*.75,y-.55,z+.1,.22,.4,.2,7,id);this.box(x+a*.6,y-.5,z-.05,.16,.25,.1,phase<.5?17:18,id);}this.box(x,y+.4,z+.15,1.4,.18,.15,8,id);this.box(x-.4,y,z+.5,.35,.4,.15,3,id);if(e[o+10]>0)this.crate(x+.2,y,z+.5,.45,id);if(state===7){this.box(x,y,z-1.,.04,.04,1.,21,id);this.crate(x,y,z-1.3,.35,id);}return;}
-  // Brief numeric roles: 21 tall lancer, 22 wing/disc, 23 rifle knight.
-  // Keep the simulation's existing kind names, cargo and action fields intact.
-  const attacking=state===2,recoil=attacking&&phase<.18?.23:0;
-  if(k===21){
-   drawPackBeetle(this,x,y,z,id,{state,phase,tick:Math.round(this.time*60),cargo:e[o+10]});
-   return;
-  }
-  if(k===22){
-   drawWardSentinel(this,x,y,z,id,{state,phase,tick:Math.round(this.time*60)});
-   return;
-  }
-  if(k===23){
-   const brace=attacking?.34:.23;
-   for(let side=-1;side<=1;side+=2){
-    this.box(x+gait*side,y+side*brace,z,.28,.24,.42,10,id);
-    this.box(x-.16,y+side*brace,z,.48,.25,.16,11,id);
+  private unitParts(e:Float32Array,o:number,id:number) {
+   if(wave2Units.has(e[o+4])){this.wave2Unit(e,o,id);return;}
+   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],phase=e[o+6],state=e[o+5];
+   if(k===24){
+    drawHarborSkiff(this,x,y,z,id,{state,phase,tick:Math.round(this.time*60)});
+    return;
    }
-   // Wide planted cloak hem narrows to a high ivory crest.
-   this.box(x-.12-recoil,y,z+.28,.72,.84,1.03,13,id,-1);
-   this.box(x-recoil,y,z+.67,.5,.5,.76,10,id);
-   this.box(x-recoil,y,z+.7,.53,.53,.27,14,id);
-   this.box(x-recoil,y,z+1.1,.53,.53,.22,14,id);
-   this.box(x-recoil,y,z+1.32,.42,.44,.16,1,id);
-   this.box(x-recoil,y,z+1.48,.36,.38,.27,8,id,-2);
-   this.box(x+.19-recoil,y,z+1.52,.16,.22,.14,18,id);
-   for(let side=-1;side<=1;side+=2)this.box(x-recoil,y+side*.3,z+1.02,.46,.27,.26,side<0?9:8,id);
-   this.box(x+.38-recoil,y+.32,z+.96,.92,.2,.2,10,id);
-   this.box(x+.95-recoil,y+.32,z+.99,.14,.08,.14,22,id);
-   if(attacking&&e[o+11]>.8)this.emissive(x+1.23-recoil,y+.32,z+1.11,18,id,2,2);
-   return;
+   if(k===21){
+    drawPackBeetle(this,x,y,z,id,{state,phase,tick:Math.round(this.time*60),cargo:e[o+10]});
+    return;
+   }
+   if(k===22){
+    drawWardSentinel(this,x,y,z,id,{state,phase,tick:Math.round(this.time*60)});
+    return;
+   }
+   if(k===23){
+    drawSunlance(this,x,y,z,id,{state,phase,tick:Math.round(this.time*60)});
+    return;
+   }
+   if(k===31){
+    drawCinderStrider(this,x,y,z,id,{state,phase,tick:Math.round(this.time*60),cooldown:e[o+11]});
+    return;
+   }
+   // Riveter (Kind 20)
+   drawRiveter(this,x,y,z,id,{state,phase,tick:Math.round(this.time*60)});
   }
-  if(k===31){
-   drawCinderStrider(this,x,y,z,id,{state,phase,tick:Math.round(this.time*60),cooldown:e[o+11]});
-   return;
-  }
-  // Riveter: compact round hood and backpack, with a warm face/tool cluster.
-  this.box(x-.15,y+gait-.12,z,.2,.24,.25,10,id);
-  this.box(x+.15,y-gait+.12,z,.2,.24,.25,10,id);
-  this.box(x,y,z+.24,.5,.46,.43,14,id,-1);
-  this.box(x,y-.27,z+.3,.36,.22,.4,13,id);
-  this.box(x,y,z+.65,.49,.46,.28,9,id,-1);
-  this.box(x+.23,y,z+.69,.19,.2,.14,22,id);
-  if(e[o+10]>0)this.crate(x-.35,y,z+.3,.28+Math.min(4,e[o+10])*.03,id);
-  const working=state===3||state===8,strike=working&&phase<.22;
-  const lift=working?(phase<.45?.28:-.1):0;
-  this.box(x+.32,y,z+.45,.2,.2,.17,7,id);
-  this.box(x+.5,y,z+.45+lift,.14,.14,.36,21,id);
-  this.box(x+.5,y,z+.75+lift,.35,.16,.12,22,id);
-  if(strike){this.box(x+.6,y,z+.4,.15,.15,.15,18);this.box(x+.8,y,z+.58,.1,.1,.1,22);}
- }
 
   private wreck(x:number,y:number,z:number,kind:number) {
    const cinder=cinderUnits.has(kind)||cinderBuildings.has(kind);
