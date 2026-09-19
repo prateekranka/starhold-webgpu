@@ -18,8 +18,8 @@ struct Entity { data: [f32; STRIDE], x: i32, y: i32, target: usize, timer: u32, 
 impl Entity {
     const EMPTY: Self = Self { data: [0.; STRIDE], x: 0, y: 0, target: 0, timer: 0, route: 0, origin: [0.;3], destination: [0.;3], active: false };
 }
-struct Sim { entities: [Entity; CAP], snapshot: [f32; CAP*STRIDE], ids: [usize; CAP], terrain: [f32;1024], world: Vec<f32>, count: usize, tick: u32, accumulator: f64, rng: u32, selected: usize, alloy: u32, charge: u32, mode: u32, game: Match }
-thread_local! { static SIM: RefCell<Sim> = RefCell::new(Sim { entities:[Entity::EMPTY;CAP], snapshot:[0.;CAP*STRIDE], ids:[0;CAP], terrain:[0.;1024], world:Vec::new(), count:0,tick:0,accumulator:0.,rng:1,selected:CAP,alloy:160,charge:120,mode:0,game:Match::EMPTY }); }
+struct Sim { entities: [Entity; CAP], snapshot: [f32; CAP*STRIDE], ids: [usize; CAP], terrain: [f32;1024], world: Vec<f32>, count: usize, tick: u32, accumulator: f64, rng: u32, selected: usize, selected_group: [bool; CAP], alloy: u32, charge: u32, mode: u32, game: Match }
+thread_local! { static SIM: RefCell<Sim> = RefCell::new(Sim { entities:[Entity::EMPTY;CAP], snapshot:[0.;CAP*STRIDE], ids:[0;CAP], terrain:[0.;1024], world:Vec::new(), count:0,tick:0,accumulator:0.,rng:1,selected:CAP,selected_group:[false;CAP],alloy:160,charge:120,mode:0,game:Match::EMPTY }); }
 fn height(x:f32,y:f32)->f32 {
     if (7. ..25.).contains(&x) && (9. ..26.).contains(&y) || (23. ..29.).contains(&x) && (7. ..26.).contains(&y) || (3. ..10.).contains(&x) && (15. ..26.).contains(&y) || x>=24. && y<=14. {0.5}
     else if (7. ..14.).contains(&x) && (3. ..9.).contains(&y) {1.} else if x<2. || y<2. || x>30. || y>30. {-1.} else {0.}
@@ -195,7 +195,7 @@ impl Sim {
  // sim_init itself stays byte-identical, including when called after a match.
  // Match actors use match_add, and never pass through this showcase helper.
  fn add(&mut self,id:usize,kind:u32,x:f32,y:f32,faction:f32) { if id==0 {self.mode=0;} let mut e=Entity::EMPTY;e.active=true;e.x=(x*1024.) as i32;e.y=(y*1024.) as i32;e.data=[x,y,height(x,y),0.,kind as f32,0.,0.,1.,0.,faction,1.,0.];self.entities[id]=e; }
- fn pack(&mut self) { self.count=0;for i in 0..CAP {if self.entities[i].active {self.entities[i].data[8]=if self.selected==i {1.} else {0.};self.ids[self.count]=i;self.snapshot[self.count*STRIDE..(self.count+1)*STRIDE].copy_from_slice(&self.entities[i].data);self.count+=1;}} }
+  fn pack(&mut self) { self.count=0;for i in 0..CAP {if self.entities[i].active {self.entities[i].data[8]=if self.selected==i||self.selected_group[i] {1.} else {0.};self.ids[self.count]=i;self.snapshot[self.count*STRIDE..(self.count+1)*STRIDE].copy_from_slice(&self.entities[i].data);self.count+=1;}} }
   fn walk(&mut self, id: usize, x: f32, y: f32, speed: f32) -> bool {
    if self.mode == 0 {
        let arrived;
@@ -418,7 +418,7 @@ impl Sim {
   self.pack();
  }
 }
-#[no_mangle] pub extern "C" fn sim_init(seed:u32) {SIM.with(|s| {let mut s=s.borrow_mut();s.entities.fill(Entity::EMPTY);s.tick=0;s.accumulator=0.;s.rng=seed.max(1);s.selected=7;s.alloy=160;s.charge=120;
+#[no_mangle] pub extern "C" fn sim_init(seed:u32) {SIM.with(|s| {let mut s=s.borrow_mut();s.entities.fill(Entity::EMPTY);s.tick=0;s.accumulator=0.;s.rng=seed.max(1);s.selected=7;s.selected_group.fill(false);s.alloy=160;s.charge=120;
 for y in 0..32 {for x in 0..32 {s.terrain[y*32+x]=height(x as f32+0.5,y as f32+0.5);}}
 for (id,(kind,x,y)) in [(10,16.,16.),(11,7.,23.),(12,10.,12.),(16,24.,8.),(13,16.,11.),(14,5.,18.),(15,17.,21.),(16,26.,12.)].iter().enumerate() {s.add(id,*kind,*x,*y,0.);if id>=4 {s.entities[id].data[10]=0.;s.entities[id].data[5]=5.;}}
 for id in 8..27 {let kind=if id<18 {20}else if id<20 {21}else if id<24 {22}else if id<26 {23}else{24};s.add(id,kind,9.+(id%5) as f32,24.+(id%2) as f32,0.);if kind==20 {s.entities[id].data[10]=0.;}else if kind==22||kind==23 {s.add(id,kind,22.5+(id%3) as f32*0.8,11.+(id%2) as f32*2.,0.);}else if kind==24 {s.add(id,kind,21.5,22.,0.);s.entities[id].data[2]=3.5;}}
@@ -430,7 +430,9 @@ s.pack();});}
 #[no_mangle] pub extern "C" fn sim_entity_count()->u32 {SIM.with(|s|s.borrow().count as u32)}
 #[no_mangle] pub extern "C" fn sim_entity_stride()->u32 {STRIDE as u32}
 #[no_mangle] pub extern "C" fn sim_entity_ptr()->*const f32 {SIM.with(|s|s.borrow().snapshot.as_ptr())}
-#[no_mangle] pub extern "C" fn sim_select(index:i32) {SIM.with(|s| {let mut s=s.borrow_mut();s.selected=if index>=0&&(index as usize)<s.count {let id=s.ids[index as usize];let k=s.entities[id].data[4] as u32;if if s.mode==1 {roster(k).is_some()}else{matches!(k,10|11|12|13|14|15|16|17|20|21|22|23|24|30|31)} {id}else{CAP}}else{CAP};s.pack();});}
+#[no_mangle] pub extern "C" fn sim_select(index:i32) {SIM.with(|s| {let mut s=s.borrow_mut();s.selected_group.fill(false);s.selected=if index>=0&&(index as usize)<s.count {let id=s.ids[index as usize];let k=s.entities[id].data[4] as u32;if if s.mode==1 {roster(k).is_some()}else{matches!(k,10|11|12|13|14|15|16|17|20|21|22|23|24|30|31)} {s.selected_group[id]=true;id}else{CAP}}else{CAP};s.pack();});}
+#[no_mangle] pub extern "C" fn sim_select_add(index:i32) {SIM.with(|s| {let mut s=s.borrow_mut();let id=if index>=0&&(index as usize)<s.count {s.ids[index as usize]}else if index>=0&&(index as usize)<CAP {index as usize}else{CAP};if id<CAP&&s.entities[id].active{let k=s.entities[id].data[4] as u32;let valid=if s.mode==1 {roster(k).is_some()}else{matches!(k,10|11|12|13|14|15|16|17|20|21|22|23|24|30|31)};if valid {s.selected_group[id]=true;if s.selected==CAP {s.selected=id;}}}s.pack();});}
+#[no_mangle] pub extern "C" fn sim_select_clear() {SIM.with(|s| {let mut s=s.borrow_mut();s.selected=CAP;s.selected_group.fill(false);s.pack();});}
 // Additive read-only terrain/resource exports; required entity ABI stays unchanged.
 #[no_mangle] pub extern "C" fn sim_terrain_ptr()->*const f32 {SIM.with(|s|s.borrow().terrain.as_ptr())}
 #[no_mangle] pub extern "C" fn sim_alloy()->u32 {SIM.with(|s|{let s=s.borrow();if s.mode==1 {s.game.sides[s.game.player].alloy}else{s.alloy}})}
@@ -569,6 +571,7 @@ impl Sim {
         self.accumulator = 0.;
         self.rng = seed.max(1);
         self.selected = CAP;
+        self.selected_group.fill(false);
         self.mode = 1;
         self.game = Match::EMPTY;
         // The void ABI maps invalid faction inputs to Dawnward.
@@ -847,12 +850,84 @@ impl Sim {
             1 => self.build(f, a, b, self.selected),
             2 if a == 0 && b == 0 => self.advance(f),
             3 if a == 0 && b == 0 => self.cancel(f, self.selected),
-            4 => self.order_move(f, self.selected, a, b),
-            5 => self.order_target(f, self.selected, a as usize),
+            4 => self.order_move_group(f, a, b),
+            5 => self.order_target_group(f, if (a as usize) < self.count { self.ids[a as usize] } else { a as usize }),
+            6 => self.order_move(f, if (a as usize) < self.count { self.ids[a as usize] } else { a as usize }, (b >> 16) & 0xFFFF, b & 0xFFFF),
+            7 => self.order_target(f, if (a as usize) < self.count { self.ids[a as usize] } else { a as usize }, if (b as usize) < self.count { self.ids[b as usize] } else { b as usize }),
             _ => false,
         };
         if accepted { self.pack(); }
         accepted
+    }
+    fn order_move_group(&mut self, f: usize, a: u32, b: u32) -> bool {
+        let mut group = [CAP; MATCH_ACTORS];
+        let mut count = 0;
+        for i in 0..MATCH_ACTORS {
+            if self.selected_group[i] && self.entities[i].active && self.entities[i].data[9] as usize == f {
+                if let Some(k) = roster(self.entities[i].data[4] as u32) {
+                    if k.klass != 0 {
+                        group[count] = i;
+                        count += 1;
+                    }
+                }
+            }
+        }
+        if count == 0 {
+            if self.selected < MATCH_ACTORS {
+                return self.order_move(f, self.selected, a, b);
+            }
+            return false;
+        }
+        if count == 1 {
+            return self.order_move(f, group[0], a, b);
+        }
+        let center_x = a as f32 / 10.;
+        let center_y = b as f32 / 10.;
+        let cols = if count <= 4 { 2 } else { 3 };
+        let mut any_moved = false;
+        for (idx, &unit_id) in group[..count].iter().enumerate() {
+            let row = (idx / cols) as f32;
+            let col = (idx % cols) as f32 - ((cols - 1) as f32 * 0.5);
+            let mut target_x = center_x + col * 1.2;
+            let mut target_y = center_y + row * 1.2;
+            if self.ground(target_x, target_y) < 0. {
+                target_x = center_x;
+                target_y = center_y;
+            }
+            let tx = target_x.clamp(1., (WORLD - 1) as f32);
+            let ty = target_y.clamp(1., (WORLD - 1) as f32);
+            if self.order_move(f, unit_id, (tx * 10.) as u32, (ty * 10.) as u32) {
+                any_moved = true;
+            }
+        }
+        any_moved
+    }
+    fn order_target_group(&mut self, f: usize, target: usize) -> bool {
+        let mut group = [CAP; MATCH_ACTORS];
+        let mut count = 0;
+        for i in 0..MATCH_ACTORS {
+            if self.selected_group[i] && self.entities[i].active && self.entities[i].data[9] as usize == f {
+                if let Some(k) = roster(self.entities[i].data[4] as u32) {
+                    if k.klass != 0 {
+                        group[count] = i;
+                        count += 1;
+                    }
+                }
+            }
+        }
+        if count == 0 {
+            if self.selected < MATCH_ACTORS {
+                return self.order_target(f, self.selected, target);
+            }
+            return false;
+        }
+        let mut any = false;
+        for &id in &group[..count] {
+            if self.order_target(f, id, target) {
+                any = true;
+            }
+        }
+        any
     }
     fn order_move(&mut self, f: usize, selected: usize, a: u32, b: u32) -> bool {
         if selected >= MATCH_ACTORS || !self.entities[selected].active || self.entities[selected].data[9] as usize != f {
@@ -912,6 +987,7 @@ impl Sim {
         self.game.waypoints[id] = 0;
         self.game.lanes[id] = 0;
         if self.selected == id { self.selected = CAP; }
+        self.selected_group[id] = false;
         for j in 0..MATCH_ACTORS {
             if self.game.orders[j] == Order::Build(id) {
                 self.game.orders[j] = Order::Gather;

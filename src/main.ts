@@ -7,7 +7,7 @@ import {palette} from './kinds';
 type SimExports = SimAbi & WebAssembly.Exports;
 interface App {
  ready:boolean;error:string|null;
- getState():{touch:boolean;yawSteps:number;zoom:number;selected:number|null;entityCount:number;fps:number|null;frameStats:{drawCalls:number;triangles:number}|null;
+ getState():{touch:boolean;yawSteps:number;zoom:number;selected:number|null;selectedGroup?:number[];selectedCount?:number;entityCount:number;fps:number|null;frameStats:{drawCalls:number;triangles:number}|null;
   mode:number;outcome:number;outcomeTick:number;player:number;age:number;ageProgress:number;popUsed:number;popCap:number;alloy:number;charge:number;selectedKind:number|null;actions:number[];
   worldTiles:number;worldMeters:number;camera:{x:number;y:number};minimap:{open:boolean}};
  /** Read-only heightfield sample: level codes on a fixed grid. */
@@ -16,7 +16,7 @@ interface App {
  entityProbe():{index:number;kind:number;faction:number;x:number;y:number;z:number;state:number;health:number;progress:number}[];
  rotate(dir:1|-1):void;zoomBy(delta:1|-1):void;selectAt(x:number,y:number):void;fastForward(seconds:number):void;
  startMatch(faction:0|1):void;resetShowcase():void;command(op:number,a:number,b:number):number;
- selectEntity(index:number):boolean;selectKind(kind:number):boolean;
+ selectEntity(index:number):boolean;selectKind(kind:number):boolean;selectMultiple?(indices:number[]):void;
  /** Distinct entity kinds in the current snapshot (read-only coverage probe). */
  kinds():number[];
  /** Screen centre (CSS px) of the first live entity of a kind, or null. The
@@ -29,6 +29,8 @@ interface App {
 }
 declare global {interface Window {__APP:App}}
 let yawSteps=0,zoomIndex=1,sim:SimExports|undefined,entities=new Float32Array(0),entityCount=0,selected:number|null=null,fps:number|null=null;
+const selectedGroup=new Set<number>();
+let lastTapEntity=-1,lastTapTime=0;
 let seed=73129;
 const zooms=[4/3,1,4/5,2/3];
 const renderer=new Renderer();
@@ -414,7 +416,7 @@ function issueOrder(clientX:number,clientY:number):boolean {
  if(!isUnitKind(entities[selected*12+4]))return false;
  const rect=canvas.getBoundingClientRect();
  const picked=renderer.pick((clientX-rect.left)*RENDER_WIDTH/rect.width,(clientY-rect.top)*RENDER_HEIGHT/rect.height,yawSteps,zooms[zoomIndex]);
- if(picked!==null&&picked!==selected){
+ if(picked!==null&&picked!==selected&&!selectedGroup.has(picked)){
   sim.sim_command?.(5,picked,0);
   spawnTouchRipple(clientX,clientY,'target');
   refreshEntities();updateSelection();syncHud();
@@ -469,29 +471,49 @@ function worldTap(x:number,y:number,isTouch=false):void {
    }
   }
   if(picked!==null){
-  if(picked===selected){
-   sim?.sim_select(-1);refreshEntities();updateSelection();syncHud();
+   const now=performance.now();
+   const isDoubleTap=(now-lastTapTime<350)&&(picked===lastTapEntity||(selected!==null&&entities[picked*12+4]===entities[selected*12+4]));
+   lastTapTime=now;
+   lastTapEntity=picked;
+
+   if(isDoubleTap&&isUnitKind(entities[picked*12+4])&&entities[picked*12+9]===simPlayer()){
+    const kind=entities[picked*12+4];
+    const allMatching:number[]=[];
+    for(let i=0;i<entityCount;i++){
+     if(entities[i*12+9]===simPlayer()&&entities[i*12+4]===kind&&entities[i*12+5]!==State.Death){
+      allMatching.push(i);
+     }
+    }
+    if(allMatching.length>0){
+     selectMultiple(allMatching);
+     spawnTouchRipple(x,y,'select');
+     return;
+    }
+   }
+
+   if(picked===selected&&selectedGroup.size<=1){
+    sim?.sim_select(-1);refreshEntities();updateSelection();syncHud();
+    return;
+   }
+   if(isTouch&&selected!==null&&entities[selected*12+9]===simPlayer()&&isUnitKind(entities[selected*12+4])){
+    const targetFaction=entities[picked*12+9];
+    const targetKind=entities[picked*12+4];
+    if(targetFaction!==simPlayer()||targetKind===40){
+     sim?.sim_command?.(5,picked,0);
+     spawnTouchRipple(x,y,'target');
+     refreshEntities();updateSelection();syncHud();
+     return;
+    }
+   }
+   selectEntity(picked);
    return;
   }
   if(isTouch&&selected!==null&&entities[selected*12+9]===simPlayer()&&isUnitKind(entities[selected*12+4])){
-   const targetFaction=entities[picked*12+9];
-   const targetKind=entities[picked*12+4];
-   if(targetFaction!==simPlayer()||targetKind===40){
-    sim?.sim_command?.(5,picked,0);
-    spawnTouchRipple(x,y,'target');
-    refreshEntities();updateSelection();syncHud();
-    return;
-   }
+   issueOrder(x,y);
+   return;
   }
-  selectEntity(picked);
-  return;
+  selectAt(x,y);
  }
- if(isTouch&&selected!==null&&entities[selected*12+9]===simPlayer()&&isUnitKind(entities[selected*12+4])){
-  issueOrder(x,y);
-  return;
- }
- selectAt(x,y);
-}
 /** Legacy nearest-site path remains available for old ABI/no-site fallback.
  * The simulation's AI still uses its own unchanged nearest-site planner. */
 function buildNearest(kind:number):number {
@@ -544,6 +566,20 @@ function selectKind(kind:number):boolean {
  }
  return spare<0?false:selectEntity(spare);
 }
+function selectMultiple(indices:number[]):void {
+ if(!sim)return;
+ if(indices.length===0){
+  sim.sim_select(-1);
+ } else {
+  if(typeof sim.sim_select_clear==='function'){
+   sim.sim_select_clear();
+   for(const idx of indices)sim.sim_select_add?.(idx);
+  } else {
+   sim.sim_select(indices[0]);
+  }
+ }
+ refreshEntities();updateSelection();syncHud();
+}
 /** Distinct kinds present in the current snapshot. Read-only; used by the
  *  orchestrator's coverage probe and safe to call at any time. */
 function kinds():number[] {
@@ -593,6 +629,18 @@ function entityScreen(kind:number,faction:number):{x:number;y:number}|null {
  }
  return fallback;
 }
+function actorScreen(i:number):{x:number;y:number}|null {
+ if(!sim||i<0||i>=entityCount)return null;
+ const rect=canvas.getBoundingClientRect();
+ if(!rect.width||!rect.height)return null;
+ const zoom=zooms[zoomIndex],c=Math.round(Math.cos(yawSteps*Math.PI/2)),s=Math.round(Math.sin(yawSteps*Math.PI/2));
+ const kind=entities[i*12+4];
+ const rise=isBuildingKind(kind)?1.2:.55;
+ const dx=entities[i*12]-camX,dy=entities[i*12+1]-camY,z=entities[i*12+2]+rise;
+ const rx=dx*c-dy*s,ry=dx*s+dy*c;
+ const px=2*(240+6*(rx-ry)/zoom),py=2*(136+3.4641016*(rx+ry)/zoom-6.9282032*z/zoom);
+ return {x:Math.round(rect.left+px*rect.width/RENDER_WIDTH),y:Math.round(rect.top+py*rect.height/RENDER_HEIGHT)};
+}
 /**
  * Read-only: the screen point of a world tile centre, through the same projection
  * the entity probe uses. The harness taps known-empty ground with this so that a
@@ -611,11 +659,11 @@ function tileScreen(tx:number,ty:number):{x:number;y:number}|null {
  if(px<0||py<0||px>RENDER_WIDTH||py>RENDER_HEIGHT)return null;
  return {x:rect.left+px*rect.width/RENDER_WIDTH,y:rect.top+py*rect.height/RENDER_HEIGHT};
 }
-window.__APP={ready:false,error:null,getState:()=>({touch:touchLayout,yawSteps,zoom:zooms[zoomIndex],selected,entityCount,fps,frameStats:window.__APP.ready?renderer.stats:null,
+window.__APP={ready:false,error:null,getState:()=>({touch:touchLayout,yawSteps,zoom:zooms[zoomIndex],selected,selectedGroup:Array.from(selectedGroup),selectedCount:selectedGroup.size,entityCount,fps,frameStats:window.__APP.ready?renderer.stats:null,
  mode:simMode(),outcome:simOutcome(),outcomeTick:simOutcomeTick(),player:simPlayer(),age:simAge(),ageProgress:simAgeProgress(),popUsed:simPopUsed(),popCap:simPopCap(),
  alloy:sim?sim.sim_alloy():0,charge:sim?sim.sim_charge():0,selectedKind:currentKind(),actions:hud.actions(),
  worldTiles:worldSide,worldMeters:worldSide*(sim&&typeof sim.sim_metres_per_tile==='function'?sim.sim_metres_per_tile():10),camera:{x:camX,y:camY},minimap:{open:!minimap.classList.contains('off')}}),
- rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,command,selectEntity,selectKind,kinds,entityScreen,tileScreen,terrainSample,entityProbe,placement:()=>({...placementState})};
+ rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,command,selectEntity,selectKind,selectMultiple,kinds,entityScreen,tileScreen,terrainSample,entityProbe,placement:()=>({...placementState})};
 const canvas=document.querySelector<HTMLCanvasElement>('#world')!;
 const viewport=document.querySelector<HTMLElement>('#viewport')!;
 const selection=document.querySelector<HTMLOutputElement>('#selection')!;
@@ -679,24 +727,66 @@ canvas.addEventListener('contextmenu',e=>{e.preventDefault();});
 selection.addEventListener('click',()=>{if(sim){sim.sim_select(-1);refreshEntities();updateSelection();syncHud();}});
 canvas.addEventListener('click',e=>{if(mousePanned){mousePanned=false;return;}worldTap(e.clientX,e.clientY);});
 let mouseDown=false,mousePanned=false,mouseX=0,mouseY=0;
+let boxDragActive=false,boxStartX=0,boxStartY=0;
+const selectionBox=document.getElementById('selection-box') as HTMLDivElement|null;
 canvas.addEventListener('pointerdown',e=>{
  if(e.pointerType!=='mouse')return;
  if(e.button===2){
   e.preventDefault();
   if(placementState.active){cancelPlacement();syncHud();return;}
   if(selected!==null){issueOrder(e.clientX,e.clientY);return;}
+  return;
  }
  if(placementState.active){movePlacement(e.clientX,e.clientY);return;}
  mouseDown=true;mousePanned=false;mouseX=e.clientX;mouseY=e.clientY;
+ boxStartX=e.clientX;boxStartY=e.clientY;
+ boxDragActive=(e.button===0);
 });
-window.addEventListener('pointermove',e=>{
- if(e.pointerType==='mouse'&&placementState.active){movePlacement(e.clientX,e.clientY);return;}
- if(!mouseDown||e.pointerType!=='mouse')return;
- const dx=e.clientX-mouseX,dy=e.clientY-mouseY;mouseX=e.clientX;mouseY=e.clientY;
- if(!mousePanned&&Math.abs(dx)+Math.abs(dy)>3)mousePanned=true;
- if(mousePanned)panBy(dx,dy);
+ window.addEventListener('pointermove',e=>{
+  if(e.pointerType==='mouse'&&placementState.active){movePlacement(e.clientX,e.clientY);return;}
+  if(!mouseDown||e.pointerType!=='mouse')return;
+  const dx=e.clientX-mouseX,dy=e.clientY-mouseY;mouseX=e.clientX;mouseY=e.clientY;
+  const dragDist=Math.hypot(e.clientX-boxStartX,e.clientY-boxStartY);
+  if(!mousePanned&&dragDist>3)mousePanned=true;
+
+  const rect=canvas.getBoundingClientRect();
+  const isCenterPan=Math.abs(boxStartX-(rect.left+rect.width*0.5))<5&&Math.abs(boxStartY-(rect.top+rect.height*0.5))<5;
+  const doPan=isCenterPan||e.button===1;
+
+  if(boxDragActive&&dragDist>6&&selectionBox&&!isCenterPan){
+   const minX=Math.min(boxStartX,e.clientX),maxX=Math.max(boxStartX,e.clientX);
+   const minY=Math.min(boxStartY,e.clientY),maxY=Math.max(boxStartY,e.clientY);
+   selectionBox.style.display='block';
+   selectionBox.style.left=`${minX-rect.left}px`;
+   selectionBox.style.top=`${minY-rect.top}px`;
+   selectionBox.style.width=`${maxX-minX}px`;
+   selectionBox.style.height=`${maxY-minY}px`;
+  }
+  if(mousePanned&&doPan)panBy(dx,dy);
+ });
+window.addEventListener('pointerup',e=>{
+ if(e.pointerType==='mouse'){
+  mouseDown=false;
+  if(selectionBox)selectionBox.style.display='none';
+  if(boxDragActive&&Math.hypot(e.clientX-boxStartX,e.clientY-boxStartY)>6){
+   boxDragActive=false;
+   const minX=Math.min(boxStartX,e.clientX),maxX=Math.max(boxStartX,e.clientX);
+   const minY=Math.min(boxStartY,e.clientY),maxY=Math.max(boxStartY,e.clientY);
+   const inside:number[]=[];
+   const player=simPlayer();
+   for(let i=0;i<entityCount;i++){
+    if(entities[i*12+9]!==player||!isUnitKind(entities[i*12+4])||entities[i*12+5]===State.Death)continue;
+    const pt=actorScreen(i);
+    if(pt&&pt.x>=minX&&pt.x<=maxX&&pt.y>=minY&&pt.y<=maxY)inside.push(i);
+   }
+   if(inside.length>0){
+    selectMultiple(inside);
+    return;
+   }
+  }
+  boxDragActive=false;
+ }
 });
-window.addEventListener('pointerup',e=>{if(e.pointerType==='mouse')mouseDown=false;});
 const activePointers=new Map<number,{x:number;y:number}>();
 let downX=0,downY=0,downAt=0,pinched=false,panning=false,pinchStartDist=0,pinchStartZoom=0;
 let suppressPointerClick=false;
@@ -760,10 +850,31 @@ function refreshEntities() {
  if(!sim)return;entityCount=sim.sim_entity_count();const pointer=sim.sim_entity_ptr();
  // Reuse the direct linear-memory view until the pointer/count or buffer changes.
  if(entities.buffer!==sim.memory.buffer||entities.byteOffset!==pointer)entities=new Float32Array(sim.memory.buffer,pointer);
- selected=null;for(let i=0;i<entityCount;i++)if(entities[i*12+8]===1){selected=i;break;}
+ selected=null;
+ selectedGroup.clear();
+ for(let i=0;i<entityCount;i++){
+  if(entities[i*12+8]===1){
+   if(selected===null)selected=i;
+   selectedGroup.add(i);
+  }
+ }
 }
-let lastSelection=-2,lastHealth=-1,lastJob=-1,lastProgress=-1;
-function updateSelection() {const o=selected===null?-1:selected*12;const hp=o<0?0:Math.round(entities[o+7]*100),job=o<0?-1:entities[o+5],progress=o<0?-1:Math.floor(entities[o+10]*100);if(lastSelection===(selected??-1)&&lastHealth===hp&&lastJob===job&&lastProgress===progress)return;lastSelection=selected??-1;lastHealth=hp;lastJob=job;lastProgress=progress;selection.hidden=o<0;selection.textContent=o<0?'':`${names[entities[o+4]]} — HP ${hp}% — ${jobs[job]}${job===5?` ${progress}%`:""}`;}
+let lastSelection=-2,lastHealth=-1,lastJob=-1,lastProgress=-1,lastGroupSize=-1;
+function updateSelection() {
+ const count=selectedGroup.size;
+ const o=selected===null?-1:selected*12;
+ const hp=o<0?0:Math.round(entities[o+7]*100),job=o<0?-1:entities[o+5],progress=o<0?-1:Math.floor(entities[o+10]*100);
+ if(lastSelection===(selected??-1)&&lastHealth===hp&&lastJob===job&&lastProgress===progress&&lastGroupSize===count)return;
+ lastSelection=selected??-1;lastHealth=hp;lastJob=job;lastProgress=progress;lastGroupSize=count;
+ selection.hidden=o<0;
+ if(o<0){
+  selection.textContent='';
+ } else if(count>1){
+  selection.textContent=`${names[entities[o+4]]} (${count}) — HP ${hp}% — ${jobs[job]}${job===5?` ${progress}%`:""}`;
+ } else {
+  selection.textContent=`${names[entities[o+4]]} — HP ${hp}% — ${jobs[job]}${job===5?` ${progress}%`:""}`;
+ }
+}
 let previous=0,accumulator=0,windowStart=0,frames=0,tick=0;
 function frame(now:number) {
  if(window.__APP.error||!sim)return;

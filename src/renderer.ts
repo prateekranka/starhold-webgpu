@@ -1589,9 +1589,7 @@ export class Renderer {
    else if(k===41){this.box(e[o],e[o+1],e[o+2],.38,.36,.23,40);this.box(e[o],e[o+1],e[o+2]-.16,.18,.18,.14,18);}
    else if(effectKinds.has(k))this.effects(e,o);
   }
-  // Mask 1 protects the gold segment fill; the existing neighbor contour
-  // supplies its one-pixel ink gap. Small segments now retain endpoint 22.
-  if(this.selected!==null){const o=this.selected*12,r=buildingFootprints[e[o+4]]?(cinderBuildings.has(e[o+4])?Math.max(...buildingFootprints[e[o+4]])/2+.3:e[o+4]===10?2.5:e[o+4]===16?1.5:1.8):e[o+4]===20?.65:e[o+4]===31?1.65:1.35;for(let j=0;j<24;j++){if(j%3===Math.floor(this.time/.6)%2)continue;const a=j*Math.PI/12;this.box(e[o]+Math.cos(a)*r,e[o+1]+Math.sin(a)*r,this.ground(e[o],e[o+1])+.08,.2,.2,.035,54);}}
+   for(let selId=0;selId<n;selId++){const o=selId*12;if(e[o+8]!==1)continue;const r=buildingFootprints[e[o+4]]?(cinderBuildings.has(e[o+4])?Math.max(...buildingFootprints[e[o+4]])/2+.3:e[o+4]===10?2.5:e[o+4]===16?1.5:1.8):e[o+4]===20?.65:e[o+4]===31?1.65:1.35;for(let j=0;j<24;j++){if(j%3===Math.floor(this.time/.6)%2)continue;const a=j*Math.PI/12;this.box(e[o]+Math.cos(a)*r,e[o+1]+Math.sin(a)*r,this.ground(e[o],e[o+1])+.08,.2,.2,.035,54);}}
   this.ambient(this.time);
   this.worldCount=this.count;
   const previewCount=Math.min(this.placementCount,MAX-this.count);

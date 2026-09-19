@@ -22,6 +22,8 @@ export interface SimAbi {
   sim_entity_ptr(): number;
   sim_entity_stride(): number;
   sim_select(index: number): void;
+  sim_select_add?(index: number): void;
+  sim_select_clear?(): void;
   sim_terrain_ptr(): number;
   sim_alloy(): number;
   sim_charge(): number;
