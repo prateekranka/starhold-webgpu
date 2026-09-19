@@ -162,10 +162,18 @@ function minimapDraw(force=false):void {
    }
   }
  }
- const reach=Math.max(5,24*zooms[zoomIndex]);
- minimapContext.strokeStyle=minimapHex(9);minimapContext.lineWidth=2;
- minimapContext.strokeRect(Math.floor((camX-reach)*scale)+.5,Math.floor((camY-reach)*scale)+.5,Math.ceil(reach*2*scale),Math.ceil(reach*2*scale));
-}
+  const reachX=Math.max(5,24*zooms[zoomIndex]);
+  const reachY=reachX*(RENDER_HEIGHT/RENDER_WIDTH);
+  const rx=Math.floor((camX-reachX)*scale)+.5;
+  const ry=Math.floor((camY-reachY)*scale)+.5;
+  const rw=Math.ceil(reachX*2*scale);
+  const rh=Math.ceil(reachY*2*scale);
+  minimapContext.fillStyle='rgba(88,190,212,0.12)';
+  minimapContext.fillRect(rx,ry,rw,rh);
+  minimapContext.strokeStyle='#58BED4';
+  minimapContext.lineWidth=1.5;
+  minimapContext.strokeRect(rx,ry,rw,rh);
+ }
 /** Read-only view of the live actors, for the capture harness and playtests.
  *  Nothing here selects, moves or mutates state. */
 function entityProbe():{index:number;kind:number;faction:number;x:number;y:number;z:number;state:number;health:number;progress:number}[] {
@@ -500,7 +508,7 @@ function screenToWorld(clientX:number,clientY:number):{tx:number;ty:number}|null
  }
  return null;
 }
-function spawnTouchRipple(clientX:number,clientY:number,type:'move'|'target'|'select'):void {
+function spawnTouchRipple(clientX:number,clientY:number,type:'move'|'target'|'select'|'attack'|'gather'):void {
  const el=document.createElement('div');
  el.className=`touch-ripple ${type}`;
  el.style.left=`${clientX}px`;
@@ -514,8 +522,11 @@ function issueOrder(clientX:number,clientY:number):boolean {
  const rect=canvas.getBoundingClientRect();
  const picked=renderer.pick((clientX-rect.left)*RENDER_WIDTH/rect.width,(clientY-rect.top)*RENDER_HEIGHT/rect.height,yawSteps,zooms[zoomIndex]);
  if(picked!==null&&picked!==selected&&!selectedGroup.has(picked)){
+  const targetKind=entities[picked*12+4];
+  const targetFaction=entities[picked*12+9];
   sim.sim_command?.(5,picked,0);
-  spawnTouchRipple(clientX,clientY,'target');
+  const rippleType=targetKind===40?'gather':(targetFaction!==simPlayer()?'attack':'target');
+  spawnTouchRipple(clientX,clientY,rippleType);
   refreshEntities();updateSelection();syncHud();
   return true;
  }
@@ -597,7 +608,8 @@ function worldTap(x:number,y:number,isTouch=false):void {
     const targetKind=entities[picked*12+4];
     if(targetFaction!==simPlayer()||targetKind===40){
      sim?.sim_command?.(5,picked,0);
-     spawnTouchRipple(x,y,'target');
+     const rippleType=targetKind===40?'gather':(targetFaction!==simPlayer()?'attack':'target');
+     spawnTouchRipple(x,y,rippleType);
      refreshEntities();updateSelection();syncHud();
      return;
     }
@@ -967,6 +979,64 @@ function refreshEntities() {
   }
  }
 }
+function actorIconSvg(kind:number):string {
+ switch(kind) {
+  case 31:
+   return `<svg viewBox="0 0 20 20" fill="none" stroke="#58BED4" stroke-width="1.5"><circle cx="10" cy="10" r="3.5"/><line x1="7" y1="11" x2="3" y2="17"/><line x1="13" y1="11" x2="17" y2="17"/><line x1="8" y1="12" x2="5" y2="18"/><line x1="12" y1="12" x2="15" y2="18"/><line x1="9" y1="7" x2="9" y2="2"/><line x1="11" y1="7" x2="11" y2="2"/></svg>`;
+  case 21:
+   return `<svg viewBox="0 0 20 20" fill="none" stroke="#F1CE72" stroke-width="1.5"><ellipse cx="10" cy="11" rx="5" ry="6"/><line x1="10" y1="5" x2="10" y2="17"/><circle cx="10" cy="5" r="2"/><line x1="5" y1="10" x2="2" y2="9"/><line x1="5" y1="13" x2="2" y2="15"/><line x1="15" y1="10" x2="18" y2="9"/><line x1="15" y1="13" x2="18" y2="15"/></svg>`;
+  case 22:
+   return `<svg viewBox="0 0 20 20" fill="none" stroke="#8BD7BE" stroke-width="1.5"><path d="M10 2 L16 5 L16 11 C16 15 10 18 10 18 C10 18 4 15 4 11 L4 5 Z"/><line x1="10" y1="6" x2="10" y2="14"/><line x1="7" y1="9" x2="13" y2="9"/></svg>`;
+  case 26: case 34:
+   return `<svg viewBox="0 0 20 20" fill="none" stroke="#E77945" stroke-width="1.5"><rect x="3" y="8" width="14" height="9" rx="1"/><rect x="5" y="4" width="7" height="4"/><line x1="8" y1="4" x2="14" y2="2"/><line x1="3" y1="17" x2="17" y2="17"/></svg>`;
+  case 20: case 32:
+   return `<svg viewBox="0 0 20 20" fill="none" stroke="#F1CE72" stroke-width="1.5"><rect x="4" y="7" width="12" height="8" rx="1.5"/><circle cx="7" cy="16" r="1.5"/><circle cx="13" cy="16" r="1.5"/><path d="M10 7 V3 M7 3 H13"/></svg>`;
+  case 23: case 36:
+   return `<svg viewBox="0 0 20 20" fill="none" stroke="#58BED4" stroke-width="1.5"><polygon points="10,2 12,8 18,10 12,12 10,18 8,12 2,10 8,8"/></svg>`;
+  case 40:
+   return `<svg viewBox="0 0 20 20" fill="none" stroke="#E2C044" stroke-width="1.5"><polygon points="10,2 16,7 13,18 7,18 4,7"/></svg>`;
+  default:
+   return isBuildingKind(kind)
+    ? `<svg viewBox="0 0 20 20" fill="none" stroke="#747C91" stroke-width="1.5"><rect x="3" y="7" width="14" height="11"/><polygon points="3,7 10,2 17,7"/><line x1="10" y1="11" x2="10" y2="18"/></svg>`
+    : `<svg viewBox="0 0 20 20" fill="none" stroke="#8BD7BE" stroke-width="1.5"><circle cx="10" cy="7" r="3.5"/><path d="M4 17 C4 13 7 12 10 12 C13 12 16 13 16 17 Z"/></svg>`;
+ }
+}
+function actorRole(kind:number):string {
+ switch(kind) {
+  case 10: return 'COMMAND CITADEL';
+  case 11: return 'CARGO DEPOT';
+  case 12: return 'SOLAR GENERATOR';
+  case 13: return 'INFANTRY MUSTER';
+  case 14: return 'HEAVY STARFORGE';
+  case 15: return 'HABITAT POD';
+  case 16: return 'PRISM DEFENSE';
+  case 17: return 'ORBITAL WHARF';
+  case 20: return 'HEAVY HARVESTER';
+  case 21: return 'ARMORED LOGISTICS SCARAB';
+  case 22: return 'PHALANX SENTINEL';
+  case 23: return 'KINETIC SKIRMISHER';
+  case 24: return 'ASSAULT SKIFF';
+  case 25: return 'ENERGY CANTOR';
+  case 26: return 'SIEGE JUGGERNAUT';
+  case 30: return 'RAIDER SPEEDER';
+  case 31: return 'SIEGE STRIDER WALKER';
+  case 32: return 'SCAVENGER RIVETER';
+  case 33: return 'ARMORED MULE';
+  case 34: return 'RAMMING DREADNOUGHT';
+  case 35: return 'RECON SOOTWING';
+  case 36: return 'MORTAR BRANDCALLER';
+  case 40: return 'RESOURCE DEPOSIT';
+  case 60: return 'PYRE FLAGSHIP';
+  case 61: return 'SCRAP CRUSHER';
+  case 62: return 'EMBER SIPHON';
+  case 63: return 'FANG YARD';
+  case 64: return 'HEAVY CHAINWORKS';
+  case 65: return 'AERODROME';
+  case 66: return 'HARPOON SPIRE';
+  case 67: return 'WARP MOORING';
+  default: return isUnitKind(kind) ? 'FIELD COMBATANT' : (isBuildingKind(kind) ? 'STRUCTURE' : 'ENTITY');
+ }
+}
 let lastSelection=-2,lastHealth=-1,lastJob=-1,lastProgress=-1,lastGroupSize=-1;
 function updateSelection() {
  const count=selectedGroup.size;
@@ -976,12 +1046,23 @@ function updateSelection() {
  lastSelection=selected??-1;lastHealth=hp;lastJob=job;lastProgress=progress;lastGroupSize=count;
  selection.hidden=o<0;
  if(o<0){
-  selection.textContent='';
- } else if(count>1){
-  selection.textContent=`${names[entities[o+4]]} (${count}) — HP ${hp}% — ${jobs[job]}${job===5?` ${progress}%`:""}`;
- } else {
-  selection.textContent=`${names[entities[o+4]]} — HP ${hp}% — ${jobs[job]}${job===5?` ${progress}%`:""}`;
+  selection.innerHTML='';
+  return;
  }
+ const kind=entities[o+4];
+ const name=names[kind]||'ENTITY';
+ const jobName=jobs[job]||'IDLE';
+ const jobDisplay=job===5?`${jobName} ${progress}%`:jobName;
+  const hpFillClass=hp>50?'':(hp>25?'mid':'low');
+  const abi=sim as unknown as ContentAbi|null;
+  const hpMax=abi?Math.round(abi.sim_kind_stat(kind,9)):100;
+  const curHp=Math.round((entities[o+7]||0)*(hpMax>0?hpMax:100));
+  const dmg=abi?abi.sim_kind_stat(kind,12):0;
+  const rng=abi?abi.sim_kind_stat(kind,11):0;
+  const spd=abi?abi.sim_kind_stat(kind,10):0;
+ const role=actorRole(kind);
+ const iconSvg=actorIconSvg(kind);
+ selection.innerHTML=`<div class="sel-card"><div class="sel-header"><div class="sel-icon-wrap">${iconSvg}</div><div class="sel-info"><div class="sel-title-row"><span class="sel-name">${name}</span>${count>1?`<span class="sel-count">(${count})</span>`:''}<span class="sel-state-tag">${jobDisplay}</span></div><span class="sel-role">${role}</span></div></div><div class="sel-hp-row"><div class="sel-hp-bar"><div class="sel-hp-fill ${hpFillClass}" style="width:${hp}%"></div></div><span class="sel-hp-text">${curHp}/${hpMax>0?hpMax:100}</span></div><div class="sel-stats-row"><div class="sel-stat"><span class="lbl">HP</span><span class="val">${curHp}</span></div><div class="sel-stat"><span class="lbl">DMG</span><span class="val">${dmg>0?dmg:'—'}</span></div><div class="sel-stat"><span class="lbl">RNG</span><span class="val">${rng>0?rng.toFixed(1):'—'}</span></div><div class="sel-stat"><span class="lbl">SPD</span><span class="val">${spd>0?spd.toFixed(1):'—'}</span></div></div></div>`;
 }
 let researchUI:ReturnType<typeof mountMatchResearch>|null=null;
 let previous=0,accumulator=0,windowStart=0,frames=0,tick=0;
