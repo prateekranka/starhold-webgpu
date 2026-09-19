@@ -31,8 +31,11 @@ errors. `MAX` remains 26,000 and `BAKE_LIMIT` remains 24,000.
 Final verification passes: production build; menu browser; Workshop integration
 8/8; Workshop browser on desktop, phone, landscape, and iPad; Rust 2/2; and
 `git diff --check`. The isolated built preview is
-`https://bobby.taile5de76.ts.net:8450/` (HTTP 200). Frozen release `8446` and the
-validated PR preview `8448` remain unchanged and both return HTTP 200.
+`https://bobby.taile5de76.ts.net:8450/` (HTTP 200), served from `dist/` by a
+static server on port 5203. The older route `8449` proxies the live Vite dev
+server on port 5202 and returns HTTP 403 from Vite's host allow-list, so it is
+not a valid preview; use `8450`. Frozen release `8446` and the validated PR
+preview `8448` remain unchanged and both return HTTP 200.
 
 ## PR menu chrome and asset-review stability — 2026-09-19
 
