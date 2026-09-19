@@ -1570,7 +1570,7 @@ impl Sim {
         // At 150 s, then every 90 s: dispatch at most 3, 4, 5, then 6 paid
         // combat units, keeping two defenders. Raids last 35 s, then return.
         if t >= self.game.next_raid {
-            let lane = (self.game.waves % 2) as usize;
+            let lane = if self.game.waves >= 2 { 2 } else { (self.game.waves % 2) as usize };
             self.dispatch_raid(f, lane, false);
             self.game.waves += 1;
             self.game.next_raid += 90 * 60;
@@ -1589,7 +1589,7 @@ impl Sim {
             let march = (990. / k.speed.max(0.1)).ceil() as u32;
             self.game.orders[id] = Order::Raid(t + (120 + march) * 60);
             self.game.waypoints[id] = 1;
-            self.game.lanes[id] = (lane % 2) as u8;
+            self.game.lanes[id] = if lane >= 2 { (sent % 2) as u8 } else { (lane % 2) as u8 };
             sent += 1;
         }
         if sent == 0 && allow_defenders {
@@ -1600,7 +1600,7 @@ impl Sim {
                 let march = (990. / k.speed.max(0.1)).ceil() as u32;
                 self.game.orders[id] = Order::Raid(t + (120 + march) * 60);
                 self.game.waypoints[id] = 1;
-                self.game.lanes[id] = (lane % 2) as u8;
+                self.game.lanes[id] = if lane >= 2 { (sent % 2) as u8 } else { (lane % 2) as u8 };
                 sent += 1;
                 if sent >= 2 { break; }
             }

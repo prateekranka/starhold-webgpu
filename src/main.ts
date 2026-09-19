@@ -91,6 +91,50 @@ function minimapBuild():void {
  }
  minimapTerrain=image;minimapSide=side;
 }
+const FOG_SIDE = 64;
+const fogExplored = new Uint8Array(FOG_SIDE * FOG_SIDE);
+const fogVisible = new Uint8Array(FOG_SIDE * FOG_SIDE);
+
+function updateFogOfWar(): void {
+ const side = sideOf();
+ if (side <= 0) return;
+ fogVisible.fill(0);
+ const scale = FOG_SIDE / side;
+ for (let i = 0; i < entityCount; i++) {
+  const f = entities[i * 12 + 9];
+  if (f !== simPlayer()) continue;
+  const state = entities[i * 12 + 5];
+  if (state === State.Death) continue;
+  const kind = entities[i * 12 + 4];
+  const sight = isBuildingKind(kind) ? 14 : (kind === 24 || kind === 35 || kind === 30 ? 16 : 10);
+  const fx = entities[i * 12] * scale;
+  const fy = entities[i * 12 + 1] * scale;
+  const r = Math.ceil(sight * scale);
+  const minX = Math.max(0, Math.floor(fx - r));
+  const maxX = Math.min(FOG_SIDE - 1, Math.ceil(fx + r));
+  const minY = Math.max(0, Math.floor(fy - r));
+  const maxY = Math.min(FOG_SIDE - 1, Math.ceil(fy + r));
+  for (let y = minY; y <= maxY; y++) {
+   for (let x = minX; x <= maxX; x++) {
+    if ((x - fx) * (x - fx) + (y - fy) * (y - fy) <= r * r) {
+     const idx = y * FOG_SIDE + x;
+     fogVisible[idx] = 1;
+     fogExplored[idx] = 1;
+    }
+   }
+  }
+ }
+}
+
+function isTileVisible(wx: number, wy: number): boolean {
+ if (simMode() !== 1) return true;
+ const side = sideOf();
+ const x = Math.floor(wx * FOG_SIDE / side);
+ const y = Math.floor(wy * FOG_SIDE / side);
+ if (x < 0 || y < 0 || x >= FOG_SIDE || y >= FOG_SIDE) return false;
+ return fogVisible[y * FOG_SIDE + x] === 1;
+}
+
 /** Redraw the panel at 10 Hz: relief terrain, base emblems, entity dots, camera frustum. */
 function minimapDraw(force=false):void {
  if(minimap.classList.contains('off'))return;
@@ -138,31 +182,54 @@ function minimapDraw(force=false):void {
   minimap.classList.remove('alert');
   minimap.classList.remove('breach');
  }
- for(let i=0;i<entityCount;i++) {
-  const kind=entities[i*12+4];
-  const ore=kind===40;
-  if(!ore&&!isUnitKind(kind)&&!isBuildingKind(kind))continue;
-  const isBuilding=isBuildingKind(kind);
-  const f=entities[i*12+9];
-  const ex=Math.floor(entities[i*12]*scale);
-  const ey=Math.floor(entities[i*12+1]*scale);
-  if(ore){
-   minimapContext.fillStyle=minimapHex(22);
-   minimapContext.fillRect(ex-1,ey-1,3,3);
-  } else if(isBuilding){
-   minimapContext.fillStyle=minimapHex(f===1?25:13);
-   minimapContext.fillRect(ex-2,ey-2,4,4);
-  } else {
-   minimapContext.fillStyle=minimapHex(f===1?26:14);
-   minimapContext.fillRect(ex-1,ey-1,2,2);
-   if(raidActive>0&&f!==simPlayer()){
-    minimapContext.strokeStyle=raidBreach?'#E2C044':'#BC4A45';
-    minimapContext.lineWidth=1;
-    const pulse=3+Math.floor((performance.now()/250)%3);
-    minimapContext.strokeRect(ex-pulse,ey-pulse,pulse*2+1,pulse*2+1);
+  if(worldSide>0 && simMode()===1){
+   updateFogOfWar();
+  }
+  for(let i=0;i<entityCount;i++) {
+   const kind=entities[i*12+4];
+   const ore=kind===40;
+   if(!ore&&!isUnitKind(kind)&&!isBuildingKind(kind))continue;
+   const isBuilding=isBuildingKind(kind);
+   const f=entities[i*12+9];
+   if(worldSide>0 && simMode()===1 && f!==simPlayer() && !isTileVisible(entities[i*12],entities[i*12+1])){
+    continue;
+   }
+   const ex=Math.floor(entities[i*12]*scale);
+   const ey=Math.floor(entities[i*12+1]*scale);
+   if(ore){
+    minimapContext.fillStyle=minimapHex(22);
+    minimapContext.fillRect(ex-1,ey-1,3,3);
+   } else if(isBuilding){
+    minimapContext.fillStyle=minimapHex(f===1?25:13);
+    minimapContext.fillRect(ex-2,ey-2,4,4);
+   } else {
+    minimapContext.fillStyle=minimapHex(f===1?26:14);
+    minimapContext.fillRect(ex-1,ey-1,2,2);
+    if(raidActive>0&&f!==simPlayer()){
+     minimapContext.strokeStyle=raidBreach?'#E2C044':'#BC4A45';
+     minimapContext.lineWidth=1;
+     const pulse=3+Math.floor((performance.now()/250)%3);
+     minimapContext.strokeRect(ex-pulse,ey-pulse,pulse*2+1,pulse*2+1);
+    }
    }
   }
- }
+  if(worldSide>0 && simMode()===1){
+   const block=MINIMAP/FOG_SIDE;
+   minimapContext.fillStyle='#10121C';
+   for(let fy=0;fy<FOG_SIDE;fy++)for(let fx=0;fx<FOG_SIDE;fx++){
+    const idx=fy*FOG_SIDE+fx;
+    if(fogExplored[idx]===0){
+     minimapContext.fillRect(fx*block,fy*block,block+0.5,block+0.5);
+    }
+   }
+   minimapContext.fillStyle='rgba(16,18,28,0.52)';
+   for(let fy=0;fy<FOG_SIDE;fy++)for(let fx=0;fx<FOG_SIDE;fx++){
+    const idx=fy*FOG_SIDE+fx;
+    if(fogExplored[idx]===1&&fogVisible[idx]===0){
+     minimapContext.fillRect(fx*block,fy*block,block+0.5,block+0.5);
+    }
+   }
+  }
   const reachX=Math.max(5,24*zooms[zoomIndex]);
   const reachY=reachX*(RENDER_HEIGHT/RENDER_WIDTH);
   const rx=Math.floor((camX-reachX)*scale)+.5;
@@ -414,6 +481,8 @@ function syncHud() {
 function startMatch(faction:0|1) {
  if(!sim||typeof sim.sim_match_init!=='function')return;
  cancelPlacement();
+ fogExplored.fill(0);
+ fogVisible.fill(0);
  sim.sim_match_init(seed>>>0,faction===1?1:0);
  yawSteps=0;zoomIndex=1;
  worldTerrain=new Float32Array(0);
@@ -430,6 +499,8 @@ function startMatch(faction:0|1) {
 function resetShowcase() {
  if(!sim)return;
  cancelPlacement();
+ fogExplored.fill(0);
+ fogVisible.fill(0);
  worldSide=0;worldTerrain=new Float32Array(0);showcaseTerrain=new Float32Array(0);camX=16;camY=16;renderer.setShowcase();minimapInvalidate();
  sim.sim_init(seed>>>0);
  resetClock();selectDefault();
