@@ -258,6 +258,9 @@ const postWGSL=paletteWGSL+`
  if occupied!=0u && center.r!=1. {for(var axis=0;axis<4;axis++) {
   let offsets=array<vec2i,4>(vec2i(-1,0),vec2i(1,0),vec2i(0,-1),vec2i(0,1));
   let neighbor=textureLoad(silhouette,clamp(pixel+offsets[axis],vec2i(0),vec2i(${RENDER_WIDTH-1},${RENDER_HEIGHT-1})),0);
+  // Ore/effect ink must not eat a visible actor's few face/tool pixels.
+  // Keep depth-tested actor-to-actor seams and the existing exterior ink.
+  if center.r>=2. && neighbor.r==1. {continue;}
   let tolerance=select(0.,0.002,center.r==0.);
   if neighbor.r>0.5 && neighbor.r!=center.r && neighbor.g<center.g+tolerance {return vec4f(palette[0],1.);}
  }}
@@ -1466,20 +1469,22 @@ export class Renderer {
    return;
   }
   if(k===32){ // Ashhand: low hood, bent knees, hand hook and levered pry bar.
+   // Pale work hood against ore and soot; ember face marks the forward end.
+   // Existing volumes only: dark soles anchor the light upper silhouette.
    for(let side=-1;side<=1;side+=2){
-    this.box(x+.08+gait*side,y+side*.22,z,.35,.22,.18,23,id);
+    this.box(x+.08+gait*side,y+side*.22,z,.35,.22,.18,1,id);
     this.box(x-.13,y+side*.2,z+.17,.27,.2,.3,24,id,-1);
    }
    this.box(x-.13,y,z+.31+bob,.61,.51,.36,24,id,-1);
-   this.box(x+.1,y,z+.61+bob,.5,.46,.33,23,id,-1);
-   this.box(x+.32,y+(active?0:idle*.1),z+.65+bob,.09,.28,.13,25,id);
-   this.box(x-.38,y-.13,z+.4+bob,.26,.29,.33,24,id);
+   this.box(x+.1,y,z+.61+bob,.5,.46,.33,8,id,-1);
+   this.box(x+.32,y+(active?0:idle*.1),z+.65+bob,.09,.28,.13,26,id);
+   this.box(x-.38,y-.13,z+.4+bob,.26,.29,.33,7,id);
    this.box(x+.25,y-.27,z+.4+bob,.3,.16,.15,25,id);
-   this.hook(x+.4,y-.29,z+.35+bob,.46,6,id);
+   this.hook(x+.4,y-.29,z+.35+bob,.46,8,id);
    const tap=active?stroke:idle*.12,site=state===5?.12:0;
    this.box(x+.24,y+.27,z+.41+bob+site,.3,.15,.17,24,id);
-   this.strut(x+.4,y+.28,z+.45+site,.18+tap,0,-.3+raise*.22,.075,6,id,2);
-   this.box(x+.58+tap,y+.28,z+.14+site+raise*.22,.24,.13,.08,6,id);
+   this.strut(x+.4,y+.28,z+.45+site,.18+tap,0,-.3+raise*.22,.075,7,id,2);
+   this.box(x+.58+tap,y+.28,z+.14+site+raise*.22,.24,.13,.08,8,id);
    if(strike){
     this.box(x+.69,y+.29,z+.19+site,.21,.23,.18,32+4);
     this.box(x+.8,y+.35,z+.32+site,.14,.13,.13,32+6);
@@ -1672,19 +1677,20 @@ export class Renderer {
    if(attacking&&e[o+11]>.88)this.emissive(x+1.27-recoil,y,z+.95,27,id,2,2);
    return;
   }
-  // Riveter: compact round hood and backpack, with a warm face/tool cluster.
-  this.box(x-.15,y+gait-.12,z,.2,.24,.25,10,id);
-  this.box(x+.15,y-gait+.12,z,.2,.24,.25,10,id);
+  // Riveter: pale hood and steel tool, blue forward visor, ink contact feet.
+  // Reserve warm gold for carried ore so the worker stays distinct from it.
+  this.box(x-.15,y+gait-.12,z,.2,.24,.25,1,id);
+  this.box(x+.15,y-gait+.12,z,.2,.24,.25,1,id);
   this.box(x,y,z+.24,.5,.46,.43,14,id,-1);
   this.box(x,y-.27,z+.3,.36,.22,.4,13,id);
-  this.box(x,y,z+.65,.49,.46,.28,9,id,-1);
-  this.box(x+.23,y,z+.69,.19,.2,.14,22,id);
+  this.box(x,y,z+.65,.49,.46,.28,8,id,-1);
+  this.box(x+.23,y,z+.69,.19,.2,.14,16,id);
   if(e[o+10]>0)this.crate(x-.35,y,z+.3,.28+Math.min(4,e[o+10])*.03,id);
   const working=state===3||state===8,strike=working&&phase<.22;
   const lift=working?(phase<.45?.28:-.1):0;
   this.box(x+.32,y,z+.45,.2,.2,.17,7,id);
-  this.box(x+.5,y,z+.45+lift,.14,.14,.36,21,id);
-  this.box(x+.5,y,z+.75+lift,.35,.16,.12,22,id);
+  this.box(x+.5,y,z+.45+lift,.14,.14,.36,7,id);
+  this.box(x+.5,y,z+.75+lift,.35,.16,.12,8,id);
   if(strike){this.box(x+.6,y,z+.4,.15,.15,.15,18);this.box(x+.8,y,z+.58,.1,.1,.1,22);}
  }
 
