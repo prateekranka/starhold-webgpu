@@ -99,6 +99,9 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
   shaded=min(endpoint,shaded+2.);
  }
  o.color=palette[u32(shaded)];
+ // Worker cloth and tool enamel: authored light faces survive every yaw.
+ // Mode -13 is used only by the two worker rigs; undersides remain ink.
+ if screen == -13. {o.color=palette[u32(select(max(1.,pigment-select(0.,1.,shade==1. || shade==2. || shade==4.)),1.,shade==5.))];}
  // Terrain caps, ledges and ribs share the parent column's height bands.
  if screen == -5. {
   let level=clamp((p.z-actor.x)/(actor.y-actor.x),0.,1.);
@@ -1468,27 +1471,29 @@ export class Renderer {
    if(strike){this.emissive(x+1.28+ram,y,z+.87,22,-1,2,2);this.wardRing(x+1.34+ram,y,z+.59,.32+(q-.5),22);}
    return;
   }
-  if(k===32){ // Ashhand: forward hood and a shoulder-high projecting pry bar.
-   // The hood leads the rear body; the bar supplies the long facing axis.
-   // Square overlapping links rotate by their centres, including diagonals.
+  if(k===32){ // Ashhand: ivory hooded jacket, ember sash, low hooked pry bar.
+   // Broad cloth planes sit above a dark hem; the sash wraps all four sides.
    for(let side=-1;side<=1;side+=2){
     this.box(x+.08+gait*side,y+side*.22,z,.35,.22,.18,1,id);
-    this.box(x-.13,y+side*.2,z+.17,.27,.2,.3,24,id,-1);
+    this.box(x-.13,y+side*.2,z+.17,.27,.2,.3,1,id,-1);
    }
-   this.box(x-.13,y,z+.31+bob,.61,.51,.36,23,id,-1);
-   this.box(x+.28,y,z+.61+bob,.44,.42,.33,1,id,-1);
-   this.box(x+.32,y,z+.86+bob,.28,.26,.08,7,id,-6);
-   this.box(x+.465,y,z+.7+bob,.18,.28,.16,27,id,-6);
-   this.box(x-.38,y-.13,z+.4+bob,.26,.29,.33,1,id);
-   this.box(x+.04,y,z+.43+bob,.28,.49,.2,25,id,-6);
-   this.box(x+.25,y-.27,z+.4+bob,.3,.16,.15,26,id,-6);
-   this.box(x+.12,y+.27,z+.64+bob,.24,.24,.1,7,id,-6);
+   this.box(x-.13,y,z+.29+bob,.61,.51,.12,1,id);
+   this.box(x-.13,y,z+.4+bob,.59,.49,.33,8,id,-13);
+   this.box(x-.13,y,z+.45+bob,.61,.51,.13,26,id,-13);
+   this.box(x+.2,y,z+.64+bob,.44,.42,.3,8,id,-13);
+   this.box(x+.425,y,z+.72+bob,.09,.34,.12,1,id,-6);
+   this.box(x-.38,y-.13,z+.4+bob,.26,.29,.33,23,id);
+   this.box(x+.18,y-.25,z+.43+bob,.32,.2,.23,8,id,-13);
+   this.box(x+.12,y+.27,z+.46+bob,.24,.24,.18,8,id,-13);
    const tap=active?stroke*.3:0,site=state===5?.12:0;
-   const toolZ=z+.72+bob+site+raise*.12;
-   // A raised, thick tool stays above the ore foot and projects a full torso
-   // length beyond the face. Its reach persists through every work pose.
-   for(let j=0;j<5;j++)this.box(x+.43+j*.23+tap,y+.28,toolZ,.32,.32,.24,4,id,-6);
-   this.box(x+1.42+tap,y+.28,toolZ-.12,.34,.34,.38,5,id,-6);
+   const toolZ=z+.45+bob+site+raise*.12;
+   // Low shaft leaves the hood exposed even when the forward axis projects
+   // vertically. Overlapping square links retain thickness on diagonals.
+   for(let j=0;j<5;j++){
+    this.box(x+.43+j*.23+tap,y+.28,toolZ,.32,.32,.24,1,id,-6);
+    this.box(x+.43+j*.23+tap,y+.28,toolZ+.13,.28,.28,.14,7,id,-13);
+   }
+   this.box(x+1.42+tap,y+.28,toolZ-.12,.34,.34,.38,26,id,-13);
    if(strike){
     this.box(x+.69,y+.29,z+.19+site,.21,.23,.18,32+4);
     this.box(x+.8,y+.35,z+.32+site,.14,.13,.13,32+6);
@@ -1681,23 +1686,25 @@ export class Renderer {
    if(attacking&&e[o+11]>.88)this.emissive(x+1.27-recoil,y,z+.95,27,id,2,2);
    return;
   }
-  // Riveter: forward-set hood over a blue chest, carrying a long riveting ram.
-  // The square links give the ram a rotating outline instead of an axis-fixed
-  // slab; its elevated nose remains distinct from the dark ground contact.
+  // Riveter: pale square work suit, cyan belt and a long blunt riveting ram.
+  // The hood and jacket carry the light mass, above separate ink boots/hem.
   this.box(x-.15,y+gait-.12,z,.2,.24,.25,1,id);
   this.box(x+.15,y-gait+.12,z,.2,.24,.25,1,id);
-  this.box(x,y,z+.24,.5,.46,.43,1,id,-1);
-  this.box(x+.12,y,z+.37,.26,.44,.24,16,id,-6);
-  this.box(x,y-.27,z+.3,.36,.22,.4,16,id,-6);
-  this.box(x+.26,y,z+.65,.43,.42,.28,1,id,-1);
-  this.box(x+.3,y,z+.85,.27,.26,.08,7,id,-6);
-  this.box(x+.46,y,z+.72,.19,.24,.17,18,id,-6);
+  this.box(x,y,z+.24,.5,.46,.12,1,id);
+  this.box(x,y,z+.35,.5,.46,.36,8,id,-13);
+  this.box(x,y,z+.43,.52,.48,.14,17,id,-13);
+  this.box(x,y-.27,z+.36,.36,.22,.34,8,id,-13);
+  this.box(x+.26,y,z+.65,.43,.42,.28,8,id,-13);
+  this.box(x+.48,y,z+.72,.09,.34,.12,15,id,-6);
   if(e[o+10]>0)this.crate(x-.35,y,z+.3,.28+Math.min(4,e[o+10])*.03,id);
   const working=state===3||state===8,strike=working&&phase<.22;
   const lift=working?(phase<.45?.12:-.06):0;
-  this.box(x+.1,y+.26,z+.66,.24,.24,.1,7,id,-6);
-  for(let j=0;j<5;j++)this.box(x+.43+j*.25,y+.27,z+.72+lift,.34,.34,.28,4,id,-6);
-  this.box(x+1.53,y+.27,z+.66+lift,.36,.36,.4,16,id,-6);
+  this.box(x+.1,y+.26,z+.43,.24,.24,.2,8,id,-13);
+  for(let j=0;j<5;j++){
+   this.box(x+.43+j*.25,y+.27,z+.43+lift,.34,.34,.28,1,id,-6);
+   this.box(x+.43+j*.25,y+.27,z+.57+lift,.3,.3,.16,7,id,-13);
+  }
+  this.box(x+1.53,y+.27,z+.37+lift,.36,.36,.4,17,id,-13);
   if(strike){this.box(x+.6,y,z+.4,.15,.15,.15,18);this.box(x+.8,y,z+.58,.1,.1,.1,22);}
  }
 
