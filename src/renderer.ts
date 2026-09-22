@@ -416,9 +416,14 @@ export class Renderer {
  }
  private shadow(x:number,y:number,w:number,d:number,h:number) {
   const z=this.ground(x,y);
-  this.box(x,y,z+.085,w,d,Math.min(1,h),1,-1,-3);
-  // A narrow opaque ink lip, raised over road slabs and under the feet/plinth.
-  this.box(x,y,z+.095,w+.12,d+.12,0,0,-1,-3);
+  if(h>=0.9){
+   // Flying units: compact ground drop marker so player can target them
+   this.box(x,y,z+.02,Math.max(.28,w*.6),Math.max(.28,d*.6),0,1,-1,-3);
+   this.box(x,y,z+.025,Math.max(.16,w*.36),Math.max(.16,d*.36),0,0,-1,-3);
+  } else {
+   // Ground units: minimal 1-pixel contact rim directly under feet; zero vertical box slab
+   this.box(x,y,z+.02,Math.max(.2,w*.65),Math.max(.2,d*.65),0,1,-1,-3);
+  }
  }
  private shard(x:number,y:number,z:number,h:number,c=30,owner=-1) {
   // The match Heliowell's cyan core must clear its cage and the Keep behind
@@ -904,8 +909,6 @@ export class Renderer {
   }
   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],p=e[o+10],phase=e[o+6];
   const w=k===10||k===17?4:k===12||k===16?2:3,depth=k===15?2:k===17?3:w;
-  const height=k===10?5:k===12||k===16?4:k===13||k===14?3:2.5;
-  this.shadow(x,y,w+.2,depth+.2,p<.2?.35:p<.5?1.4:p<.85?2.8:height);
   this.box(x,y,z,w+.2,depth+.2,.19,7,id);
   this.box(x,y,z+.19,w-.12,depth-.12,.12,11,id);
   if(p<1){
@@ -1020,7 +1023,6 @@ export class Renderer {
   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],p=Math.max(0,Math.min(1,e[o+10]));
   const [w,d]=buildingFootprints[k],cycle=(this.time/1.2+e[o+6])%1,sway=Math.sin(cycle*Math.PI*2)*.1;
   const frame=p>=.2,panels=p>=.5,rigged=p>=.85,lit=p>=1;
-  this.shadow(x,y,w,d,frame?1:.3);
   // Open, unequal runners and anchor shoes, never a square civic plinth.
   for(let side=-1;side<=1;side+=2){
    this.box(x-.12,y+side*d*.31,z,w*.83,.17,.16,23,id);
