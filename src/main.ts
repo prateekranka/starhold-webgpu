@@ -7,6 +7,9 @@ import {scenarioManager} from './scenarios';
 import {State, names, jobs} from './kinds';
 import {Hud, HQ_POP_CAP, isBuildingKind, isUnitKind, type HudView, type SimAbi} from './hud';
 import {palette} from './kinds';
+import {ArenaController} from './ai/arena-controller';
+import {SpectatorHud} from './ui/spectator-hud';
+import type {ArenaMatchConfig} from './ui/arena-modal';
 /** Frozen ABI plus the wave-2 additions (docs/MATCH_SPEC.md §2). */
 type SimExports = SimAbi & WebAssembly.Exports;
 interface App {
@@ -20,7 +23,7 @@ interface App {
  /** Read-only actor view: one row per live entity. */
  entityProbe():{index:number;kind:number;faction:number;x:number;y:number;z:number;state:number;health:number;progress:number}[];
  rotate(dir:1|-1):void;zoomBy(delta:1|-1):void;selectAt(x:number,y:number):void;fastForward(seconds:number):void;
- startMatch(faction:0|1):void;resetShowcase():void;command(op:number,a:number,b:number):number;triggerRaid?(lane?:number):number;
+ startMatch(faction:0|1):void;resetShowcase():void;startArena?(config:ArenaMatchConfig):void;command(op:number,a:number,b:number):number;triggerRaid?(lane?:number):number;
  selectEntity(index:number):boolean;selectKind(kind:number):boolean;selectMultiple?(indices:number[]):void;
  /** Distinct entity kinds in the current snapshot (read-only coverage probe). */
  kinds():number[];
@@ -34,6 +37,11 @@ interface App {
 }
 declare global {interface Window {__APP:App}}
 let yawSteps=0,zoomIndex=1,sim:SimExports|undefined,entities=new Float32Array(0),entityCount=0,selected:number|null=null,fps:number|null=null;
+let arenaController: ArenaController | null = null;
+let spectatorHud: SpectatorHud | null = null;
+let arenaActive = false;
+let arenaP1 = 'human';
+let arenaP2 = 'codex';
 const selectedGroup=new Set<number>();
 let lastTapEntity=-1,lastTapTime=0;
 let seed=73129;
@@ -480,6 +488,10 @@ function syncHud() {
  updateRaidWarning();
 }
 function startMatch(faction:0|1) {
+ if (arenaController) { arenaController.cleanup(); arenaController = null; }
+ arenaActive = false;
+ spectatorHud?.hide();
+ (window as any).__starhold_time_scale = 1;
  if(!sim||typeof sim.sim_match_init!=='function')return;
  cancelPlacement();
  fogExplored.fill(0);
@@ -498,6 +510,10 @@ function startMatch(faction:0|1) {
  window.dispatchEvent(new Event('resize'));
 }
 function resetShowcase() {
+ if (arenaController) { arenaController.cleanup(); arenaController = null; }
+ arenaActive = false;
+ spectatorHud?.hide();
+ (window as any).__starhold_time_scale = 1;
  if(!sim)return;
  cancelPlacement();
  scenarioManager.clearScenario();
@@ -508,13 +524,116 @@ function resetShowcase() {
  resetClock();selectDefault();
  window.dispatchEvent(new Event('resize'));
 }
+function computeStateHash(): string {
+ if (!sim) return '00000000';
+ let hash = 0x811c9dc5;
+ const a0 = typeof (sim as any).sim_faction_alloy === 'function' ? (sim as any).sim_faction_alloy(0) : sim.sim_alloy();
+ const c0 = typeof (sim as any).sim_faction_charge === 'function' ? (sim as any).sim_faction_charge(0) : sim.sim_charge();
+ const a1 = typeof (sim as any).sim_faction_alloy === 'function' ? (sim as any).sim_faction_alloy(1) : 0;
+ const c1 = typeof (sim as any).sim_faction_charge === 'function' ? (sim as any).sim_faction_charge(1) : 0;
+ const nums = [a0, c0, a1, c1, entityCount];
+ for (let i = 0; i < nums.length; i++) {
+  const n = nums[i];
+  hash ^= (n & 0xff);
+  hash = Math.imul(hash, 0x01000193) >>> 0;
+  hash ^= ((n >> 8) & 0xff);
+  hash = Math.imul(hash, 0x01000193) >>> 0;
+ }
+ const len = Math.min(entityCount * 12, 240);
+ for (let i = 0; i < len; i++) {
+  const v = Math.round(entities[i] * 100) | 0;
+  hash ^= (v & 0xff);
+  hash = Math.imul(hash, 0x01000193) >>> 0;
+ }
+ return (hash >>> 0).toString(16).padStart(8, '0');
+}
+function startArena(config: ArenaMatchConfig) {
+ if (!sim) return;
+ if (arenaController) { arenaController.cleanup(); arenaController = null; }
+ arenaActive = true;
+ arenaP1 = config.p1;
+ arenaP2 = config.p2;
+ cancelPlacement();
+ scenarioManager.clearScenario();
+ fogExplored.fill(0);
+ fogVisible.fill(0);
+ seed = (seed + 1) >>> 0;
+ const factionInit = config.p1 === 'human' ? 0 : (config.p2 === 'human' ? 1 : 0);
+ if (typeof (sim as any).sim_match_init_arena === 'function') {
+  (sim as any).sim_match_init_arena(seed >>> 0, factionInit, 1);
+ } else if (typeof sim.sim_match_init === 'function') {
+  sim.sim_match_init(seed >>> 0, factionInit);
+ }
+ yawSteps = 0; zoomIndex = 1;
+ worldTerrain = new Float32Array(0);
+ worldSide = typeof sim.sim_world_size === 'function' ? sim.sim_world_size() : 0;
+ if (worldSide > 0) {
+  const isSpectator = config.p1 !== 'human' && config.p2 !== 'human';
+  if (isSpectator) {
+   camX = worldSide / 2; camY = worldSide / 2;
+  } else {
+   camX = sim.sim_base_x ? sim.sim_base_x(factionInit) : worldSide / 2;
+   camY = sim.sim_base_y ? sim.sim_base_y(factionInit) : worldSide / 2;
+  }
+  renderer.setWorld(worldView(), worldSide, camX, camY);
+ }
+ minimapInvalidate();
+ resetClock(); selectDefault();
+
+ if (!spectatorHud) {
+  spectatorHud = new SpectatorHud();
+ }
+ spectatorHud.clear();
+ if (config.p1 !== 'human' || config.p2 !== 'human') {
+  spectatorHud.show();
+ } else {
+  spectatorHud.hide();
+ }
+
+ arenaController = new ArenaController({
+  p1: config.p1,
+  p2: config.p2,
+  lockstep: config.lockstep,
+  onThought: (t) => {
+   spectatorHud?.addThought(t);
+  }
+ });
+
+ if (config.lockstep) {
+  config.lockstep.onRemoteCommand((cmd) => {
+   if (sim && typeof (sim as any).sim_command_for === 'function') {
+    (sim as any).sim_command_for(cmd.faction, cmd.op, cmd.a, cmd.b);
+   }
+  });
+  config.lockstep.onDesync((info) => {
+   console.warn(`[Lockstep] Desync at tick ${info.tick}: local=${info.localHash} remote=${info.remoteHash}`);
+  });
+ }
+
+ window.dispatchEvent(new Event('resize'));
+}
 function command(op:number,a:number,b:number):number {
  if(placementState.active){
   cancelPlacement();
   if(op===3){syncHud();return 1;}
  }
- if(!sim||typeof sim.sim_command!=='function')return 0;
- const accepted=sim.sim_command(op>>>0,a>>>0,b>>>0);
+ if(!sim)return 0;
+ let accepted = 0;
+ if (arenaActive) {
+  const localFaction = arenaP1 === 'human' ? 0 : (arenaP2 === 'human' ? 1 : 0);
+  const net = arenaController?.getLockstep();
+  if (net && net.isConnected) {
+   net.sendCommand({ faction: localFaction as 0 | 1, op, a, b }, tick);
+  }
+  if (typeof (sim as any).sim_command_for === 'function') {
+   accepted = (sim as any).sim_command_for(localFaction, op>>>0, a>>>0, b>>>0);
+  } else if (typeof sim.sim_command === 'function') {
+   accepted = sim.sim_command(op>>>0, a>>>0, b>>>0);
+  }
+ } else {
+  if (typeof sim.sim_command !== 'function') return 0;
+  accepted = sim.sim_command(op>>>0, a>>>0, b>>>0);
+ }
  if(accepted)sound.playOrder(op);
  refreshEntities();updateSelection();syncHud();
  return accepted?1:0;
@@ -902,7 +1021,7 @@ window.__APP={ready:false,error:null,getState:()=>({touch:touchLayout,yawSteps,z
  alloy:sim?sim.sim_alloy():0,charge:sim?sim.sim_charge():0,selectedKind:currentKind(),actions:hud.actions(),
  raidActive:sim&&sim.sim_raid_active?sim.sim_raid_active():0,raidLane:sim&&sim.sim_raid_lane?sim.sim_raid_lane():0,raidBreach:sim&&sim.sim_raid_breach?sim.sim_raid_breach():0,raidEta:sim&&sim.sim_raid_eta?sim.sim_raid_eta():0,
  worldTiles:worldSide,worldMeters:worldSide*(sim&&typeof sim.sim_metres_per_tile==='function'?sim.sim_metres_per_tile():10),camera:{x:camX,y:camY},minimap:{open:!minimap.classList.contains('off')}}),
- rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,command,triggerRaid:(lane=0)=>command(8,lane,0),selectEntity,selectKind,selectMultiple,kinds,entityScreen,tileScreen,terrainSample,entityProbe,placement:()=>({...placementState})};
+ rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,startArena,command,triggerRaid:(lane=0)=>command(8,lane,0),selectEntity,selectKind,selectMultiple,kinds,entityScreen,tileScreen,terrainSample,entityProbe,placement:()=>({...placementState})};
 const canvas=document.querySelector<HTMLCanvasElement>('#world')!;
 const viewport=document.querySelector<HTMLElement>('#viewport')!;
 const selection=document.querySelector<HTMLOutputElement>('#selection')!;
@@ -1207,9 +1326,23 @@ function frame(now:number) {
  if(window.__APP.error||!sim)return;
  try {
   if(previous===0){previous=now;windowStart=now;}
-  accumulator+=Math.min(now-previous,250);previous=now;
-  while(accumulator>=1000/60){sim.sim_step(1000/60);tick++;accumulator-=1000/60;}
+  const timeScale=(window as any).__starhold_time_scale||1;
+  accumulator+=Math.min((now-previous)*timeScale,250*timeScale);previous=now;
+  while(accumulator>=1000/60){
+   sim.sim_step(1000/60);
+   tick++;
+   accumulator-=1000/60;
+   if(arenaController&&arenaActive&&tick%60===0){
+    const net=arenaController.getLockstep();
+    if(net?.isConnected){
+     net.verifyHash(tick,computeStateHash());
+    }
+   }
+  }
   refreshEntities();updateSelection();syncHud();minimapDraw();researchUI?.update();
+  if(arenaController&&arenaActive){
+   arenaController.tick(sim,entities,worldSide,tick);
+  }
   if(simMode()===1){
    scenarioManager.updateProgress(entities, entityCount, simPlayer(), (sim as any).sim_waves ? (sim as any).sim_waves() : 0, simOutcome());
    const outcome=simOutcome();

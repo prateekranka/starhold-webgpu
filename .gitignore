@@ -8,3 +8,4 @@ tools/*.wasm
 tools/revision.json
 *.log
 .tmp/
+__pycache__/

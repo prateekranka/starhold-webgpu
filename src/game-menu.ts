@@ -1,5 +1,6 @@
 import './game-menu.css';
 import {CAMPAIGN_SCENARIOS, scenarioManager} from './scenarios';
+import {openArenaModal} from './ui/arena-modal';
 
 type MenuScreen='main'|'new'|'scenarios'|'confirm'|'options'|'settings'|'how'|'about';
 type DefaultFaction='ask'|'0'|'1';
@@ -66,6 +67,7 @@ function mainScreen(){
   <button class="gm-primary" data-action="resume" ${canResume?'':'disabled'}><strong>Resume Game</strong><small>${resumeNote}</small></button>
   <button data-action="new"><strong>New Game</strong><small>Choose a civilization and begin a fresh march</small></button>
   <button data-action="scenarios"><strong>Campaign Scenarios</strong><small>3 narrative tactical operations with objectives</small></button>
+  <button class="gm-primary" data-action="arena"><strong>Battle Arena & Multiplayer</strong><small>Claude vs Codex, Gemini vs Codex, Human vs Friend</small></button>
   ${s.mode===0?'<button data-action="watch"><strong>Watch Showcase</strong><small>Hide the menu and watch the colony run</small></button>':''}
   <button data-action="options"><strong>Options</strong><small>New-game behavior and map preferences</small></button>
   <button data-action="settings"><strong>Settings</strong><small>Menu display and accessibility</small></button>
@@ -153,6 +155,14 @@ dialog.addEventListener('click',event=>{
   case 'resume':closeMenu();break;
   case 'new':changeScreen('new');break;
   case 'scenarios':changeScreen('scenarios');break;
+  case 'arena':{
+   closeMenu();
+   openArenaModal({
+    onLaunch:(cfg)=>{window.__APP.startArena?.(cfg);},
+    onCancel:()=>{openMenu('main');}
+   });
+   break;
+  }
   case 'launch-scenario':{
    const scId=Number(target.dataset.scenarioId);
    if(scId){scenarioManager.startScenario(scId);closeMenu();}

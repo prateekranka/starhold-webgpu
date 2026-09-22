@@ -59,6 +59,14 @@ export interface SimAbi {
   sim_raid_breach?(): number;
   sim_raid_eta?(): number;
   sim_corridor_wp?(lane: number, wp: number, coord: number): number;
+  sim_match_init_arena?(seed: number, faction: number, arena: number): void;
+  sim_command_for?(faction: number, op: number, a: number, b: number): number;
+  sim_can_place_for?(faction: number, kind: number, tile: number): number;
+  sim_faction_alloy?(faction: number): number;
+  sim_faction_charge?(faction: number): number;
+  sim_faction_pop?(faction: number): number;
+  sim_faction_pop_cap?(faction: number): number;
+  sim_faction_age?(faction: number): number;
 }
 
 /** One roster row, docs/MATCH_SPEC.md §3. */
