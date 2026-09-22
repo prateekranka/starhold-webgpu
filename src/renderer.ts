@@ -1469,18 +1469,20 @@ export class Renderer {
    return;
   }
   if(k===32){ // Ashhand: low hood, bent knees, hand hook and levered pry bar.
-   // Pale work hood against ore and soot; ember face marks the forward end.
-   // Existing volumes only: dark soles anchor the light upper silhouette.
+   // Soot hood and heavy rear pack frame a forward ember face and hook.
+   // Keep the key on the hood crown; a red chest panel owns faction colour.
    for(let side=-1;side<=1;side+=2){
     this.box(x+.08+gait*side,y+side*.22,z,.35,.22,.18,1,id);
     this.box(x-.13,y+side*.2,z+.17,.27,.2,.3,24,id,-1);
    }
-   this.box(x-.13,y,z+.31+bob,.61,.51,.36,24,id,-1);
-   this.box(x+.1,y,z+.61+bob,.5,.46,.33,8,id,-1);
-   this.box(x+.32,y+(active?0:idle*.1),z+.65+bob,.09,.28,.13,26,id);
-   this.box(x-.38,y-.13,z+.4+bob,.26,.29,.33,7,id);
-   this.box(x+.25,y-.27,z+.4+bob,.3,.16,.15,25,id);
-   this.hook(x+.4,y-.29,z+.35+bob,.46,8,id);
+   this.box(x-.13,y,z+.31+bob,.61,.51,.36,23,id,-1);
+   this.box(x+.1,y,z+.61+bob,.5,.46,.33,1,id,-1);
+   this.box(x+.14,y,z+.86+bob,.28,.26,.08,7,id,-6);
+   this.box(x+.275,y+(active?0:idle*.1),z+.7+bob,.18,.28,.16,27,id,-6);
+   this.box(x-.38,y-.13,z+.4+bob,.26,.29,.33,1,id);
+   this.box(x+.04,y,z+.43+bob,.28,.49,.2,25,id,-6);
+   this.box(x+.25,y-.27,z+.4+bob,.3,.16,.15,26,id,-6);
+   this.hook(x+.4,y-.29,z+.35+bob,.46,6,id);
    const tap=active?stroke:idle*.12,site=state===5?.12:0;
    this.box(x+.24,y+.27,z+.41+bob+site,.3,.15,.17,24,id);
    this.strut(x+.4,y+.28,z+.45+site,.18+tap,0,-.3+raise*.22,.075,7,id,2);
@@ -1677,20 +1679,22 @@ export class Renderer {
    if(attacking&&e[o+11]>.88)this.emissive(x+1.27-recoil,y,z+.95,27,id,2,2);
    return;
   }
-  // Riveter: pale hood and steel tool, blue forward visor, ink contact feet.
-  // Reserve warm gold for carried ore so the worker stays distinct from it.
+  // Riveter: dark core behind a blue breastplate and forward ice visor.
+  // A small crown key and the leading steel tool separate it from the ground.
   this.box(x-.15,y+gait-.12,z,.2,.24,.25,1,id);
   this.box(x+.15,y-gait+.12,z,.2,.24,.25,1,id);
-  this.box(x,y,z+.24,.5,.46,.43,14,id,-1);
-  this.box(x,y-.27,z+.3,.36,.22,.4,13,id);
-  this.box(x,y,z+.65,.49,.46,.28,8,id,-1);
-  this.box(x+.23,y,z+.69,.19,.2,.14,16,id);
+  this.box(x,y,z+.24,.5,.46,.43,1,id,-1);
+  this.box(x+.12,y,z+.37,.26,.44,.24,16,id,-6);
+  this.box(x,y-.27,z+.3,.36,.22,.4,16,id,-6);
+  this.box(x,y,z+.65,.49,.46,.28,1,id,-1);
+  this.box(x+.04,y,z+.85,.27,.26,.08,7,id,-6);
+  this.box(x+.23,y,z+.72,.19,.24,.17,18,id,-6);
   if(e[o+10]>0)this.crate(x-.35,y,z+.3,.28+Math.min(4,e[o+10])*.03,id);
   const working=state===3||state===8,strike=working&&phase<.22;
   const lift=working?(phase<.45?.28:-.1):0;
-  this.box(x+.32,y,z+.45,.2,.2,.17,7,id);
-  this.box(x+.5,y,z+.45+lift,.14,.14,.36,7,id);
-  this.box(x+.5,y,z+.75+lift,.35,.16,.12,8,id);
+  this.box(x+.32,y,z+.45,.2,.2,.17,6,id);
+  this.box(x+.5,y,z+.45+lift,.14,.14,.36,6,id);
+  this.box(x+.5,y,z+.75+lift,.35,.16,.12,7,id);
   if(strike){this.box(x+.6,y,z+.4,.15,.15,.15,18);this.box(x+.8,y,z+.58,.1,.1,.1,22);}
  }
 
