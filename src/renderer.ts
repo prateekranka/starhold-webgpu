@@ -1,5 +1,19 @@
 import {palette, names, jobs} from './kinds';
 import {glyphs} from './font';
+import {drawAshJackal, type JackalVariant} from './assets/ash-jackal';
+import {drawCinderStrider} from './assets/cinder-strider';
+import {drawPackBeetle} from './assets/pack-beetle';
+import {drawSiegeJuggernaut} from './assets/siege-juggernaut';
+import {drawWardSentinel} from './assets/ward-sentinel';
+import {drawRiveter} from './assets/riveter';
+import {drawSunlance} from './assets/sunlance';
+import {drawHarborSkiff} from './assets/harbor-skiff';
+import {drawPrismCantor} from './assets/prism-cantor';
+import {drawAshhand} from './assets/ashhand';
+import {drawChainMule} from './assets/chain-mule';
+import {drawSootwing} from './assets/sootwing';
+import {drawBrandcaller} from './assets/brandcaller';
+import {renderDawnwardBuildingDetails, renderCinderwakeBuildingDetails} from './assets/buildings';
 // 16000 was enough for the authored 32x32 island. The 10 km world bakes the
 // visible window with three detail tiers, so the ceiling is raised and the bake
 // itself stops at BAKE_LIMIT instead of dropping instances one by one.
@@ -248,12 +262,48 @@ const buttonPatterns=Array.from({length:4},(_,kind)=>{
 });
 export function buttonGlyphPixels(kind:number):Uint8Array {return buttonPatterns[kind];}
 export class Renderer {
+ authoritativeActors=false;
+ jackalVariant:JackalVariant='field';
  hudButtons=true;
  hudVisible=true;
  /** Logical-pixel inset for left HUD content when a full-bleed canvas is cropped. */
  hudLeftInset=0;
  /** Logical-pixel lift that keeps the selection plaque above an overlaid DOM command bar. */
  hudBottomInset=0;
+ showInterface=true;
+ kindHealth:((kind:number)=>number)|null=null;
+ private disposed=false;
+ private frameTexture:any=null;
+ private frameFormat='rgba8unorm';
+ private gpuAdapter:any=null;
+ /** Explicit readback is used only by tools/captures, never the normal game loop. */
+ async captureFrame():Promise<ImageData>{
+  if(!this.frameTexture)throw new Error('Render before requesting a capture.');
+  const d=this.device,usage=GPUBufferUsage as typeof GPUBufferUsage & {MAP_READ:number};
+  const row=Math.ceil(RENDER_WIDTH*4/256)*256;
+  const buffer=d.createBuffer({size:row*RENDER_HEIGHT,usage:usage.COPY_DST|usage.MAP_READ});
+  try{
+   const encoder=d.createCommandEncoder();
+   encoder.copyTextureToBuffer({texture:this.frameTexture},{buffer,bytesPerRow:row,rowsPerImage:RENDER_HEIGHT},[RENDER_WIDTH,RENDER_HEIGHT]);
+   d.queue.submit([encoder.finish()]);
+   await buffer.mapAsync(1);
+   const bytes=new Uint8Array(buffer.getMappedRange()),rgba=new Uint8ClampedArray(RENDER_WIDTH*RENDER_HEIGHT*4);
+   const bgra=this.frameFormat.startsWith('bgra');
+   for(let y=0;y<RENDER_HEIGHT;y++)for(let x=0;x<RENDER_WIDTH;x++){
+    const a=y*row+x*4,b=(y*RENDER_WIDTH+x)*4;
+    rgba[b]=bytes[a+(bgra?2:0)];rgba[b+1]=bytes[a+1];rgba[b+2]=bytes[a+(bgra?0:2)];rgba[b+3]=bytes[a+3];
+   }
+   buffer.unmap();return new ImageData(rgba,RENDER_WIDTH,RENDER_HEIGHT);
+  }finally{buffer.destroy();}
+ }
+ setReviewWorld(terrain:Float32Array,side:number,cx:number,cy:number) {
+  if(side<33||terrain.length!==side*side)throw new Error('Invalid review terrain');
+  this.terrain=terrain;this.terrainSide=side;this.setView(cx,cy);
+  this.worldStarts=[];this.worldRoutes=[];this.worldOutcrops=[];
+  this.bakedX=NaN;this.bakedY=NaN;this.bakedZoom=-1;this.authoritativeActors=true;
+ }
+ async settled():Promise<void>{await this.device?.queue.onSubmittedWorkDone();}
+ dispose():void{this.disposed=true;this.context?.unconfigure();this.device?.destroy();}
  worldSide=0;
  readonly data=new Float32Array(MAX*STRIDE);
  readonly owners=new Int32Array(MAX);
@@ -319,9 +369,9 @@ export class Renderer {
   if(!navigator.gpu) throw new Error('WebGPU is unavailable. Open Starhold in a WebGPU-capable browser with hardware acceleration enabled.');
   const adapter=await navigator.gpu.requestAdapter({powerPreference:'high-performance'});
   if(!adapter) throw new Error('No WebGPU adapter is available. Enable hardware acceleration and Vulkan support.');
-  this.device=await adapter.requestDevice();
-  const d=this.device;this.context=canvas.getContext('webgpu');
-  const format=navigator.gpu.getPreferredCanvasFormat();this.context.configure({device:d,format,alphaMode:'opaque'});
+   this.gpuAdapter=adapter;this.device=await this.gpuAdapter.requestDevice();
+   const d=this.device;this.context=canvas.getContext('webgpu');
+   const format=navigator.gpu.getPreferredCanvasFormat();this.frameFormat=format;const captureUsage=GPUTextureUsage as typeof GPUTextureUsage & {COPY_SRC:number};this.context.configure({device:d,format,alphaMode:'opaque',usage:captureUsage.RENDER_ATTACHMENT|captureUsage.COPY_SRC});
   const mesh:number[]=[];
   const face=(a:number[],b:number[],c:number[],e:number[],shade:number)=>{for(const v of [a,b,c,a,c,e])mesh.push(...v,shade);};
   face([-.5,-.5,1],[.5,-.5,1],[.5,.5,1],[-.5,.5,1],0);
@@ -349,7 +399,7 @@ export class Renderer {
   this.presentPass={colorAttachments:[{view:null,loadOp:'clear',storeOp:'store',clearValue:{r:16/255,g:18/255,b:28/255,a:1}}]};
   this.terrain.set(terrain);this.showcaseTerrain.set(terrain);this.makeTerrain();
  }
- onError(callback:(message:string)=>void) {this.device.addEventListener('uncapturederror',(e:any)=>callback(e.error.message));this.device.lost.then((info:any)=>callback(`WebGPU device lost: ${info.message}`));}
+ onError(callback:(message:string)=>void) {this.device.addEventListener('uncapturederror',(e:any)=>{console.error('UNCAPTURED ERROR:', e.error?.message||e.error);callback(e.error.message);});this.device.lost.then((info:any)=>{if(!this.disposed)callback(`WebGPU device lost: ${info.message}`);});}
  box(x:number,y:number,z:number,sx:number,sy:number,sz:number,color:number,owner=-1,screen=0) {
   if(this.count>=MAX){this.dropped++;return;}
   const i=this.count*8;this.data[i]=x;this.data[i+1]=y;this.data[i+2]=z;this.data[i+3]=sx;this.data[i+4]=sy;this.data[i+5]=sz;this.data[i+6]=color;this.data[i+7]=screen;this.owners[this.count++]=owner;
@@ -366,9 +416,14 @@ export class Renderer {
  }
  private shadow(x:number,y:number,w:number,d:number,h:number) {
   const z=this.ground(x,y);
-  this.box(x,y,z+.085,w,d,Math.min(1,h),1,-1,-3);
-  // A narrow opaque ink lip, raised over road slabs and under the feet/plinth.
-  this.box(x,y,z+.095,w+.12,d+.12,0,0,-1,-3);
+  if(h>=0.9){
+   // Flying units: compact ground drop marker so player can target them
+   this.box(x,y,z+.02,Math.max(.28,w*.6),Math.max(.28,d*.6),0,1,-1,-3);
+   this.box(x,y,z+.025,Math.max(.16,w*.36),Math.max(.16,d*.36),0,0,-1,-3);
+  } else {
+   // Ground units: minimal 1-pixel contact rim directly under feet; zero vertical box slab
+   this.box(x,y,z+.02,Math.max(.2,w*.65),Math.max(.2,d*.65),0,1,-1,-3);
+  }
  }
  private shard(x:number,y:number,z:number,h:number,c=30,owner=-1) {
   // The match Heliowell's cyan core must clear its cage and the Keep behind
@@ -854,8 +909,6 @@ export class Renderer {
   }
   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],p=e[o+10],phase=e[o+6];
   const w=k===10||k===17?4:k===12||k===16?2:3,depth=k===15?2:k===17?3:w;
-  const height=k===10?5:k===12||k===16?4:k===13||k===14?3:2.5;
-  this.shadow(x,y,w+.2,depth+.2,p<.2?.35:p<.5?1.4:p<.85?2.8:height);
   this.box(x,y,z,w+.2,depth+.2,.19,7,id);
   this.box(x,y,z+.19,w-.12,depth-.12,.12,11,id);
   if(p<1){
@@ -902,7 +955,9 @@ export class Renderer {
    this.box(x,y,z+.3,1.8,1.8,.3,13,id,-1);
    for(let j=0;j<6;j++){const a=j*Math.PI/3;this.box(x+Math.cos(a)*.8,y+Math.sin(a)*.8,z+.25,.45,.45,.45,8,id);}
    if(p>=.2)for(let a=-1;a<=1;a+=2)this.box(x+a*.8,y,z+.55,.24,.46,p<.5?1.3:2.5,8,id);
-   if(p>=.5){const bob=Math.floor(phase*4)%2*.08;this.shard(x,y,z+.65+bob,2.9,17,id);for(let j=0;j<3;j++){this.box(x,y,z+.85+j*.65,.75,.75,.12,16,id);this.box(x-.18,y+.26,z+.9+j*.65,.08,.08,.48,17,id);this.emissive(x-.18,y+.31,z+1.14+j*.65,Math.floor(phase*4)===j?18:17,id);}this.emissive(x,y,z+3.75,18,id);}
+   if(p>=.5){const bob=Math.floor(phase*4)%2*.08;this.shard(x,y,z+.65+bob,2.9,17,id);for(let j=0;j<3;j++){this.box(x,y,z+.85+j*.65,.75,.75,.12,16,id);this.box(x-.18,y+.26,z+.9+j*.65,.08,.08,.48,17,id);this.emissive(x-.18,y+.31,z+1.14+j*.65,Math.floor(phase*4)===j?18:17,id);}this.emissive(x,y,z+3.75,18,id);
+    for(let m=0;m<3;m++){const mq=(this.time*1.5+m*.33)%1,ma=m*Math.PI*2/3+this.time;this.box(x+Math.cos(ma)*.35,y+Math.sin(ma)*.35,z+1.2+mq*2.2,.14,.14,.14,mq<.5?18:17);}
+   }
   } else if(k===16){
    const levels=p<.5?1:p<.85?2:3;
    for(let j=0;j<levels;j++){if(p>=.85||j===0)this.box(x,y,z+.3+j*.85,1.65-j*.28,1.65-j*.28,.72,p>=.85?13:12,id);
@@ -939,11 +994,17 @@ export class Renderer {
    for(let a=-1;a<=1;a+=2)this.box(x+a*1.3,y,z+.3,.25,2.6,1.8,8,id);
    if(p>=.5){this.box(x,y,z+1.7,2.8,2.7,.22,7,id);this.box(x-.7,y-.6,z+1.9,.55,.6,1.1,4,id);this.box(x-.7,y-.6,z+2.95,.68,.7,.15,7,id);this.box(x+.65,y-.5,z+1.9,.4,.4,.85,7,id);this.box(x+.65,y-.5,z+2.75,.4,.4,.15,22,id);
     this.box(x,y+1.34,z+.3,1.25,.18,1.3,1,id);this.box(x,y+1.45,z+.35,.9,.12,.95,25,id);this.box(x,y+1.53,z+.4,.45,.1,.65,27,id);this.box(x,y+1.8,z+.21,.5,.6,.06,26,id);this.emissive(x,y+1.6,z+.73,27,id,2,2);
-    for(let j=0;j<8;j++){const a=(j/8+phase)*Math.PI*2;this.box(x+1.48,y+Math.cos(a)*.55,z+1.+Math.sin(a)*.55,.2,.24,.24,21,id);}
-    for(let j=0;j<5;j++){const q=(this.time/2+j/5)%1,size=.32+Math.floor(q*3)*.24;this.box(x-.7+q*.95,y-.6+q*.25,z+3.1+q*2.1,size,size,.28+q*.2,q<.65?6:4);}}
+     for(let j=0;j<8;j++){const a=(j/8+phase)*Math.PI*2;this.box(x+1.48,y+Math.cos(a)*.55,z+1.+Math.sin(a)*.55,.2,.24,.24,21,id);}
+     const hammerCycle=(this.time*2.5)%1,hammerDown=hammerCycle<.25;
+     this.box(x+.4,y-.3,z+1.6+(hammerDown?0:Math.sin(hammerCycle*Math.PI)*.4),.35,.35,.45,6,id);
+     if(hammerDown){for(let s=0;s<4;s++){const sa=s*Math.PI/2+this.time*4;this.box(x+.4+Math.cos(sa)*.25,y-.3+Math.sin(sa)*.25,z+1.45,.1,.1,.1,27);}}
+     for(let j=0;j<5;j++){const q=(this.time/2+j/5)%1,size=.32+Math.floor(q*3)*.24;this.box(x-.7+q*.95,y-.6+q*.25,z+3.1+q*2.1,size,size,.28+q*.2,q<.65?6:4);}}
   }
-  if(p>=.5)this.facade(x,y,z,k,p,id);
-  if(p>=.85&&k!==12&&k!==16){for(let j=0;j<2;j++)this.crate(x+w*.5+.3,y+.6*j,z,.38,id);}
+   if(p>=.5){
+    this.facade(x,y,z,k,p,id);
+    renderDawnwardBuildingDetails((bx,by,bz,sx,sy,sz,c,o,s)=>this.box(bx,by,bz,sx,sy,sz,c,o,s),(ex,ey,ez,c,o,w,h)=>this.emissive(ex,ey,ez,c,o,w,h),x,y,z,k,p,phase,this.time,id);
+   }
+   if(p>=.85&&k!==12&&k!==16){for(let j=0;j<2;j++)this.crate(x+w*.5+.3,y+.6*j,z,.38,id);}
  }
  // Short overlapping prisms make raked struts, elbows and bow limbs using
  // the existing mesh. Keep subdivision bounded even on long building beams.
@@ -962,7 +1023,6 @@ export class Renderer {
   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],p=Math.max(0,Math.min(1,e[o+10]));
   const [w,d]=buildingFootprints[k],cycle=(this.time/1.2+e[o+6])%1,sway=Math.sin(cycle*Math.PI*2)*.1;
   const frame=p>=.2,panels=p>=.5,rigged=p>=.85,lit=p>=1;
-  this.shadow(x,y,w,d,frame?1:.3);
   // Open, unequal runners and anchor shoes, never a square civic plinth.
   for(let side=-1;side<=1;side+=2){
    this.box(x-.12,y+side*d*.31,z,w*.83,.17,.16,23,id);
@@ -1106,7 +1166,8 @@ export class Renderer {
    if(panels){this.box(x-1.65,y,z+.5,.28,2.35,.18,24,id);this.box(x+1.57,y,z+1.05,.3,1.27,.23,25,id);}
    if(lit)for(let j=0;j<4;j++)this.box(x-1.3+j*.83,y-.44,z+.61+j*.17,.3,.08,.06,j===Math.floor(cycle*4)?27:26,id);
   }
- }
+   renderCinderwakeBuildingDetails((bx,by,bz,sx,sy,sz,c,o,s)=>this.box(bx,by,bz,sx,sy,sz,c,o,s),(ex,ey,ez,c,o,w,h)=>this.emissive(ex,ey,ez,c,o,w,h),x,y,z,k,p,cycle,sway,this.time,id);
+  }
  private facade(x:number,y:number,z:number,k:number,p:number,id:number) {
   // Flush fittings on existing wall planes, all yaws. No new footprint or
   // roof volume; these small regular accents sit above the ground vocabulary.
@@ -1193,7 +1254,8 @@ export class Renderer {
   const k=e[o+4],friendly=dawnUnits.has(k);
   if(wave2Units.has(k)&&e[o+5]===4){this.wreck(e[o],e[o+1],this.ground(e[o],e[o+1]),k);return;}
   const combat=combatUnits.has(k);
-  const ox=combat?(id%3-1)*.24:0,oy=combat?(Math.floor(id/3)%3-1)*.24:0;
+  const offset=combat&&!(this.authoritativeActors&&k===30);
+  const ox=offset?(id%3-1)*.24:0,oy=offset?(Math.floor(id/3)%3-1)*.24:0;
   const start=this.count;
   this.unitParts(e,o,id);
   const c=Math.cos(e[o+3]),sn=Math.sin(e[o+3]);
@@ -1229,325 +1291,210 @@ export class Renderer {
   const w=(maxX-minX)*scale,d=(maxY-minY)*scale;
   this.shadow(e[o]+ox+(minX+maxX)*scale/2,e[o+1]+oy+(minY+maxY)*scale/2,w,d,k===24||k===35?1:.45);
  }
- private wardRing(x:number,y:number,z:number,radius:number,color:number) {
-  for(let j=0;j<8;j++){
-   const a=j*Math.PI/4;
-   // Effect mask 1: rings/tracers never contribute to actor bounds or scale.
-   this.box(x+Math.cos(a)*radius,y+Math.sin(a)*radius,z,.16,.16,.05,32+color);
-  }
- }
- private wave2Unit(e:Float32Array,o:number,id:number) {
-  const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],state=e[o+5];
-  const tick=Math.round(this.time*60),moving=state===1||state===6,attacking=state===2;
-  const worker=k===32,working=worker&&(state===3||state===5||state===8);
-  const loading=k===33&&(attacking||state===7),active=attacking||working||loading;
-  // Idle: 72 ticks; gait/hover: 36 ticks. Snapshot phase owns action poses;
-  // a zero/unset phase still animates deterministically from the 48-tick clock.
-  const period=moving?36:72;
-  const idle=Math.sin((tick%period)*Math.PI*2/period),walk=Math.sin((tick%36)*Math.PI*2/36);
-  const phase=Number.isFinite(e[o+6])?Math.max(0,Math.min(1,e[o+6])):0;
-  const q=phase>0&&phase<1?phase:(tick%48)/48;
-  const windup=active&&q<.36?q/.36:0;
-  const strike=active&&q>=.5&&q<.68,recover=active&&q>=.68?(1-q)/.32:0;
-  const raise=active?(q<.36?windup:q<.68?1:recover):0;
-  const stroke=active?(q<.36?-.15*windup:q<.5?-.15:q<.68?.23:.23*recover):0;
-  const bob=active?0:(moving?.1*Math.abs(walk):.14*idle),gait=moving?.17*walk:0;
-  // Infantry: <=3 px, walkers: <=4 px, aircraft: <=2 px at zoom 1.
-  // These local excursions include the fixed role scale in unit(). Effects
-  // may travel beyond the rig; body, tool and wing motion remain bounded.
-  if(k===25){ // Prism Cantor: upright bearer, clear tall pole and lantern.
-   for(let side=-1;side<=1;side+=2){
-    this.box(x+gait*side,y+side*.2,z,.28,.23,.23,10,id);
-    this.box(x-.04,y+side*.19,z+.2,.21,.21,.27,7,id);
+  private wave2Unit(e:Float32Array,o:number,id:number) {
+   if(this.authoritativeActors&&e[o+4]===30){
+    drawAshJackal(this,e[o],e[o+1],e[o+2],id,{state:e[o+5],phase:e[o+6],tick:Math.round(this.time*60),cooldown:e[o+11]},this.jackalVariant);
+    return;
    }
-   this.box(x-.09,y,z+.35+bob,.52,.54,.54,13,id,-1);
-   this.box(x,y,z+.74+bob,.36,.4,.27,8,id);
-   this.box(x+.03,y,z+1.01+bob,.35,.37,.26,8,id,-1);
-   this.box(x+.21,y,z+1.06+bob,.07,.2,.1,17,id);
-   const lift=raise*.28,hand=z+.61+bob+lift;
-   this.box(x+.24,y+.25,hand,.4,.16,.16,8,id);
-   this.box(x+.48,y+.29,z+.24+bob+lift,.07,.07,1.48,21,id);
-   const sway=active?.06:idle*.14;
-   this.box(x+.15,y+.29+sway,z+1.3+bob+lift,.61,.11,.36,13,id);
-   this.box(x-.22,y+.29+sway,z+1.28+bob+lift,.23,.12,.27,12,id,-1);
-   this.box(x+.05,y+.36+sway,z+1.36+bob+lift,.09,.035,.15,22,id);
-   this.box(x+.48,y+.29,z+1.61+bob+lift,.24,.24,.3,17,id,-2);
-   this.emissive(x+.48,y+.29,z+1.77+bob+lift,18,id,!active&&idle>0?2:1,1);
-   if(strike)this.wardRing(x,y,z+.16,.7+(q-.5)*2.2,18);
-   return;
-  }
-  if(k===26){ // Star Ram: paired tracks, ribs, square ram sliding on rails.
-   const settle=active?0:(moving?.12*Math.abs(walk):idle*.18);
-   for(let side=-1;side<=1;side+=2){
-    this.box(x-.1,y+side*.53,z,1.85,.34,.31,4,id);
-    for(let j=0;j<4;j++)this.box(x-.74+j*.42+(moving?walk*.14:0),y+side*.71,z+.05,.17,.06,.22,6,id);
-    this.box(x-.12,y+side*.48,z+.29+settle,1.57,.29,.26,13,id,-1);
-    this.box(x+.44,y+side*.3,z+.62+settle,1.36,.11,.12,7,id);
+   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],state=e[o+5];
+   const tick=Math.round(this.time*60);
+   const phase=Number.isFinite(e[o+6])?Math.max(0,Math.min(1,e[o+6])):0;
+   const q=phase>0&&phase<1?phase:(tick%48)/48;
+   if(k===25){
+    drawPrismCantor(this,x,y,z,id,{state,phase:q,tick});
+    return;
    }
-   this.box(x-.25,y,z+.34+settle,1.47,.88,.54,13,id);
-   for(let j=0;j<3;j++)this.box(x-.73+j*.39,y,z+.86+settle,.12,.91,.16,8,id);
-   const ram=stroke*1.3;
-   this.box(x+.58+ram,y,z+.65+settle,1.02,.25,.21,6,id);
-   this.box(x+1.01+ram,y,z+.49+settle,.39,.92,.67,8,id);
-   this.box(x+1.22+ram,y,z+.61+settle,.045,.56,.4,21,id);
-   this.box(x-.8,y-.28,z+.93+settle,.17,.18,.5,4,id);
-   this.box(x-.8,y-.28,z+1.42+settle+(active?0:idle*.06),.19,.2,.08,7,id);
-   if(strike){this.emissive(x+1.28+ram,y,z+.87,22,-1,2,2);this.wardRing(x+1.34+ram,y,z+.59,.32+(q-.5),22);}
-   return;
-  }
-  if(k===32){ // Ashhand: low hood, bent knees, hand hook and levered pry bar.
-   for(let side=-1;side<=1;side+=2){
-    this.box(x+.08+gait*side,y+side*.22,z,.35,.22,.18,23,id);
-    this.box(x-.13,y+side*.2,z+.17,.27,.2,.3,24,id,-1);
+   if(k===26){
+    drawSiegeJuggernaut(this,x,y,z,id,{kind:26,state,phase:q,tick});
+    return;
    }
-   this.box(x-.13,y,z+.31+bob,.61,.51,.36,24,id,-1);
-   this.box(x+.1,y,z+.61+bob,.5,.46,.33,23,id,-1);
-   this.box(x+.32,y+(active?0:idle*.1),z+.65+bob,.09,.28,.13,25,id);
-   this.box(x-.38,y-.13,z+.4+bob,.26,.29,.33,24,id);
-   this.box(x+.25,y-.27,z+.4+bob,.3,.16,.15,25,id);
-   this.hook(x+.4,y-.29,z+.35+bob,.46,6,id);
-   const tap=active?stroke:idle*.12,site=state===5?.12:0;
-   this.box(x+.24,y+.27,z+.41+bob+site,.3,.15,.17,24,id);
-   this.strut(x+.4,y+.28,z+.45+site,.18+tap,0,-.3+raise*.22,.075,6,id,2);
-   this.box(x+.58+tap,y+.28,z+.14+site+raise*.22,.24,.13,.08,6,id);
-   if(strike){
-    this.box(x+.69,y+.29,z+.19+site,.21,.23,.18,32+4);
-    this.box(x+.8,y+.35,z+.32+site,.14,.13,.13,32+6);
-    if(working)this.emissive(x+.63,y+.28,z+.27+site,27,-1,1,1);
+   if(k===32){
+    drawAshhand(this,x,y,z,id,{state,phase:q,tick});
+    return;
    }
-   return;
-  }
-  if(k===33){ // Chain Mule: elongated four-legged pack frame, hanging hooks.
-   const settle=loading?-.22*raise:(moving?.1*Math.abs(walk):.18*idle);
-   for(let end=-1;end<=1;end+=2)for(let side=-1;side<=1;side+=2){
-    const step=moving?gait*side*end:idle*.08*end;
-    this.box(x+end*.66+step,y+side*.36,z,.29,.2,.18,23,id);
-    this.strut(x+end*.66+step,y+side*.36,z+.16,-end*.16,0,.44,.12,24,id,2);
+   if(k===33){
+    drawChainMule(this,x,y,z,id,{state,phase:q,tick});
+    return;
    }
-   this.box(x-.12,y,z+.6+settle,1.75,.58,.39,24,id,-1);
-   this.box(x+.88,y,z+.7+settle,.4,.42,.34,23,id,-1);
-   this.box(x+1.05,y,z+.79+settle,.1,.2,.1,26,id);
-   this.box(x-.28,y,z+1.01+settle,1.42,.86,.1,6,id);
-   for(let side=-1;side<=1;side+=2){
-    const close=loading?raise*.18:idle*.1;
-    this.box(x-.32,y+side*.49,z+.49+settle,.87,.32,.47,23,id,-1);
-    this.box(x-.32,y+side*.66,z+.64+settle,.1,.055,.39,6,id);
-    this.hook(x+.12,y+side*(.62-close),z+.27+settle,.68,6,id);
+   if(k===34){
+    drawSiegeJuggernaut(this,x,y,z,id,{kind:34,state,phase:q,tick});
+    return;
    }
-   this.box(x-.42,y,z+1.12+settle,.7,.55,.38,24,id,-1);
-   this.box(x-.42,y,z+1.51+settle,.11,.58,.06,6,id);
-   return;
-  }
-  if(k===34){ // Hookguard: crouched boarder; plank shield opposite the hook.
-   for(let side=-1;side<=1;side+=2){
-    this.box(x+.05+gait*side,y+side*.25,z,.35,.22,.2,23,id);
-    this.box(x-.12,y+side*.22,z+.18,.27,.2,.3,24,id,-1);
+   if(k===30){
+    drawAshJackal(this,x,y,z,id,{state,phase:q,tick,cooldown:e[o+11]},this.jackalVariant);
+    return;
    }
-   this.box(x-.12+stroke*.25,y,z+.34+bob,.6,.55,.45,24,id,-1);
-   this.box(x+.1+stroke*.25,y,z+.77+bob,.4,.4,.3,23,id,-1);
-   this.box(x+.29,y,z+.83+bob,.08,.22,.11,25,id);
-   for(let j=0;j<3;j++)this.box(x+.23,y-.4+j*.12,z+.22+bob,.13,.105,.72,24,id);
-   this.box(x+.31,y-.28,z+.43+bob,.06,.41,.09,6,id);
-   const hookStroke=active?stroke:idle*.1;
-   this.box(x+.32+hookStroke,y+.32,z+.58+bob,.39,.18,.17,25,id);
-   const chop=strike?-.08:raise*.12;
-   this.strut(x+.45+hookStroke,y+.34,z+.62+bob,.17,0,.23+chop,.075,6,id,2);
-   this.hook(x+.62+hookStroke,y+.34,z+.83+bob+chop,.53,6,id);
-   if(strike)this.box(x+.98,y+.34,z+.59,.18,.18,.14,32+26);
-   return;
-  }
-  if(k===30){ // Ash Jackal: jointed centaur chassis fused to a bow-bearing torso.
-   const settle=active?0:(moving?.1*Math.abs(walk):.17*idle);
-   for(let end=-1;end<=1;end+=2)for(let side=-1;side<=1;side+=2){
-    const step=moving?gait*end*side:idle*.12*end*side;
-    this.box(x+end*.65+step,y+side*.42,z,.28,.22,.16,23,id);
-    this.strut(x+end*.65+step,y+side*.42,z+.14,-end*.2,0,.33,.12,24,id,2);
-    this.strut(x+end*.45,y+side*.42,z+.47,end*.12,0,.26,.13,25,id,2);
+   if(k===35){
+    drawSootwing(this,x,y,z,id,{state,phase:q,tick});
+    return;
    }
-   this.box(x-.16,y,z+.59+settle,1.48,.64,.34,24,id,-1);
-   this.box(x-.54,y,z+.9+settle,.48,.7,.13,25,id,-1);
-   const recoil=strike?-.15:0,torso=x+.36+recoil;
-   this.box(torso,y,z+.86+settle,.43,.46,.46,24,id,-1);
-   this.box(torso+.06,y,z+1.32+settle,.35,.36,.27,23,id,-1);
-   this.box(torso+.23,y,z+1.37+settle,.08,.2,.09,26,id);
-   // Quiver behind the fused waist, with three distinct arrow nocks.
-   this.box(x-.19,y-.37,z+.88+settle,.32,.22,.53,23,id);
-   for(let j=0;j<3;j++)this.box(x-.28+j*.1,y-.37,z+1.3+settle,.045,.07,.29,25,id);
-   this.box(x-.98,y+(active?0:idle*.12),z+.68+settle,.4,.14,.24,25,id,-1);
-   const draw=active?(q<.36?windup:q<.5?1:q<.68?0:recover*.3):.4+idle*.12;
-   const bow=x+.97+recoil,hand=x+.65-draw*.2+recoil;
-   this.box(torso+.24,y+.22,z+1.09+settle,.45,.15,.14,25,id);
-   this.strut(torso,y-.25,z+1.11+settle,hand-torso,.42,0,.1,24,id,2);
-   // Vertical recurved bow, taut V string, and nocked ember arrow. Its
-   // open gap and high archer head remain legible at all four camera yaws.
-   for(let side=-1;side<=1;side+=2){
-    this.strut(bow,y+.24,z+1.13+settle,-.13,0,side*.26,.075,26,id,2);
-    this.strut(bow-.13,y+.24,z+1.13+side*.26+settle,-.16,0,side*.14,.065,25,id,2);
-    this.strut(bow-.29,y+.24,z+1.13+side*.4+settle,hand-(bow-.29),0,-side*.4,.032,27,id,2);
-   }
-   if(!strike)this.box((hand+bow)/2,y+.24,z+1.14+settle,bow-hand+.18,.045,.045,26,id);
-   if(strike){
-    const flight=(q-.5)/.18;
-    this.box(x+1.2+flight*.65,y+.24,z+1.14,.42,.055,.055,32+26);
-    this.box(x+1.44+flight*.65,y+.24,z+1.14,.1,.09,.08,32+27);
-   }
-   return;
-  }
-  if(k===35){ // Sootwing: soot-black swept wings and two ember dart pods.
-   const hover=active?0:(moving?walk*.1:idle*.12),recoil=strike?-.16:0;
-   this.box(x+recoil,y,z+hover,1.14,.36,.24,2,id,-1);
-   this.box(x+.3+recoil,y,z+.2+hover,.39,.31,.17,23,id,-1);
-   for(let side=-1;side<=1;side+=2){
-    const sweep=active?-.1*raise:(moving?walk*.04:idle*.02);
-    this.box(x-.17+recoil,y+side*.43,z+.02+hover,.74,.66,.12,2,id,-1);
-    this.box(x-.49+sweep+recoil,y+side*.85,z+.03+hover,.49,.39,.1,1,id,-1);
-    this.box(x+.21+recoil,y+side*.43,z-.08+hover,.4,.18,.2,23,id);
-    this.box(x+.42+recoil,y+side*.43,z-.02+hover,.08,.12,.08,26,id);
-   }
-   this.box(x-.61+recoil,y,z+.17+hover,.32,.14,.29,23,id,-1);
-   if(strike)for(let side=-1;side<=1;side+=2){
-    this.box(x+.65+(q-.5)*2,y+side*.43,z+.01,.27,.055,.055,32+26);
-    this.box(x+.5,y+side*.43,z+.01,.09,.1,.08,32+27);
-   }
-   return;
-  }
-  if(k===36){ // Brandcaller: raised torch silhouette and open off-hand glyph.
-   for(let side=-1;side<=1;side+=2){
-    this.box(x+gait*side,y+side*.2,z,.29,.22,.21,23,id);
-    this.box(x-.08,y+side*.17,z+.2,.22,.22,.26,24,id);
-   }
-   this.box(x-.11,y,z+.35+bob,.5,.53,.48,24,id,-1);
-   this.box(x+.04,y,z+.83+bob,.36,.38,.3,23,id,-1);
-   this.box(x+.21,y,z+.89+bob,.08,.24,.11,25,id);
-   const lift=raise*.28;
-   this.strut(x+.06,y+.23,z+.65+bob,.25,.05,.2+lift,.11,25,id,2);
-   this.box(x+.32,y+.29,z+.77+bob+lift,.075,.075,.68,6,id);
-   this.box(x+.32,y+.29,z+1.4+bob+lift,.24,.23,.29,26,id,-2);
-   this.box(x+.32+(active?0:idle*.09),y+.29,z+1.6+bob+lift,.12,.13,.18+(active?0:idle*.03),27,id,-2);
-   this.box(x+.22,y-.29,z+.69+bob,.37,.16,.15,25,id);
-   this.box(x+.42,y-.32,z+.77+bob,.07,.35,.065,26,id);
-   this.box(x+.42,y-.32,z+.67+bob,.07,.065,.28,26,id);
-   if(strike){
-    this.wardRing(x+1.22,y,z+.15,.48+(q-.5)*1.4,26);
-    this.box(x+1.22,y,z+.41,.09,.09,.42,32+27);
-    this.box(x+1.22,y,z+.62,.11,.42,.08,32+27);
-    this.emissive(x+.32,y+.29,z+1.64+lift,27,-1,1,1);
+   if(k===36){
+    drawBrandcaller(this,x,y,z,id,{state,phase:q,tick});
+    return;
    }
   }
- }
- private unitParts(e:Float32Array,o:number,id:number) {
-  if(wave2Units.has(e[o+4])){this.wave2Unit(e,o,id);return;}
-  const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],phase=e[o+6],state=e[o+5],moving=state===1||state===6;
-  const gait=moving?(phase<.5?-.16:.16):0;
-  if(k===24){this.box(x,y,z,1.8,.8,.25,13,id);this.box(x,y,z+.25,1.25,.6,.25,14,id);for(let a=-1;a<=1;a+=2){this.box(x+a*.85,y,z,.25,1.25,.3,8,id);this.box(x+a*.75,y-.55,z+.1,.22,.4,.2,7,id);this.box(x+a*.6,y-.5,z-.05,.16,.25,.1,phase<.5?17:18,id);}this.box(x,y+.4,z+.15,1.4,.18,.15,8,id);this.box(x-.4,y,z+.5,.35,.4,.15,3,id);if(e[o+10]>0)this.crate(x+.2,y,z+.5,.45,id);if(state===7){this.box(x,y,z-1.,.04,.04,1.,21,id);this.crate(x,y,z-1.3,.35,id);}return;}
-  // Brief numeric roles: 21 tall lancer, 22 wing/disc, 23 rifle knight.
-  // Keep the simulation's existing kind names, cargo and action fields intact.
-  const attacking=state===2,recoil=attacking&&phase<.18?.23:0;
-  if(k===21||k===23){
-   const brace=attacking?.34:.23;
-   for(let side=-1;side<=1;side+=2){
-    this.box(x+gait*side,y+side*brace,z,.28,.24,.42,10,id);
-    this.box(x-.16,y+side*brace,z,.48,.25,.16,11,id);
+  private unitParts(e:Float32Array,o:number,id:number) {
+   if(wave2Units.has(e[o+4])){this.wave2Unit(e,o,id);return;}
+   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],phase=e[o+6],state=e[o+5];
+   if(k===24){
+    drawHarborSkiff(this,x,y,z,id,{state,phase,tick:Math.round(this.time*60)});
+    return;
    }
-   // Wide planted cloak hem narrows to a high ivory crest.
-   this.box(x-.12-recoil,y,z+.28,.72,.84,1.03,13,id,-1);
-   this.box(x-recoil,y,z+.67,.5,.5,.76,10,id);
-   this.box(x-recoil,y,z+.7,.53,.53,.27,14,id);
-   this.box(x-recoil,y,z+1.1,.53,.53,.22,14,id);
-   this.box(x-recoil,y,z+1.32,.42,.44,.16,1,id);
-   this.box(x-recoil,y,z+1.48,.36,.38,.27,8,id,-2);
-   this.box(x+.19-recoil,y,z+1.52,.16,.22,.14,18,id);
-   // One shoulder carries an ivory glint inside the unchanged actor contour.
-   for(let side=-1;side<=1;side+=2)this.box(x-recoil,y+side*.3,z+1.02,.46,.27,.26,side<0?9:8,id);
-   // Side-mounted barrel has a continuous large fill and a long tip.
-   this.box(x+.38-recoil,y+.32,z+.96,.92,.2,.2,10,id);
-   this.box(x+.95-recoil,y+.32,z+.99,.14,.08,.14,22,id);
-   if(k===21&&e[o+10]>0)this.crate(x-.36,y-.24,z+.55,.38,id);
-   if(attacking&&e[o+11]>.8)this.emissive(x+1.23-recoil,y+.32,z+1.11,k===23?18:22,id,2,2);
-   return;
-  }
-  if(k===22){
-   // Low teal hub and swept wings, ivory tips, split landing feet.
-   const spread=attacking?.16:0;
-   for(let side=-1;side<=1;side+=2){
-    this.box(x-.12+gait*side,y+side*.4,z,.35,.25,.24,10,id);
-    this.box(x-.15-recoil,y+side*(.49+spread),z+.42,.63,.68,.22,14,id);
-    this.box(x-.15-recoil,y+side*(.49+spread),z+.65,.18,.68,.08,10,id);
-    this.box(x-.35-recoil,y+side*(.85+spread),z+.44,.4,.3,.16,8,id);
+   if(k===21){
+    drawPackBeetle(this,x,y,z,id,{state,phase,tick:Math.round(this.time*60),cargo:e[o+10]});
+    return;
    }
-   this.box(x-recoil,y,z+.28,.75,.76,.4,13,id,-1);
-   this.box(x+.12-recoil,y,z+.67,.48,.5,.12,1,id);
-   this.box(x+.22-recoil,y,z+.79,.35,.38,.23,9,id,-1);
-   this.box(x-recoil,y,z+.88,.13,.13,.04,17,id);
-   this.box(x+.65-recoil,y,z+.78,.65,.22,.2,10,id);
-   this.box(x+.95-recoil,y,z+.81,.14,.08,.14,22,id);
-   if(attacking&&e[o+11]>.8)this.emissive(x+.98-recoil,y,z+.95,22,id,2,2);
-   return;
-  }
-  if(k===31){
-   // Heavy low chassis: broad armored rails and a stepped siege gun.
-   const brace=attacking?.12:0;
-   for(let side=-1;side<=1;side+=2){
-    this.box(x,y+side*(.62+brace),z,1.54,.36,.32,1,id);
-    this.box(x-.1,y+side*(.6+brace),z+.3,1.5,.34,.38,25,id,-1);
+   if(k===22){
+    drawWardSentinel(this,x,y,z,id,{state,phase,tick:Math.round(this.time*60)});
+    return;
    }
-   this.box(x-.14-recoil,y,z+.46,1.65,1.25,.59,25,id,-1);
-   this.box(x-.43-recoil,y,z+.94,.75,.97,.2,25,id,-1);
-   this.box(x+.41-recoil,y,z+.67,.76,.61,.4,23,id);
-   this.box(x+.53-recoil,y,z+.8,.46,.43,.29,26,id);
-   this.box(x+.84-recoil,y,z+.79,.78,.28,.25,23,id);
-   this.box(x+1.2-recoil,y,z+.85,.18,.1,.16,27,id);
-   this.box(x-.2-recoil,y,z+1.06,.2,1.25,.12,23,id);
-   this.box(x+.22-recoil,y,z+.98,.47,.5,attacking?.8:.55,25,id,-2);
-   if(attacking&&e[o+11]>.88)this.emissive(x+1.27-recoil,y,z+.95,27,id,2,2);
-   return;
+   if(k===23){
+    drawSunlance(this,x,y,z,id,{state,phase,tick:Math.round(this.time*60)});
+    return;
+   }
+   if(k===31){
+    drawCinderStrider(this,x,y,z,id,{state,phase,tick:Math.round(this.time*60),cooldown:e[o+11]});
+    return;
+   }
+   // Riveter (Kind 20)
+   drawRiveter(this,x,y,z,id,{state,phase,tick:Math.round(this.time*60)});
   }
-  // Riveter: compact round hood and backpack, with a warm face/tool cluster.
-  this.box(x-.15,y+gait-.12,z,.2,.24,.25,10,id);
-  this.box(x+.15,y-gait+.12,z,.2,.24,.25,10,id);
-  this.box(x,y,z+.24,.5,.46,.43,14,id,-1);
-  this.box(x,y-.27,z+.3,.36,.22,.4,13,id);
-  this.box(x,y,z+.65,.49,.46,.28,9,id,-1);
-  this.box(x+.23,y,z+.69,.19,.2,.14,22,id);
-  if(e[o+10]>0)this.crate(x-.35,y,z+.3,.28+Math.min(4,e[o+10])*.03,id);
-  const working=state===3||state===8,strike=working&&phase<.22;
-  const lift=working?(phase<.45?.28:-.1):0;
-  this.box(x+.32,y,z+.45,.2,.2,.17,7,id);
-  this.box(x+.5,y,z+.45+lift,.14,.14,.36,21,id);
-  this.box(x+.5,y,z+.75+lift,.35,.16,.12,22,id);
-  if(strike){this.box(x+.6,y,z+.4,.15,.15,.15,18);this.box(x+.8,y,z+.58,.1,.1,.1,22);}
- }
 
- private wreck(x:number,y:number,z:number,kind:number) {
-  const cinder=cinderUnits.has(kind)||cinderBuildings.has(kind);
-  this.box(x,y,z,.48,.45,.2,cinder?23:4);
-  this.box(x+.28,y+.12,z,.2,.2,.14,cinder?24:7);
- }
- private effects(e:Float32Array,o:number) {
-  const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],sub=e[o+10],age=e[o+11],dx=Math.cos(e[o+3]),dy=Math.sin(e[o+3]);
-  if(k===50){const color=sub===30||sub===31?26:sub===22?22:17;
-   const steps=sub===30?3:sub===23?7:sub===31?5:4;
-   for(let j=steps-1;j>=0;j--){const q=j*(sub===30?.48:.26);this.box(x-dx*q,y-dy*q,z-(sub===31?j*.035:0),.13,.13,.115,32+color);}
-   this.emissive(x,y,z+.12,32+(sub===30||sub===31?27:sub===22?22:18),-1,2,1);
-   if(sub===31)this.box(x,y,this.ground(x,y)+.05,.22,.22,.02,2);
-  }else if(k===51){
-   const blast=sub===31,r=.18+Math.floor(age*12)*(blast?.23:.1);
-   if(age<.2)this.box(x,y,z,.38,.38,.46,32+(blast?27:9),-1,-2);
-   for(let j=0;j<6;j++){const a=j*Math.PI/3;this.box(x+Math.cos(a)*r,y+Math.sin(a)*r,z+.08+(j%2)*.16,.24,.24,.23,32+(age<.25?(sub===30||blast?26:18):20));}
-   if(blast&&age>.2)for(let j=0;j<5;j++)this.box(x+(j-2)*r*.45,y+(j%2)*.4,this.ground(x,y)+.1,.3,.35,.12,age<.5?5:4);
+  private wreck(x:number,y:number,z:number,kind:number) {
+   const cinder=cinderUnits.has(kind)||cinderBuildings.has(kind);
+   this.box(x,y,z,.72,.65,.24,cinder?23:4);
+   this.box(x+.2,y+.1,z+.2,.35,.32,.18,cinder?24:7);
+   this.box(x-.22,y-.15,z+.08,.28,.4,.14,cinder?25:11);
+   this.box(x+.05,y-.05,z+.22,.14,.14,.08,cinder?27:22);
+   for(let j=0;j<3;j++){
+    const sq=(this.time*.8+j*.33)%1,sw=Math.sin(this.time*2+j)*.12;
+    this.box(x+sw,y+sw*.5,z+.35+sq*1.4,.22+sq*.18,.22+sq*.18,.22,sq<.4?(cinder?26:5):(sq<.7?4:3));
+   }
   }
-  else if(k===52)this.wreck(x,y,z,sub);
- }
- private ambient(t:number) {
-  for(let j=0;j<16;j++){const x=19+j*17%76/10,y=25.6+j*11%31/10,z=this.ground(x,y),sway=Math.floor(t/1.4+j)%2*.18;this.box(x+sway,y,z,.13,.12,.38,21);this.box(x+.2+sway,y+.08,z,.12,.13,.48,20);this.box(x-.18,y,z,.13,.12,.27,21);}
-  for(let j=0;j<3;j++){const q=(t/5+j/3)%1;for(let a=0;a<9;a++)this.box(19+j*2+q*2+a*.24,26+j*.6+(a%3)*.09,this.ground(19+j*2,26+j*.6)+.15,.18,.16,.05,a%3===0?21:20);}
-  for(let j=0;j<12;j++){const q=(t/(7+j%3*2)+j*.27)%1,x=7+j*17%58/10+q*.4,y=3+j*7%40/10;this.box(x,y,1.5+q*.6,.07,.07,.08,30);}
-  for(let j=0;j<4;j++){if((Math.floor(t*5)+j*3)%18>5)continue;const x=j===0?8:j===1?9:j===2?11:12,y=j%2===0?4:6,h=j===0?1.9:j===1?2.3:j===2?1.4:1.8;this.emissive(x+.12,y-.25,this.ground(x+.12,y-.25)+h,31,-1,1,1);}
-  const warning=t>=33&&(t-33)%30<3&&Math.floor(t*2)%2===0;
-  for(let j=0;j<3;j++){const x=29+j*.65,y=4+j*.6;this.box(x,y,this.ground(x,y)+.15,.18,.18,.4,warning?22:19);}
-  // Freighter and haze remain behind the north rim at every discrete camera yaw.
-  const q=t%45;if(q<9){const x=3+q*1.1,y=1.;this.box(x,y,3.2,2.,.45,.25,4);this.box(x-.6,y,3.45,.55,.5,.18,5);this.box(x-1.2,y,3.2,.18,.2,.12,21);}
- }
+  private effects(e:Float32Array,o:number) {
+   const x=e[o],y=e[o+1],z=e[o+2],k=e[o+4],sub=e[o+10],age=e[o+11],dx=Math.cos(e[o+3]),dy=Math.sin(e[o+3]);
+   if(k===50&&sub===30&&this.authoritativeActors){
+    this.strut(x,y,z,-dx*.36,-dy*.36,0,.035,26,-1,3);
+    this.box(x,y,z,.08,.08,.075,32+27);return;
+   }
+   if(k===50){const color=sub===30||sub===31?26:sub===22?22:17;
+    const steps=sub===30?3:sub===23?7:sub===31?5:4;
+    for(let j=steps-1;j>=0;j--){const q=j*(sub===30?.48:.26);this.box(x-dx*q,y-dy*q,z-(sub===31?j*.035:0),.13,.13,.115,32+color);}
+    this.emissive(x,y,z+.12,32+(sub===30||sub===31?27:sub===22?22:18),-1,2,1);
+    if(sub===31)this.box(x,y,this.ground(x,y)+.05,.22,.22,.02,2);
+   }else if(k===51){
+    const blast=sub===31||sub===26||sub===34,r=.18+Math.floor(age*12)*(blast?.28:.12);
+    if(age<.3)this.box(x,y,z,.48,.48,.52,32+(blast?27:9),-1,-2);
+    for(let j=0;j<8;j++){
+     const a=j*Math.PI/4;
+     this.box(x+Math.cos(a)*r,y+Math.sin(a)*r,z+.08+(j%2)*.16,.24,.24,.23,32+(age<.25?(sub===30||blast?26:18):20));
+     this.box(x+Math.cos(a)*(r+.12),y+Math.sin(a)*(r+.12),this.ground(x,y)+.03,.16,.16,.02,32+(blast?25:17));
+    }
+    for(let j=0;j<6;j++){
+     const sa=j*Math.PI/3,traj=age*2.2;
+     this.box(x+Math.cos(sa)*traj,y+Math.sin(sa)*traj,z+.2+Math.sin(age*Math.PI)*.7-traj*.35,.12,.12,.12,j%2===0?21:26);
+    }
+    if(age>.2){const sq=(age-.2)/.8;this.box(x,y,z+.2+sq*1.2,.35+sq*.25,.35+sq*.25,.3,sq<.5?5:3);}
+   }
+   else if(k===52)this.wreck(x,y,z,sub);
+  }
+  private drawSkybox(t:number) {
+   const dayProgress=(t/160)%1;
+   const isDay=dayProgress<0.5;
+   if(isDay){
+    // Daytime: Solar orb tracking across the sky with radiant corona
+    const sunAngle=dayProgress*Math.PI*2;
+    const sx=120+Math.cos(sunAngle)*180,sy=28+Math.sin(sunAngle)*18;
+    const sr=12;
+    for(let dy=-sr;dy<=sr;dy++){
+     const span=Math.round(Math.sqrt(sr*sr-dy*dy));
+     if(span<=0)continue;
+     const y=sy+dy,xLeft=sx-span,width=span*2;
+     this.box(xLeft+width*.5,y,0,width,1,0,9,-1,2);
+    }
+    // Solar corona rim
+    for(let dy=-(sr+4);dy<=sr+4;dy++){
+     const span=Math.round(Math.sqrt((sr+4)*(sr+4)-dy*dy));
+     if(span<=0)continue;
+     const y=sy+dy,xLeft=sx-span,width=span*2;
+     this.box(xLeft+width*.5,y,0,width,1,0,22,-1,2);
+    }
+    // Warm morning / midday horizon haze bands
+    for(const [hy,hw,c] of [[68,420,22],[76,440,21],[84,460,20],[92,480,19]] as const){
+     this.box(240,hy,0,hw,1.5,0,c,-1,2);
+    }
+   } else {
+    // Nighttime: Twin sister moons, twinkling starfield, and indigo cosmic nebula
+    const cx=88,cy=44,r=20;
+    for(let dy=-r;dy<=r;dy++){
+     const span=Math.round(Math.sqrt(r*r-dy*dy));
+     if(span<=0)continue;
+     const y=cy+dy,xLeft=cx-span,width=span*2;
+     const crescentW=Math.max(1,Math.round(span*.35)),midW=Math.max(1,Math.round(span*.4));
+     const darkW=Math.max(1,width-crescentW-midW);
+     this.box(xLeft+crescentW*.5,y,0,crescentW,1,0,9,-1,2);
+     this.box(xLeft+crescentW+midW*.5,y,0,midW,1,0,7,-1,2);
+     this.box(xLeft+crescentW+midW+darkW*.5,y,0,darkW,1,0,2,-1,2);
+    }
+    // Secondary distant satellite moon
+    const c2x=320,c2y=32,r2=8;
+    for(let dy=-r2;dy<=r2;dy++){
+     const span=Math.round(Math.sqrt(r2*r2-dy*dy));
+     if(span<=0)continue;
+     this.box(c2x,c2y+dy,0,span*2,1,0,8,-1,2);
+    }
+    // Twinkling stars
+    for(let s=0;s<24;s++){
+     const starX=(s*37+Math.floor(t*0.5)*11)%440+20;
+     const starY=(s*23)%60+10;
+     const starBlink=(Math.floor(t*2+s)%3)===0;
+     this.box(starX,starY,0,1.5,1.5,0,starBlink?9:7,-1,2);
+    }
+    // Deep cosmic nebula bands
+    for(const [hy,hw,c] of [[68,420,28],[76,440,29],[84,460,23],[92,480,1]] as const){
+     this.box(240,hy,0,hw,1.5,0,c,-1,2);
+    }
+   }
+  }
+  private ambient(t:number) {
+   this.drawSkybox(t);
+   for(let j=0;j<16;j++){const x=19+j*17%76/10,y=25.6+j*11%31/10,z=this.ground(x,y),sway=Math.floor(t/1.4+j)%2*.18;this.box(x+sway,y,z,.13,.12,.38,21);this.box(x+.2+sway,y+.08,z,.12,.13,.48,20);this.box(x-.18,y,z,.13,.12,.27,21);}
+   for(let j=0;j<3;j++){const q=(t/5+j/3)%1;for(let a=0;a<9;a++)this.box(19+j*2+q*2+a*.24,26+j*.6+(a%3)*.09,this.ground(19+j*2,26+j*.6)+.15,.18,.16,.05,a%3===0?21:20);}
+   for(let j=0;j<12;j++){const q=(t/(7+j%3*2)+j*.27)%1,x=7+j*17%58/10+q*.4,y=3+j*7%40/10;this.box(x,y,1.5+q*.6,.07,.07,.08,30);}
+   for(let j=0;j<4;j++){if((Math.floor(t*5)+j*3)%18>5)continue;const x=j===0?8:j===1?9:j===2?11:12,y=j%2===0?4:6,h=j===0?1.9:j===1?2.3:j===2?1.4:1.8;this.emissive(x+.12,y-.25,this.ground(x+.12,y-.25)+h,31,-1,1,1);}
+   const warning=t>=33&&(t-33)%30<3&&Math.floor(t*2)%2===0;
+   for(let j=0;j<3;j++){const x=29+j*.65,y=4+j*.6;this.box(x,y,this.ground(x,y)+.15,.18,.18,.4,warning?22:19);}
+   for(let j=0;j<24;j++){
+    const speed=.4+(j%3)*.2;
+    const px=((this.camX+((t*speed+j*4.2)%36)-18)+this.terrainSide)%this.terrainSide;
+    const py=((this.camY+((t*speed*.6+j*2.3)%30)-15)+this.terrainSide)%this.terrainSide;
+    const pz=this.ground(px,py)+.3+Math.sin(t*2+j)*.2;
+    this.box(px,py,pz,.08,.08,.08,j%4===0?21:(j%4===1?17:30));
+   }
+   // Atmospheric sandstorm gust front (periodic 15s windstorm every 70s)
+   const stormTime=t%70;
+   if(stormTime>45&&stormTime<62){
+    const gustStrength=(stormTime-45)/17;
+    for(let s=0;s<28;s++){
+     const sx=((this.camX+(t*18+s*4.5)%48-24)+this.terrainSide)%this.terrainSide;
+     const sy=((this.camY+(t*4+s*2.1)%36-18)+this.terrainSide)%this.terrainSide;
+     const sz=this.ground(sx,sy)+0.2+(s%5)*0.35;
+     this.box(sx,sy,sz,0.15+gustStrength*0.18,0.06,0.06,s%3===0?22:21);
+    }
+   }
+   // Dust devil vortex spinning across barren dunes
+   const dvX=((this.camX+Math.sin(t*0.25)*16)+this.terrainSide)%this.terrainSide;
+   const dvY=((this.camY+Math.cos(t*0.2)*14)+this.terrainSide)%this.terrainSide;
+   const dvBase=this.ground(dvX,dvY);
+   for(let v=0;v<12;v++){
+    const vh=v*0.18;
+    const vr=0.12+v*0.06;
+    const va=t*7+v*0.75;
+    this.box(dvX+Math.cos(va)*vr,dvY+Math.sin(va)*vr,dvBase+vh,0.09,0.09,0.08,v%2===0?21:20);
+   }
+   // Freighter and haze remain behind the north rim at every discrete camera yaw.
+   const q=t%45;if(q<9){const x=3+q*1.1,y=1.;this.box(x,y,3.2,2.,.45,.25,4);this.box(x-.6,y,3.45,.55,.5,.18,5);this.box(x-1.2,y,3.2,.18,.2,.12,21);}
+  }
  private rect(x:number,y:number,w:number,h:number,c:number) {this.box(x+w/2,y+h/2,0,w,h,0,c,-1,1);}
  private text(value:string,x:number,y:number,color=9) {for(let i=0;i<value.length;i++){const g=glyphs[value[i]]||glyphs[' '];for(let p=0;p<g.pixels.length;p++)if(g.pixels[p])this.rect(x+p%g.width,y+Math.floor(p/g.width),1,1,color);x+=g.width+1;}}
  private buttonGlyph(kind:number,x:number,y:number) {
@@ -1561,59 +1508,59 @@ export class Renderer {
   if(this.worldSide!==this.hudWorldSide||this.hudLeftInset!==this.hudInset||this.hudBottomInset!==this.hudBottom||this.hudButtons!==this.hudCachedButtons||(this.worldSide===0&&(alloy!==this.hudAlloy||charge!==this.hudCharge||o!==this.hudSelection||kind!==this.hudKind||hp!==this.hudHealth||job!==this.hudJob||progress!==this.hudProgress))){const start=this.count;
    if(this.worldSide===0){this.rect(8,6,464,14,0);this.rect(8,19,464,1,5);this.text('STARHOLD',left+3,9);this.rect(287,12,4,5,20);this.rect(292,12,4,5,21);this.rect(290,8,4,4,22);this.text('ALLOY '+alloy,300,9,22);this.rect(379,9,5,8,16);this.rect(381,7,2,11,18);this.text('CHARGE '+charge,389,9,18);}
    if(this.hudButtons)for(let j=0;j<4;j++){this.rect(370+j*25,bottom+2,22,20,5);this.rect(371+j*25,bottom+3,20,18,1);this.buttonGlyph(j,376+j*25,bottom+7);}
-   if(this.worldSide===0&&o>=0){this.rect(left,bottom,134,23,5);this.rect(left+1,bottom+1,132,21,0);this.text(names[e[o+4]]||'COLONY',left+4,bottom+2);this.rect(left+4,bottom+10,125,3,3);this.rect(left+4,bottom+10,Math.floor(125*e[o+7]),3,13);const max=maxHealth[e[o+4]]??180;this.text('HP '+Math.round(e[o+7]*max)+' '+(jobs[e[o+5]]||'IDLE')+(e[o+5]===5?' '+Math.floor(e[o+10]*100)+'%':''),left+4,bottom+15,7);}
-   this.hudCount=this.count-start;for(let i=0;i<this.hudCount*8;i++)this.hudData[i]=this.data[start*8+i];this.hudAlloy=alloy;this.hudCharge=charge;this.hudSelection=o;this.hudKind=kind;this.hudHealth=hp;this.hudJob=job;this.hudProgress=progress;this.hudWorldSide=this.worldSide;this.hudInset=this.hudLeftInset;this.hudBottom=this.hudBottomInset;this.hudCachedButtons=this.hudButtons;
-  }else{const available=Math.min(this.hudCount,MAX-this.count);for(let i=0;i<available*8;i++)this.data[this.count*8+i]=this.hudData[i];this.count+=available;this.dropped+=this.hudCount-available;}
- }
- private markContours(yaw:number,zoom:number) {
-  this.contourData.fill(0);
-  const c=Math.round(Math.cos(yaw*Math.PI/2)),s=Math.round(Math.sin(yaw*Math.PI/2));
-  const horizontal=6*GRID/zoom,vertical=3.4641016*GRID/zoom,height=6.9282032*GRID/zoom;
-  for(let i=0;i<this.worldCount;i++){
-   const q=i*8,color=this.data[q+6],core=this.data[q+7]===-4;
-   if(Math.floor((color%32768)/32)===0&&!core)continue;
-   const x=this.data[q]-this.camX,y=this.data[q+1]-this.camY,rx=x*c-y*s,ry=x*s+y*c;
-   let px=240*GRID+horizontal*(rx-ry),py=136*GRID+vertical*(rx+ry)-height*this.data[q+2];
-   const combat=Math.floor(color/32768)>=18;
-   let halfX=horizontal*(this.data[q+3]+this.data[q+4])*.5;
-   let halfY=vertical*(this.data[q+3]+this.data[q+4])*.5,rise=height*this.data[q+5];
-   if(core){halfX=this.data[q+3]*.5;halfY=this.data[q+4]*.5;rise=0;}
-   // Four raster pixels conservatively cover snapping and the one-pixel contour.
-   const left=Math.max(0,Math.floor((px-halfX-4)/CONTOUR_TILE)),right=Math.min(CONTOUR_COLUMNS-1,Math.floor((px+halfX+4)/CONTOUR_TILE));
-   const top=Math.max(0,Math.floor((py-halfY-rise-4)/CONTOUR_TILE)),bottom=Math.min(CONTOUR_ROWS-1,Math.floor((py+halfY+4)/CONTOUR_TILE));
-   for(let row=top;row<=bottom;row++)for(let col=left;col<=right;col++)this.contourData[row*256+col]|=combat?3:1;
+    if(this.worldSide===0&&o>=0){this.rect(left,bottom,134,23,5);this.rect(left+1,bottom+1,132,21,0);this.text(names[e[o+4]]||'COLONY',left+4,bottom+2);this.rect(left+4,bottom+10,125,3,3);this.rect(left+4,bottom+10,Math.floor(125*e[o+7]),3,13);const max=this.kindHealth?.(e[o+4])??maxHealth[e[o+4]]??180;this.text('HP '+Math.round(e[o+7]*max)+' '+(jobs[e[o+5]]||'IDLE')+(e[o+5]===5?' '+Math.floor(e[o+10]*100)+'%':''),left+4,bottom+15,7);}
+    this.hudCount=this.count-start;for(let i=0;i<this.hudCount*8;i++)this.hudData[i]=this.data[start*8+i];this.hudAlloy=alloy;this.hudCharge=charge;this.hudSelection=o;this.hudKind=kind;this.hudHealth=hp;this.hudJob=job;this.hudProgress=progress;this.hudWorldSide=this.worldSide;this.hudInset=this.hudLeftInset;this.hudBottom=this.hudBottomInset;this.hudCachedButtons=this.hudButtons;
+   }else{const available=Math.min(this.hudCount,MAX-this.count);for(let i=0;i<available*8;i++)this.data[this.count*8+i]=this.hudData[i];this.count+=available;this.dropped+=this.hudCount-available;}
   }
- }
- render(e:Float32Array,n:number,yaw:number,zoom:number,alloy:number,charge:number,tick:number) {
-  this.time=tick/60;this.maybeBake(yaw,zoom);this.count=this.staticCount;this.emissiveCount=this.staticEmissiveCount;this.selected=null;this.dropped=0;
-  if(this.terrainSide>32)this.markBuildable(e,n);
-  for(let id=0;id<n;id++){const o=id*12,k=e[o+4];if(e[o+8]===1)this.selected=id;
-   if(buildingFootprints[k])this.building(e,o,id);
-   else if(dawnUnits.has(k)||cinderUnits.has(k))this.unit(e,o,id);
-   else if(k===40){
-    if(this.terrainSide>32)this.worldOre(e[o],e[o+1],e[o+2],e[o+10],e[o+11],id);
-    else {const h=e[o+10]>0?1.3+id%3*.35:e[o+11]*1.4;this.shard(e[o],e[o+1],e[o+2],Math.max(.08,h*1.4),31);}
+  private markContours(yaw:number,zoom:number) {
+   this.contourData.fill(0);
+   const c=Math.round(Math.cos(yaw*Math.PI/2)),s=Math.round(Math.sin(yaw*Math.PI/2));
+   const horizontal=6*GRID/zoom,vertical=3.4641016*GRID/zoom,height=6.9282032*GRID/zoom;
+   for(let i=0;i<this.worldCount;i++){
+    const q=i*8,color=this.data[q+6],core=this.data[q+7]===-4;
+    if(Math.floor((color%32768)/32)===0&&!core)continue;
+    const x=this.data[q]-this.camX,y=this.data[q+1]-this.camY,rx=x*c-y*s,ry=x*s+y*c;
+    let px=240*GRID+horizontal*(rx-ry),py=136*GRID+vertical*(rx+ry)-height*this.data[q+2];
+    const combat=Math.floor(color/32768)>=18;
+    let halfX=horizontal*(this.data[q+3]+this.data[q+4])*.5;
+    let halfY=vertical*(this.data[q+3]+this.data[q+4])*.5,rise=height*this.data[q+5];
+    if(core){halfX=this.data[q+3]*.5;halfY=this.data[q+4]*.5;rise=0;}
+    // Four raster pixels conservatively cover snapping and the one-pixel contour.
+    const left=Math.max(0,Math.floor((px-halfX-4)/CONTOUR_TILE)),right=Math.min(CONTOUR_COLUMNS-1,Math.floor((px+halfX+4)/CONTOUR_TILE));
+    const top=Math.max(0,Math.floor((py-halfY-rise-4)/CONTOUR_TILE)),bottom=Math.min(CONTOUR_ROWS-1,Math.floor((py+halfY+4)/CONTOUR_TILE));
+    for(let row=top;row<=bottom;row++)for(let col=left;col<=right;col++)this.contourData[row*256+col]|=combat?3:1;
    }
-   else if(k===41){this.box(e[o],e[o+1],e[o+2],.38,.36,.23,40);this.box(e[o],e[o+1],e[o+2]-.16,.18,.18,.14,18);}
-   else if(effectKinds.has(k))this.effects(e,o);
   }
-   for(let selId=0;selId<n;selId++){const o=selId*12;if(e[o+8]!==1)continue;const r=buildingFootprints[e[o+4]]?(cinderBuildings.has(e[o+4])?Math.max(...buildingFootprints[e[o+4]])/2+.3:e[o+4]===10?2.5:e[o+4]===16?1.5:1.8):e[o+4]===20?.65:e[o+4]===31?1.65:1.35;for(let j=0;j<24;j++){if(j%3===Math.floor(this.time/.6)%2)continue;const a=j*Math.PI/12;this.box(e[o]+Math.cos(a)*r,e[o+1]+Math.sin(a)*r,this.ground(e[o],e[o+1])+.08,.2,.2,.035,54);}}
-  this.ambient(this.time);
-  this.worldCount=this.count;
-  const previewCount=Math.min(this.placementCount,MAX-this.count);
-  this.stats.placementTiles=previewCount?this.placementTileCount:0;
-  if(previewCount){
-   for(let i=0;i<previewCount*STRIDE;i++)this.data[this.count*STRIDE+i]=this.placementData[i];
-   this.owners.fill(-1,this.count,this.count+previewCount);this.count+=previewCount;
-  }
-  this.dropped+=this.placementCount-previewCount;
-  if(this.hudVisible)this.hud(e,alloy,charge);
-  this.markContours(yaw,zoom);
-  this.camera[0]=Math.round(Math.cos(yaw*Math.PI/2));this.camera[1]=Math.round(Math.sin(yaw*Math.PI/2));this.camera[2]=1/zoom;this.camera[4]=this.camX;this.camera[5]=this.camY;
-  const d=this.device;d.queue.writeBuffer(this.uniform,0,this.camera);d.queue.writeBuffer(this.buffer,0,this.data.buffer,0,this.count*32);d.queue.writeBuffer(this.actorBuffer,0,this.actorData.buffer,0,this.count*16);
-  d.queue.writeTexture(this.contourUpload,this.contourData,this.contourLayout,this.contourSize);
-  const encoder=d.createCommandEncoder();const pass=encoder.beginRenderPass(this.scenePass);pass.setPipeline(this.pipeline);pass.setBindGroup(0,this.group);pass.setVertexBuffer(0,this.vertex);pass.setVertexBuffer(1,this.buffer);pass.setVertexBuffer(2,this.actorBuffer);pass.draw(36,this.count);pass.end();
-  this.presentPass.colorAttachments[0].view=this.context.getCurrentTexture().createView();const post=encoder.beginRenderPass(this.presentPass);post.setPipeline(this.post);post.setBindGroup(0,this.postGroup);post.draw(3);post.end();d.queue.submit(this.commands(encoder.finish()));this.stats.triangles=this.count*12+1;this.stats.saturated=this.dropped>0;this.stats.degraded=this.degraded;
+  render(e:Float32Array,n:number,yaw:number,zoom:number,alloy:number,charge:number,tick:number) {
+   this.time=tick/60;this.maybeBake(yaw,zoom);this.count=this.staticCount;this.emissiveCount=this.staticEmissiveCount;this.selected=null;this.dropped=0;
+   if(this.terrainSide>32)this.markBuildable(e,n);
+   for(let id=0;id<n;id++){const o=id*12,k=e[o+4];if(e[o+8]===1)this.selected=id;
+    if(buildingFootprints[k])this.building(e,o,id);
+    else if(dawnUnits.has(k)||cinderUnits.has(k))this.unit(e,o,id);
+    else if(k===40){
+     if(this.terrainSide>32)this.worldOre(e[o],e[o+1],e[o+2],e[o+10],e[o+11],id);
+     else {const h=e[o+10]>0?1.3+id%3*.35:e[o+11]*1.4;this.shard(e[o],e[o+1],e[o+2],Math.max(.08,h*1.4),31);}
+    }
+    else if(k===41){this.box(e[o],e[o+1],e[o+2],.38,.36,.23,40);this.box(e[o],e[o+1],e[o+2]-.16,.18,.18,.14,18);}
+    else if(effectKinds.has(k))this.effects(e,o);
+   }
+    for(let selId=0;selId<n;selId++){const o=selId*12;if(e[o+8]!==1)continue;const r=buildingFootprints[e[o+4]]?(cinderBuildings.has(e[o+4])?Math.max(...buildingFootprints[e[o+4]])/2+.3:e[o+4]===10?2.5:e[o+4]===16?1.5:1.8):e[o+4]===20?.65:e[o+4]===31?1.65:1.35;for(let j=0;j<24;j++){if(j%3===Math.floor(this.time/.6)%2)continue;const a=j*Math.PI/12;this.box(e[o]+Math.cos(a)*r,e[o+1]+Math.sin(a)*r,this.ground(e[o],e[o+1])+.08,.2,.2,.035,54);}}
+   if(this.showInterface)this.ambient(this.time);
+   this.worldCount=this.count;
+   const previewCount=Math.min(this.placementCount,MAX-this.count);
+   this.stats.placementTiles=previewCount?this.placementTileCount:0;
+   if(previewCount){
+    for(let i=0;i<previewCount*STRIDE;i++)this.data[this.count*STRIDE+i]=this.placementData[i];
+    this.owners.fill(-1,this.count,this.count+previewCount);this.count+=previewCount;
+   }
+   this.dropped+=this.placementCount-previewCount;
+   if(this.showInterface&&this.hudVisible)this.hud(e,alloy,charge);
+   this.markContours(yaw,zoom);
+   this.camera[0]=Math.round(Math.cos(yaw*Math.PI/2));this.camera[1]=Math.round(Math.sin(yaw*Math.PI/2));this.camera[2]=1/zoom;this.camera[4]=this.camX;this.camera[5]=this.camY;
+   const d=this.device;d.queue.writeBuffer(this.uniform,0,this.camera);d.queue.writeBuffer(this.buffer,0,this.data.buffer,0,this.count*32);d.queue.writeBuffer(this.actorBuffer,0,this.actorData.buffer,0,this.count*16);
+   d.queue.writeTexture(this.contourUpload,this.contourData,this.contourLayout,this.contourSize);
+   const encoder=d.createCommandEncoder();const pass=encoder.beginRenderPass(this.scenePass);pass.setPipeline(this.pipeline);pass.setBindGroup(0,this.group);pass.setVertexBuffer(0,this.vertex);pass.setVertexBuffer(1,this.buffer);pass.setVertexBuffer(2,this.actorBuffer);pass.draw(36,this.count);pass.end();
+   this.frameTexture=this.context.getCurrentTexture();this.presentPass.colorAttachments[0].view=this.frameTexture.createView();const post=encoder.beginRenderPass(this.presentPass);post.setPipeline(this.post);post.setBindGroup(0,this.postGroup);post.draw(3);post.end();d.queue.submit(this.commands(encoder.finish()));this.stats.triangles=this.count*12+1;this.stats.saturated=this.dropped>0;this.stats.degraded=this.degraded;
  }
  private commandList:any[]=[null];
  private commands(command:any) {this.commandList[0]=command;return this.commandList;}

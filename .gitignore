@@ -4,5 +4,8 @@ sim/target/
 .dream-loop/
 evidence*/
 workshop-evidence/
+tools/*.wasm
+tools/revision.json
 *.log
 .tmp/
+__pycache__/

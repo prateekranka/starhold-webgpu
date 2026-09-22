@@ -1,8 +1,15 @@
+import {mountMatchResearch} from './research-panel';
+import type {ContentAbi} from './content-api';
 import './style.css';
 import {Renderer, RENDER_WIDTH, RENDER_HEIGHT, buttonGlyphPixels, type PlacementPreview} from './renderer';
+import {sound} from './audio';
+import {scenarioManager} from './scenarios';
 import {State, names, jobs} from './kinds';
 import {Hud, HQ_POP_CAP, isBuildingKind, isUnitKind, type HudView, type SimAbi} from './hud';
 import {palette} from './kinds';
+import {ArenaController} from './ai/arena-controller';
+import {SpectatorHud} from './ui/spectator-hud';
+import type {ArenaMatchConfig} from './ui/arena-modal';
 /** Frozen ABI plus the wave-2 additions (docs/MATCH_SPEC.md §2). */
 type SimExports = SimAbi & WebAssembly.Exports;
 interface App {
@@ -16,7 +23,7 @@ interface App {
  /** Read-only actor view: one row per live entity. */
  entityProbe():{index:number;kind:number;faction:number;x:number;y:number;z:number;state:number;health:number;progress:number}[];
  rotate(dir:1|-1):void;zoomBy(delta:1|-1):void;selectAt(x:number,y:number):void;fastForward(seconds:number):void;
- startMatch(faction:0|1):void;resetShowcase():void;command(op:number,a:number,b:number):number;triggerRaid?(lane?:number):number;
+ startMatch(faction:0|1):void;resetShowcase():void;startArena?(config:ArenaMatchConfig):void;command(op:number,a:number,b:number):number;triggerRaid?(lane?:number):number;
  selectEntity(index:number):boolean;selectKind(kind:number):boolean;selectMultiple?(indices:number[]):void;
  /** Distinct entity kinds in the current snapshot (read-only coverage probe). */
  kinds():number[];
@@ -30,6 +37,11 @@ interface App {
 }
 declare global {interface Window {__APP:App}}
 let yawSteps=0,zoomIndex=1,sim:SimExports|undefined,entities=new Float32Array(0),entityCount=0,selected:number|null=null,fps:number|null=null;
+let arenaController: ArenaController | null = null;
+let spectatorHud: SpectatorHud | null = null;
+let arenaActive = false;
+let arenaP1 = 'human';
+let arenaP2 = 'codex';
 const selectedGroup=new Set<number>();
 let lastTapEntity=-1,lastTapTime=0;
 let seed=73129;
@@ -88,6 +100,50 @@ function minimapBuild():void {
  }
  minimapTerrain=image;minimapSide=side;
 }
+const FOG_SIDE = 64;
+const fogExplored = new Uint8Array(FOG_SIDE * FOG_SIDE);
+const fogVisible = new Uint8Array(FOG_SIDE * FOG_SIDE);
+
+function updateFogOfWar(): void {
+ const side = sideOf();
+ if (side <= 0) return;
+ fogVisible.fill(0);
+ const scale = FOG_SIDE / side;
+ for (let i = 0; i < entityCount; i++) {
+  const f = entities[i * 12 + 9];
+  if (f !== simPlayer()) continue;
+  const state = entities[i * 12 + 5];
+  if (state === State.Death) continue;
+  const kind = entities[i * 12 + 4];
+  const sight = isBuildingKind(kind) ? 14 : (kind === 24 || kind === 35 || kind === 30 ? 16 : 10);
+  const fx = entities[i * 12] * scale;
+  const fy = entities[i * 12 + 1] * scale;
+  const r = Math.ceil(sight * scale);
+  const minX = Math.max(0, Math.floor(fx - r));
+  const maxX = Math.min(FOG_SIDE - 1, Math.ceil(fx + r));
+  const minY = Math.max(0, Math.floor(fy - r));
+  const maxY = Math.min(FOG_SIDE - 1, Math.ceil(fy + r));
+  for (let y = minY; y <= maxY; y++) {
+   for (let x = minX; x <= maxX; x++) {
+    if ((x - fx) * (x - fx) + (y - fy) * (y - fy) <= r * r) {
+     const idx = y * FOG_SIDE + x;
+     fogVisible[idx] = 1;
+     fogExplored[idx] = 1;
+    }
+   }
+  }
+ }
+}
+
+function isTileVisible(wx: number, wy: number): boolean {
+ if (simMode() !== 1) return true;
+ const side = sideOf();
+ const x = Math.floor(wx * FOG_SIDE / side);
+ const y = Math.floor(wy * FOG_SIDE / side);
+ if (x < 0 || y < 0 || x >= FOG_SIDE || y >= FOG_SIDE) return false;
+ return fogVisible[y * FOG_SIDE + x] === 1;
+}
+
 /** Redraw the panel at 10 Hz: relief terrain, base emblems, entity dots, camera frustum. */
 function minimapDraw(force=false):void {
  if(minimap.classList.contains('off'))return;
@@ -135,35 +191,66 @@ function minimapDraw(force=false):void {
   minimap.classList.remove('alert');
   minimap.classList.remove('breach');
  }
- for(let i=0;i<entityCount;i++) {
-  const kind=entities[i*12+4];
-  const ore=kind===40;
-  if(!ore&&!isUnitKind(kind)&&!isBuildingKind(kind))continue;
-  const isBuilding=isBuildingKind(kind);
-  const f=entities[i*12+9];
-  const ex=Math.floor(entities[i*12]*scale);
-  const ey=Math.floor(entities[i*12+1]*scale);
-  if(ore){
-   minimapContext.fillStyle=minimapHex(22);
-   minimapContext.fillRect(ex-1,ey-1,3,3);
-  } else if(isBuilding){
-   minimapContext.fillStyle=minimapHex(f===1?25:13);
-   minimapContext.fillRect(ex-2,ey-2,4,4);
-  } else {
-   minimapContext.fillStyle=minimapHex(f===1?26:14);
-   minimapContext.fillRect(ex-1,ey-1,2,2);
-   if(raidActive>0&&f!==simPlayer()){
-    minimapContext.strokeStyle=raidBreach?'#E2C044':'#BC4A45';
-    minimapContext.lineWidth=1;
-    const pulse=3+Math.floor((performance.now()/250)%3);
-    minimapContext.strokeRect(ex-pulse,ey-pulse,pulse*2+1,pulse*2+1);
+  if(worldSide>0 && simMode()===1){
+   updateFogOfWar();
+  }
+  for(let i=0;i<entityCount;i++) {
+   const kind=entities[i*12+4];
+   const ore=kind===40;
+   if(!ore&&!isUnitKind(kind)&&!isBuildingKind(kind))continue;
+   const isBuilding=isBuildingKind(kind);
+   const f=entities[i*12+9];
+   if(worldSide>0 && simMode()===1 && f!==simPlayer() && !isTileVisible(entities[i*12],entities[i*12+1])){
+    continue;
+   }
+   const ex=Math.floor(entities[i*12]*scale);
+   const ey=Math.floor(entities[i*12+1]*scale);
+   if(ore){
+    minimapContext.fillStyle=minimapHex(22);
+    minimapContext.fillRect(ex-1,ey-1,3,3);
+   } else if(isBuilding){
+    minimapContext.fillStyle=minimapHex(f===1?25:13);
+    minimapContext.fillRect(ex-2,ey-2,4,4);
+   } else {
+    minimapContext.fillStyle=minimapHex(f===1?26:14);
+    minimapContext.fillRect(ex-1,ey-1,2,2);
+    if(raidActive>0&&f!==simPlayer()){
+     minimapContext.strokeStyle=raidBreach?'#E2C044':'#BC4A45';
+     minimapContext.lineWidth=1;
+     const pulse=3+Math.floor((performance.now()/250)%3);
+     minimapContext.strokeRect(ex-pulse,ey-pulse,pulse*2+1,pulse*2+1);
+    }
    }
   }
+  if(worldSide>0 && simMode()===1){
+   const block=MINIMAP/FOG_SIDE;
+   minimapContext.fillStyle='#10121C';
+   for(let fy=0;fy<FOG_SIDE;fy++)for(let fx=0;fx<FOG_SIDE;fx++){
+    const idx=fy*FOG_SIDE+fx;
+    if(fogExplored[idx]===0){
+     minimapContext.fillRect(fx*block,fy*block,block+0.5,block+0.5);
+    }
+   }
+   minimapContext.fillStyle='rgba(16,18,28,0.52)';
+   for(let fy=0;fy<FOG_SIDE;fy++)for(let fx=0;fx<FOG_SIDE;fx++){
+    const idx=fy*FOG_SIDE+fx;
+    if(fogExplored[idx]===1&&fogVisible[idx]===0){
+     minimapContext.fillRect(fx*block,fy*block,block+0.5,block+0.5);
+    }
+   }
+  }
+  const reachX=Math.max(5,24*zooms[zoomIndex]);
+  const reachY=reachX*(RENDER_HEIGHT/RENDER_WIDTH);
+  const rx=Math.floor((camX-reachX)*scale)+.5;
+  const ry=Math.floor((camY-reachY)*scale)+.5;
+  const rw=Math.ceil(reachX*2*scale);
+  const rh=Math.ceil(reachY*2*scale);
+  minimapContext.fillStyle='rgba(88,190,212,0.12)';
+  minimapContext.fillRect(rx,ry,rw,rh);
+  minimapContext.strokeStyle='#58BED4';
+  minimapContext.lineWidth=1.5;
+  minimapContext.strokeRect(rx,ry,rw,rh);
  }
- const reach=Math.max(5,24*zooms[zoomIndex]);
- minimapContext.strokeStyle=minimapHex(9);minimapContext.lineWidth=2;
- minimapContext.strokeRect(Math.floor((camX-reach)*scale)+.5,Math.floor((camY-reach)*scale)+.5,Math.ceil(reach*2*scale),Math.ceil(reach*2*scale));
-}
 /** Read-only view of the live actors, for the capture harness and playtests.
  *  Nothing here selects, moves or mutates state. */
 function entityProbe():{index:number;kind:number;faction:number;x:number;y:number;z:number;state:number;health:number;progress:number}[] {
@@ -401,8 +488,14 @@ function syncHud() {
  updateRaidWarning();
 }
 function startMatch(faction:0|1) {
+ if (arenaController) { arenaController.cleanup(); arenaController = null; }
+ arenaActive = false;
+ spectatorHud?.hide();
+ (window as any).__starhold_time_scale = 1;
  if(!sim||typeof sim.sim_match_init!=='function')return;
  cancelPlacement();
+ fogExplored.fill(0);
+ fogVisible.fill(0);
  sim.sim_match_init(seed>>>0,faction===1?1:0);
  yawSteps=0;zoomIndex=1;
  worldTerrain=new Float32Array(0);
@@ -417,11 +510,106 @@ function startMatch(faction:0|1) {
  window.dispatchEvent(new Event('resize'));
 }
 function resetShowcase() {
+ if (arenaController) { arenaController.cleanup(); arenaController = null; }
+ arenaActive = false;
+ spectatorHud?.hide();
+ (window as any).__starhold_time_scale = 1;
  if(!sim)return;
  cancelPlacement();
+ scenarioManager.clearScenario();
+ fogExplored.fill(0);
+ fogVisible.fill(0);
  worldSide=0;worldTerrain=new Float32Array(0);showcaseTerrain=new Float32Array(0);camX=16;camY=16;renderer.setShowcase();minimapInvalidate();
  sim.sim_init(seed>>>0);
  resetClock();selectDefault();
+ window.dispatchEvent(new Event('resize'));
+}
+function computeStateHash(): string {
+ if (!sim) return '00000000';
+ let hash = 0x811c9dc5;
+ const a0 = typeof (sim as any).sim_faction_alloy === 'function' ? (sim as any).sim_faction_alloy(0) : sim.sim_alloy();
+ const c0 = typeof (sim as any).sim_faction_charge === 'function' ? (sim as any).sim_faction_charge(0) : sim.sim_charge();
+ const a1 = typeof (sim as any).sim_faction_alloy === 'function' ? (sim as any).sim_faction_alloy(1) : 0;
+ const c1 = typeof (sim as any).sim_faction_charge === 'function' ? (sim as any).sim_faction_charge(1) : 0;
+ const nums = [a0, c0, a1, c1, entityCount];
+ for (let i = 0; i < nums.length; i++) {
+  const n = nums[i];
+  hash ^= (n & 0xff);
+  hash = Math.imul(hash, 0x01000193) >>> 0;
+  hash ^= ((n >> 8) & 0xff);
+  hash = Math.imul(hash, 0x01000193) >>> 0;
+ }
+ const len = Math.min(entityCount * 12, 240);
+ for (let i = 0; i < len; i++) {
+  const v = Math.round(entities[i] * 100) | 0;
+  hash ^= (v & 0xff);
+  hash = Math.imul(hash, 0x01000193) >>> 0;
+ }
+ return (hash >>> 0).toString(16).padStart(8, '0');
+}
+function startArena(config: ArenaMatchConfig) {
+ if (!sim) return;
+ if (arenaController) { arenaController.cleanup(); arenaController = null; }
+ arenaActive = true;
+ arenaP1 = config.p1;
+ arenaP2 = config.p2;
+ cancelPlacement();
+ scenarioManager.clearScenario();
+ fogExplored.fill(0);
+ fogVisible.fill(0);
+ seed = (seed + 1) >>> 0;
+ const factionInit = config.p1 === 'human' ? 0 : (config.p2 === 'human' ? 1 : 0);
+ if (typeof (sim as any).sim_match_init_arena === 'function') {
+  (sim as any).sim_match_init_arena(seed >>> 0, factionInit, 1);
+ } else if (typeof sim.sim_match_init === 'function') {
+  sim.sim_match_init(seed >>> 0, factionInit);
+ }
+ yawSteps = 0; zoomIndex = 1;
+ worldTerrain = new Float32Array(0);
+ worldSide = typeof sim.sim_world_size === 'function' ? sim.sim_world_size() : 0;
+ if (worldSide > 0) {
+  const isSpectator = config.p1 !== 'human' && config.p2 !== 'human';
+  if (isSpectator) {
+   camX = worldSide / 2; camY = worldSide / 2;
+  } else {
+   camX = sim.sim_base_x ? sim.sim_base_x(factionInit) : worldSide / 2;
+   camY = sim.sim_base_y ? sim.sim_base_y(factionInit) : worldSide / 2;
+  }
+  renderer.setWorld(worldView(), worldSide, camX, camY);
+ }
+ minimapInvalidate();
+ resetClock(); selectDefault();
+
+ if (!spectatorHud) {
+  spectatorHud = new SpectatorHud();
+ }
+ spectatorHud.clear();
+ if (config.p1 !== 'human' || config.p2 !== 'human') {
+  spectatorHud.show();
+ } else {
+  spectatorHud.hide();
+ }
+
+ arenaController = new ArenaController({
+  p1: config.p1,
+  p2: config.p2,
+  lockstep: config.lockstep,
+  onThought: (t) => {
+   spectatorHud?.addThought(t);
+  }
+ });
+
+ if (config.lockstep) {
+  config.lockstep.onRemoteCommand((cmd) => {
+   if (sim && typeof (sim as any).sim_command_for === 'function') {
+    (sim as any).sim_command_for(cmd.faction, cmd.op, cmd.a, cmd.b);
+   }
+  });
+  config.lockstep.onDesync((info) => {
+   console.warn(`[Lockstep] Desync at tick ${info.tick}: local=${info.localHash} remote=${info.remoteHash}`);
+  });
+ }
+
  window.dispatchEvent(new Event('resize'));
 }
 function command(op:number,a:number,b:number):number {
@@ -429,8 +617,24 @@ function command(op:number,a:number,b:number):number {
   cancelPlacement();
   if(op===3){syncHud();return 1;}
  }
- if(!sim||typeof sim.sim_command!=='function')return 0;
- const accepted=sim.sim_command(op>>>0,a>>>0,b>>>0);
+ if(!sim)return 0;
+ let accepted = 0;
+ if (arenaActive) {
+  const localFaction = arenaP1 === 'human' ? 0 : (arenaP2 === 'human' ? 1 : 0);
+  const net = arenaController?.getLockstep();
+  if (net && net.isConnected) {
+   net.sendCommand({ faction: localFaction as 0 | 1, op, a, b }, tick);
+  }
+  if (typeof (sim as any).sim_command_for === 'function') {
+   accepted = (sim as any).sim_command_for(localFaction, op>>>0, a>>>0, b>>>0);
+  } else if (typeof sim.sim_command === 'function') {
+   accepted = sim.sim_command(op>>>0, a>>>0, b>>>0);
+  }
+ } else {
+  if (typeof sim.sim_command !== 'function') return 0;
+  accepted = sim.sim_command(op>>>0, a>>>0, b>>>0);
+ }
+ if(accepted)sound.playOrder(op);
  refreshEntities();updateSelection();syncHud();
  return accepted?1:0;
 }
@@ -498,7 +702,7 @@ function screenToWorld(clientX:number,clientY:number):{tx:number;ty:number}|null
  }
  return null;
 }
-function spawnTouchRipple(clientX:number,clientY:number,type:'move'|'target'|'select'):void {
+function spawnTouchRipple(clientX:number,clientY:number,type:'move'|'target'|'select'|'attack'|'gather'):void {
  const el=document.createElement('div');
  el.className=`touch-ripple ${type}`;
  el.style.left=`${clientX}px`;
@@ -506,22 +710,78 @@ function spawnTouchRipple(clientX:number,clientY:number,type:'move'|'target'|'se
  document.body.appendChild(el);
  setTimeout(()=>el.remove(),400);
 }
+type Stance = 'AGGRESSIVE' | 'DEFENSIVE' | 'HOLD';
+type Formation = 'LINE' | 'WEDGE' | 'SPREAD';
+let currentStance: Stance = 'AGGRESSIVE';
+let currentFormation: Formation = 'LINE';
+
+function cycleStance() {
+ if (currentStance === 'AGGRESSIVE') currentStance = 'DEFENSIVE';
+ else if (currentStance === 'DEFENSIVE') currentStance = 'HOLD';
+ else currentStance = 'AGGRESSIVE';
+ sound.playOrder(2);
+ if (currentStance === 'HOLD') sim?.sim_command?.(3, 0, 0);
+ updateSelection();
+}
+
+function cycleFormation() {
+ if (currentFormation === 'LINE') currentFormation = 'WEDGE';
+ else if (currentFormation === 'WEDGE') currentFormation = 'SPREAD';
+ else currentFormation = 'LINE';
+ sound.playOrder(2);
+ updateSelection();
+}
+
 function issueOrder(clientX:number,clientY:number):boolean {
  if(!sim||selected===null||simMode()!==1)return false;
  if(!isUnitKind(entities[selected*12+4]))return false;
  const rect=canvas.getBoundingClientRect();
  const picked=renderer.pick((clientX-rect.left)*RENDER_WIDTH/rect.width,(clientY-rect.top)*RENDER_HEIGHT/rect.height,yawSteps,zooms[zoomIndex]);
  if(picked!==null&&picked!==selected&&!selectedGroup.has(picked)){
+  const targetKind=entities[picked*12+4];
+  const targetFaction=entities[picked*12+9];
   sim.sim_command?.(5,picked,0);
-  spawnTouchRipple(clientX,clientY,'target');
+  const rippleType=targetKind===40?'gather':(targetFaction!==simPlayer()?'attack':'target');
+  spawnTouchRipple(clientX,clientY,rippleType);
   refreshEntities();updateSelection();syncHud();
   return true;
  }
  const pt=screenToWorld(clientX,clientY);
  if(pt){
-  const fixedX=Math.round(pt.tx*10);
-  const fixedY=Math.round(pt.ty*10);
-  sim.sim_command?.(4,fixedX,fixedY);
+  const units = Array.from(selectedGroup).filter(i => i < entityCount && isUnitKind(entities[i*12+4]) && entities[i*12+9] === simPlayer());
+  if(units.length > 1){
+   const N = units.length;
+   let sumX = 0, sumY = 0;
+   for(const u of units){ sumX += entities[u*12]; sumY += entities[u*12+1]; }
+   const avgX = sumX / N, avgY = sumY / N;
+   const moveAngle = Math.atan2(pt.ty - avgY, pt.tx - avgX);
+   for(let i = 0; i < N; i++){
+    let tx = pt.tx, ty = pt.ty;
+    if(currentFormation === 'LINE'){
+     const perp = moveAngle + Math.PI / 2;
+     const offset = (i - (N - 1) / 2) * 1.35;
+     tx += Math.cos(perp) * offset;
+     ty += Math.sin(perp) * offset;
+    } else if(currentFormation === 'WEDGE'){
+     const row = Math.ceil(i / 2);
+     const side = (i % 2 === 1 ? 1 : -1) * row;
+     tx = pt.tx - Math.cos(moveAngle) * (row * 1.1) + Math.cos(moveAngle + Math.PI / 2) * (side * 0.95);
+     ty = pt.ty - Math.sin(moveAngle) * (row * 1.1) + Math.sin(moveAngle + Math.PI / 2) * (side * 0.95);
+    } else if(currentFormation === 'SPREAD'){
+     const rad = Math.max(1.5, Math.sqrt(N) * 1.1);
+     const a = (i / N) * Math.PI * 2 + moveAngle;
+     tx += Math.cos(a) * rad;
+     ty += Math.sin(a) * rad;
+    }
+    const fixedX = Math.round(tx * 10);
+    const fixedY = Math.round(ty * 10);
+    sim.sim_command?.(6, units[i], ((fixedX & 0xFFFF) << 16) | (fixedY & 0xFFFF));
+   }
+  } else {
+   const fixedX=Math.round(pt.tx*10);
+   const fixedY=Math.round(pt.ty*10);
+   sim.sim_command?.(4,fixedX,fixedY);
+  }
   spawnTouchRipple(clientX,clientY,'move');
   refreshEntities();updateSelection();syncHud();
   return true;
@@ -595,7 +855,8 @@ function worldTap(x:number,y:number,isTouch=false):void {
     const targetKind=entities[picked*12+4];
     if(targetFaction!==simPlayer()||targetKind===40){
      sim?.sim_command?.(5,picked,0);
-     spawnTouchRipple(x,y,'target');
+     const rippleType=targetKind===40?'gather':(targetFaction!==simPlayer()?'attack':'target');
+     spawnTouchRipple(x,y,rippleType);
      refreshEntities();updateSelection();syncHud();
      return;
     }
@@ -648,6 +909,7 @@ function selectDefault() {
 function selectEntity(index:number):boolean {
  if(!sim||!Number.isInteger(index)||index<0||index>=entityCount)return false;
  sim.sim_select(index);refreshEntities();updateSelection();syncHud();
+ if(selected===index)sound.playSelect(entities[index*12+4]);
  return selected===index;
 }
 function selectKind(kind:number):boolean {
@@ -759,7 +1021,7 @@ window.__APP={ready:false,error:null,getState:()=>({touch:touchLayout,yawSteps,z
  alloy:sim?sim.sim_alloy():0,charge:sim?sim.sim_charge():0,selectedKind:currentKind(),actions:hud.actions(),
  raidActive:sim&&sim.sim_raid_active?sim.sim_raid_active():0,raidLane:sim&&sim.sim_raid_lane?sim.sim_raid_lane():0,raidBreach:sim&&sim.sim_raid_breach?sim.sim_raid_breach():0,raidEta:sim&&sim.sim_raid_eta?sim.sim_raid_eta():0,
  worldTiles:worldSide,worldMeters:worldSide*(sim&&typeof sim.sim_metres_per_tile==='function'?sim.sim_metres_per_tile():10),camera:{x:camX,y:camY},minimap:{open:!minimap.classList.contains('off')}}),
- rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,command,triggerRaid:(lane=0)=>command(8,lane,0),selectEntity,selectKind,selectMultiple,kinds,entityScreen,tileScreen,terrainSample,entityProbe,placement:()=>({...placementState})};
+ rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,startArena,command,triggerRaid:(lane=0)=>command(8,lane,0),selectEntity,selectKind,selectMultiple,kinds,entityScreen,tileScreen,terrainSample,entityProbe,placement:()=>({...placementState})};
 const canvas=document.querySelector<HTMLCanvasElement>('#world')!;
 const viewport=document.querySelector<HTMLElement>('#viewport')!;
 const selection=document.querySelector<HTMLOutputElement>('#selection')!;
@@ -965,30 +1227,145 @@ function refreshEntities() {
   }
  }
 }
-let lastSelection=-2,lastHealth=-1,lastJob=-1,lastProgress=-1,lastGroupSize=-1;
+function actorIconSvg(kind:number):string {
+ switch(kind) {
+  case 31:
+   return `<svg viewBox="0 0 20 20" fill="none" stroke="#58BED4" stroke-width="1.5"><circle cx="10" cy="10" r="3.5"/><line x1="7" y1="11" x2="3" y2="17"/><line x1="13" y1="11" x2="17" y2="17"/><line x1="8" y1="12" x2="5" y2="18"/><line x1="12" y1="12" x2="15" y2="18"/><line x1="9" y1="7" x2="9" y2="2"/><line x1="11" y1="7" x2="11" y2="2"/></svg>`;
+  case 21:
+   return `<svg viewBox="0 0 20 20" fill="none" stroke="#F1CE72" stroke-width="1.5"><ellipse cx="10" cy="11" rx="5" ry="6"/><line x1="10" y1="5" x2="10" y2="17"/><circle cx="10" cy="5" r="2"/><line x1="5" y1="10" x2="2" y2="9"/><line x1="5" y1="13" x2="2" y2="15"/><line x1="15" y1="10" x2="18" y2="9"/><line x1="15" y1="13" x2="18" y2="15"/></svg>`;
+  case 22:
+   return `<svg viewBox="0 0 20 20" fill="none" stroke="#8BD7BE" stroke-width="1.5"><path d="M10 2 L16 5 L16 11 C16 15 10 18 10 18 C10 18 4 15 4 11 L4 5 Z"/><line x1="10" y1="6" x2="10" y2="14"/><line x1="7" y1="9" x2="13" y2="9"/></svg>`;
+  case 26: case 34:
+   return `<svg viewBox="0 0 20 20" fill="none" stroke="#E77945" stroke-width="1.5"><rect x="3" y="8" width="14" height="9" rx="1"/><rect x="5" y="4" width="7" height="4"/><line x1="8" y1="4" x2="14" y2="2"/><line x1="3" y1="17" x2="17" y2="17"/></svg>`;
+  case 20: case 32:
+   return `<svg viewBox="0 0 20 20" fill="none" stroke="#F1CE72" stroke-width="1.5"><rect x="4" y="7" width="12" height="8" rx="1.5"/><circle cx="7" cy="16" r="1.5"/><circle cx="13" cy="16" r="1.5"/><path d="M10 7 V3 M7 3 H13"/></svg>`;
+  case 23: case 36:
+   return `<svg viewBox="0 0 20 20" fill="none" stroke="#58BED4" stroke-width="1.5"><polygon points="10,2 12,8 18,10 12,12 10,18 8,12 2,10 8,8"/></svg>`;
+  case 40:
+   return `<svg viewBox="0 0 20 20" fill="none" stroke="#E2C044" stroke-width="1.5"><polygon points="10,2 16,7 13,18 7,18 4,7"/></svg>`;
+  default:
+   return isBuildingKind(kind)
+    ? `<svg viewBox="0 0 20 20" fill="none" stroke="#747C91" stroke-width="1.5"><rect x="3" y="7" width="14" height="11"/><polygon points="3,7 10,2 17,7"/><line x1="10" y1="11" x2="10" y2="18"/></svg>`
+    : `<svg viewBox="0 0 20 20" fill="none" stroke="#8BD7BE" stroke-width="1.5"><circle cx="10" cy="7" r="3.5"/><path d="M4 17 C4 13 7 12 10 12 C13 12 16 13 16 17 Z"/></svg>`;
+ }
+}
+function actorRole(kind:number):string {
+ switch(kind) {
+  case 10: return 'COMMAND CITADEL';
+  case 11: return 'CARGO DEPOT';
+  case 12: return 'SOLAR GENERATOR';
+  case 13: return 'INFANTRY MUSTER';
+  case 14: return 'HEAVY STARFORGE';
+  case 15: return 'HABITAT POD';
+  case 16: return 'PRISM DEFENSE';
+  case 17: return 'ORBITAL WHARF';
+  case 20: return 'HEAVY HARVESTER';
+  case 21: return 'ARMORED LOGISTICS SCARAB';
+  case 22: return 'PHALANX SENTINEL';
+  case 23: return 'KINETIC SKIRMISHER';
+  case 24: return 'ASSAULT SKIFF';
+  case 25: return 'ENERGY CANTOR';
+  case 26: return 'SIEGE JUGGERNAUT';
+  case 30: return 'RAIDER SPEEDER';
+  case 31: return 'SIEGE STRIDER WALKER';
+  case 32: return 'SCAVENGER RIVETER';
+  case 33: return 'ARMORED MULE';
+  case 34: return 'RAMMING DREADNOUGHT';
+  case 35: return 'RECON SOOTWING';
+  case 36: return 'MORTAR BRANDCALLER';
+  case 40: return 'RESOURCE DEPOSIT';
+  case 60: return 'PYRE FLAGSHIP';
+  case 61: return 'SCRAP CRUSHER';
+  case 62: return 'EMBER SIPHON';
+  case 63: return 'FANG YARD';
+  case 64: return 'HEAVY CHAINWORKS';
+  case 65: return 'AERODROME';
+  case 66: return 'HARPOON SPIRE';
+  case 67: return 'WARP MOORING';
+  default: return isUnitKind(kind) ? 'FIELD COMBATANT' : (isBuildingKind(kind) ? 'STRUCTURE' : 'ENTITY');
+ }
+}
+let lastSelection=-2,lastHealth=-1,lastJob=-1,lastProgress=-1,lastGroupSize=-1,lastStance='',lastFormation='';
 function updateSelection() {
  const count=selectedGroup.size;
  const o=selected===null?-1:selected*12;
  const hp=o<0?0:Math.round(entities[o+7]*100),job=o<0?-1:entities[o+5],progress=o<0?-1:Math.floor(entities[o+10]*100);
- if(lastSelection===(selected??-1)&&lastHealth===hp&&lastJob===job&&lastProgress===progress&&lastGroupSize===count)return;
- lastSelection=selected??-1;lastHealth=hp;lastJob=job;lastProgress=progress;lastGroupSize=count;
+ if(lastSelection===(selected??-1)&&lastHealth===hp&&lastJob===job&&lastProgress===progress&&lastGroupSize===count&&lastStance===currentStance&&lastFormation===currentFormation)return;
+ lastSelection=selected??-1;lastHealth=hp;lastJob=job;lastProgress=progress;lastGroupSize=count;lastStance=currentStance;lastFormation=currentFormation;
  selection.hidden=o<0;
  if(o<0){
-  selection.textContent='';
- } else if(count>1){
-  selection.textContent=`${names[entities[o+4]]} (${count}) — HP ${hp}% — ${jobs[job]}${job===5?` ${progress}%`:""}`;
- } else {
-  selection.textContent=`${names[entities[o+4]]} — HP ${hp}% — ${jobs[job]}${job===5?` ${progress}%`:""}`;
+  selection.innerHTML='';
+  return;
+ }
+ const kind=entities[o+4];
+ const name=names[kind]||'ENTITY';
+ const jobName=jobs[job]||'IDLE';
+ const jobDisplay=job===5?`${jobName} ${progress}%`:jobName;
+  const hpFillClass=hp>50?'':(hp>25?'mid':'low');
+  const abi=sim as unknown as ContentAbi|null;
+  const hpMax=abi?Math.round(abi.sim_kind_stat(kind,9)):100;
+  const curHp=Math.round((entities[o+7]||0)*(hpMax>0?hpMax:100));
+  const dmg=abi?abi.sim_kind_stat(kind,12):0;
+  const rng=abi?abi.sim_kind_stat(kind,11):0;
+  const spd=abi?abi.sim_kind_stat(kind,10):0;
+ const role=actorRole(kind);
+ const iconSvg=actorIconSvg(kind);
+ const tacticsHtml = isUnitKind(kind) ? `<div class="sel-tactics-row"><button id="sel-btn-stance" class="sel-tactic-btn active" title="Toggle Stance"><span>⚔</span><span>${currentStance}</span></button><button id="sel-btn-formation" class="sel-tactic-btn active" title="Toggle Formation"><span>${currentFormation === 'LINE' ? '═' : currentFormation === 'WEDGE' ? '▲' : '∷'}</span><span>${currentFormation}</span></button></div>` : '';
+ selection.innerHTML=`<div class="sel-card"><div class="sel-header"><div class="sel-icon-wrap">${iconSvg}</div><div class="sel-info"><div class="sel-title-row"><span class="sel-name">${name}</span>${count>1?`<span class="sel-count">(${count})</span>`:''}<span class="sel-state-tag">${jobDisplay}</span></div><span class="sel-role">${role}</span></div></div><div class="sel-hp-row"><div class="sel-hp-bar"><div class="sel-hp-fill ${hpFillClass}" style="width:${hp}%"></div></div><span class="sel-hp-text">${curHp}/${hpMax>0?hpMax:100}</span></div><div class="sel-stats-row"><div class="sel-stat"><span class="lbl">HP</span><span class="val">${curHp}</span></div><div class="sel-stat"><span class="lbl">DMG</span><span class="val">${dmg>0?dmg:'—'}</span></div><div class="sel-stat"><span class="lbl">RNG</span><span class="val">${rng>0?rng.toFixed(1):'—'}</span></div><div class="sel-stat"><span class="lbl">SPD</span><span class="val">${spd>0?spd.toFixed(1):'—'}</span></div></div>${tacticsHtml}</div>`;
+ if (isUnitKind(kind)) {
+  const btnStance = document.getElementById('sel-btn-stance');
+  if (btnStance) btnStance.onclick = (e) => { e.stopPropagation(); cycleStance(); };
+  const btnFormation = document.getElementById('sel-btn-formation');
+  if (btnFormation) btnFormation.onclick = (e) => { e.stopPropagation(); cycleFormation(); };
  }
 }
+let researchUI:ReturnType<typeof mountMatchResearch>|null=null;
 let previous=0,accumulator=0,windowStart=0,frames=0,tick=0;
+let lastAudioOutcome=0,lastAudioRaidActive=0,lastAudioBreach=0;
 function frame(now:number) {
  if(window.__APP.error||!sim)return;
  try {
   if(previous===0){previous=now;windowStart=now;}
-  accumulator+=Math.min(now-previous,250);previous=now;
-  while(accumulator>=1000/60){sim.sim_step(1000/60);tick++;accumulator-=1000/60;}
-  refreshEntities();updateSelection();syncHud();minimapDraw();
+  const timeScale=(window as any).__starhold_time_scale||1;
+  accumulator+=Math.min((now-previous)*timeScale,250*timeScale);previous=now;
+  while(accumulator>=1000/60){
+   sim.sim_step(1000/60);
+   tick++;
+   accumulator-=1000/60;
+   if(arenaController&&arenaActive&&tick%60===0){
+    const net=arenaController.getLockstep();
+    if(net?.isConnected){
+     net.verifyHash(tick,computeStateHash());
+    }
+   }
+  }
+  refreshEntities();updateSelection();syncHud();minimapDraw();researchUI?.update();
+  if(arenaController&&arenaActive){
+   arenaController.tick(sim,entities,worldSide,tick);
+  }
+  if(simMode()===1){
+   scenarioManager.updateProgress(entities, entityCount, simPlayer(), (sim as any).sim_waves ? (sim as any).sim_waves() : 0, simOutcome());
+   const outcome=simOutcome();
+   if(outcome!==lastAudioOutcome){
+    if(outcome===1)sound.playAlarm('victory');
+    else if(outcome===2)sound.playAlarm('defeat');
+    lastAudioOutcome=outcome;
+   }
+   const raidActive=sim.sim_raid_active?sim.sim_raid_active():0;
+   const raidBreach=sim.sim_raid_breach?sim.sim_raid_breach():0;
+   if(raidBreach>0&&lastAudioBreach===0){sound.playAlarm('breach');}
+   else if(raidActive>0&&lastAudioRaidActive===0){sound.playAlarm('raid');}
+   lastAudioRaidActive=raidActive;
+   lastAudioBreach=raidBreach;
+   if(tick%8===0&&entityCount>0){
+    for(let i=0;i<entityCount;i++){
+     const k=entities[i*12+4];
+     if(k===50){sound.playCombat('laser');break;}
+     else if(k===51){sound.playCombat('hit');break;}
+     else if(k===52){sound.playCombat('explosion');break;}
+    }
+   }
+  }
   renderer.hudVisible=simMode()===1&&!document.body.classList.contains('game-menu-open');
   renderer.hudButtons=!touchLayout&&!document.body.classList.contains('cinematic-fill');
   renderer.render(entities,entityCount,yawSteps,zooms[zoomIndex],sim.sim_alloy(),sim.sim_charge(),tick);
@@ -1004,6 +1381,9 @@ async function boot() {
  if(sim.sim_entity_stride()!==12)throw new Error('Simulation ABI mismatch: expected 12 floats per entity.');
  const value=new URLSearchParams(location.search).get('seed');const requested=value===null?73129:Number(value);seed=Number.isFinite(requested)?requested>>>0:73129;sim.sim_init(seed);refreshEntities();
  syncHud();
- await renderer.init(canvas,new Float32Array(sim.memory.buffer,sim.sim_terrain_ptr(),1024));renderer.onError(fatal);requestAnimationFrame(frame);
+ await renderer.init(canvas,new Float32Array(sim.memory.buffer,sim.sim_terrain_ptr(),1024));renderer.onError(fatal);
+ researchUI=mountMatchResearch(sim as unknown as ContentAbi);researchUI.update();
+ renderer.kindHealth=(kind:number)=>(sim as unknown as ContentAbi).sim_kind_stat(kind,9);
+ requestAnimationFrame(frame);
 }
 void boot().catch(fatal);
