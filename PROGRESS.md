@@ -45,6 +45,43 @@ server on port 5202 and returns HTTP 403 from Vite's host allow-list, so it is
 not a valid preview; use `8450`. Frozen release `8446` and the validated PR
 preview `8448` remain unchanged and both return HTTP 200.
 
+## Unit readability pass — 2026-09-23
+
+Five isolated GPT-6 Astra medium passes and four blind critic rounds worked on
+the two worker units (Ashhand kind 32, Riveter kind 20). Accepted: value
+separation from ore, dark shadow and paving ("substantially better"), a bright
+body mass with a dark rim and dark ground contact, readable faction panels
+(Cinderwake warm, Dawnward cool), no halo or floating, and an unchanged frame
+hierarchy. Rejected: facing readability. Every attempt failed the same way — at
+roughly fifteen pixels the box rig cannot hold a distinct head, tool and pack
+at once; the masses merge, and the unit either washes out or the tool reads as
+the character.
+
+The branch keeps the best-tested pass. Iteration 5 was reverted by `git revert`,
+and a head-to-head blind critic chose iteration 4 over it (`WINNER: B`). The
+root cause is shape language, not detail: a box rig at this size cannot express
+an unambiguous front. The fix belongs in the sprite path the Ash Jackal already
+uses — bake directional worker atlases through the authored sheet pipeline so
+the silhouette is authored, not assembled. That is the next piece.
+
+Evidence lives under `.dream-loop/` (`faces/`, `units4.png`, `units-final.png`,
+`critic-units*.log`, `critic-compare.log`). Gates after the revert: menu browser
+pass; Workshop browser pass on desktop, phone, landscape and iPad; Workshop
+integration 8/8; Rust 2/2; `git diff --check` clean.
+
+## Tailnet rename — 2026-09-23
+
+The machine's MagicDNS name changed from `bobby.taile5de76.ts.net` to
+`linux-ghar-ki-machine.taile5de76.ts.net`. The old name no longer resolves and
+the old certificates no longer match, so every `tailscale serve` route failed
+TLS. All routes were re-registered under the current name and now answer:
+
+- `https://linux-ghar-ki-machine.taile5de76.ts.net:8450/` — Dream Loop build;
+- `https://linux-ghar-ki-machine.taile5de76.ts.net:8448/` — validated PR
+  preview (commit `0112d16`), now served as a static `dist/` from port 5204
+  because the Vite dev server rejects the new host name through its allow-list;
+- `https://linux-ghar-ki-machine.taile5de76.ts.net:8446/` — frozen release.
+
 ## PR menu chrome and asset-review stability — 2026-09-19
 
 The title/showcase now renders only the live world behind the menu. The canvas
