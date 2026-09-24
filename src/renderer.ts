@@ -1360,7 +1360,32 @@ export class Renderer {
  private crane(x:number,y:number,z:number,w:number,h:number,phase:number,id:number,assembly=-1) {
   this.box(x,y,z,.17,.17,h,20,id);this.box(x-w*.5,y,z+h,w+.15,.18,.18,22,id);const lift=assembly<0?.8+Math.floor(phase*6)/6*(h-1.2):assembly+Math.floor(phase*3)*.12;this.box(x-w*.8,y,z+lift,.05,.05,h-lift,19,id);this.box(x-w*.8,y,z+lift-.15,.2,.2,.16,22,id);this.box(x-w*.8,y,z+lift-.55,.42,.42,.4,12,id);this.box(x-w*.8+.12,y,z+lift-.13,.12,.12,.24,22,id);
  }
- private unit(e:Float32Array,o:number,id:number) {
+ private actorMarks(e:Float32Array,o:number,x:number,y:number,w:number,d:number,yaw:number) {
+  const ground=this.ground(x,y);
+  // One inset faction tab at the near corner of the base, shared by every
+  // rig. Read snapshot faction, not kind or starting slot. Flat mode keeps
+  // exact accents and excludes these decorative boxes from picking.
+  const c=Math.round(Math.cos(yaw*Math.PI/2)),s=Math.round(Math.sin(yaw*Math.PI/2));
+  const tx=x+(c+s)*(w/2+.06),ty=y+(c-s)*(d/2+.06);
+  const z=Math.max(ground,e[o+2])+.12;
+  this.box(tx,ty,z,.76,.76,0,32,-1,-3);
+  this.box(tx,ty,z+.012,.48,.48,0,32+(e[o+9]===1?25:13),-1,-3);
+  if(e[o+8]===1)this.selectionBracket(x,y,w/2+.48,d/2+.48);
+ }
+ private selectionBracket(x:number,y:number,rx:number,ry:number) {
+  // Steady cyan elbows, backed by ink. Mask 1 protects their native-size
+  // fill beside ore and actor contours; ordinary depth keeps actors above
+  // the ground marker. Cyan is reserved for selection in this base grammar.
+  const z=this.ground(x,y)+.13,length=.65;
+  for(let sx=-1;sx<=1;sx+=2)for(let sy=-1;sy<=1;sy+=2){
+   const xx=x+sx*rx,yy=y+sy*ry;
+   this.box(xx-sx*length/2,yy,z,length+.2,.4,0,32,-1,-3);
+   this.box(xx,yy-sy*length/2,z,.4,length+.2,0,32,-1,-3);
+   this.box(xx-sx*length/2,yy,z+.012,length+.1,.2,0,50,-1,-3);
+   this.box(xx,yy-sy*length/2,z+.012,.2,length+.1,0,50,-1,-3);
+  }
+ }
+ private unit(e:Float32Array,o:number,id:number,yaw:number) {
   const k=e[o+4],friendly=dawnUnits.has(k);
   if(wave2Units.has(k)&&e[o+5]===4){this.wreck(e[o],e[o+1],this.ground(e[o],e[o+1]),k);return;}
   const combat=combatUnits.has(k);
@@ -1400,6 +1425,7 @@ export class Renderer {
   }
   const w=(maxX-minX)*scale,d=(maxY-minY)*scale;
   this.shadow(e[o]+ox+(minX+maxX)*scale/2,e[o+1]+oy+(minY+maxY)*scale/2,w,d,k===24||k===35?1:.45);
+  this.actorMarks(e,o,e[o]+ox,e[o+1]+oy,k===31?1.8:1,k===31?1.8:1,yaw);
  }
  private wardRing(x:number,y:number,z:number,radius:number,color:number) {
   for(let j=0;j<8;j++){
@@ -1878,8 +1904,11 @@ export class Renderer {
   this.time=tick/60;this.maybeBake(yaw,zoom);this.count=this.staticCount;this.emissiveCount=this.staticEmissiveCount;this.selected=null;this.dropped=0;
   if(this.terrainSide>32)this.markBuildable(e,n);
   for(let id=0;id<n;id++){const o=id*12,k=e[o+4];if(e[o+8]===1)this.selected=id;
-   if(buildingFootprints[k])this.building(e,o,id);
-   else if(dawnUnits.has(k)||cinderUnits.has(k))this.unit(e,o,id);
+   if(buildingFootprints[k]){
+    this.building(e,o,id);
+    this.actorMarks(e,o,e[o],e[o+1],buildingFootprints[k][0],buildingFootprints[k][1],yaw);
+   }
+   else if(dawnUnits.has(k)||cinderUnits.has(k))this.unit(e,o,id,yaw);
    else if(k===40){
     if(this.terrainSide>32)this.worldOre(e[o],e[o+1],e[o+2],e[o+10],e[o+11],id);
     else {const h=e[o+10]>0?1.3+id%3*.35:e[o+11]*1.4;this.shard(e[o],e[o+1],e[o+2],Math.max(.08,h*1.4),31);}
@@ -1888,9 +1917,10 @@ export class Renderer {
    else if(effectKinds.has(k))this.effects(e,o);
   }
   if(this.terrainSide>32)this.settlementDetails(e,n,yaw,zoom);
-  // Mask 1 protects the gold segment fill; the existing neighbor contour
-  // supplies its one-pixel ink gap. Small segments now retain endpoint 22.
-  if(this.selected!==null){const o=this.selected*12,r=buildingFootprints[e[o+4]]?(cinderBuildings.has(e[o+4])?Math.max(...buildingFootprints[e[o+4]])/2+.3:e[o+4]===10?2.5:e[o+4]===16?1.5:1.8):e[o+4]===20?.65:e[o+4]===31?1.65:1.35;for(let j=0;j<24;j++){if(j%3===Math.floor(this.time/.6)%2)continue;const a=j*Math.PI/12;this.box(e[o]+Math.cos(a)*r,e[o+1]+Math.sin(a)*r,this.ground(e[o],e[o+1])+.08,.2,.2,.035,54);}}
+  if(this.selected!==null){
+   const o=this.selected*12,k=e[o+4];
+   if(!buildingFootprints[k]&&!dawnUnits.has(k)&&!cinderUnits.has(k))this.selectionBracket(e[o],e[o+1],1.35,1.35);
+  }
   if(this.showInterface)this.ambient(this.time);
   this.settlementService(e,n,yaw,zoom);
   this.worldCount=this.count;
