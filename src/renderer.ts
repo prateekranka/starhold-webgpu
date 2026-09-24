@@ -47,7 +47,7 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
   let offset=vec2f(.3713907,.1485563)*vertex.z*min(size.z,1.);
   p=origin+vec3f(vertex.xy*size.xy+offset,0.);
  }
- if screen == -4. {p=origin;}
+ if screen == -4. || screen == -14. {p=origin;}
  if screen>0.5 {let hud=p.xy*grid/(resolution*.5);o.position=vec4f(hud.x-1.,1.-hud.y,select(0.0001,.999,screen==2.),1.);o.color=palette[u32(pigment)];}
  else {
  let d=p.xy-camera.center;
@@ -56,6 +56,8 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  var pixel=round(vec2f(240.,136.)*grid+projected*camera.magnification*grid);
  // Emissive details are opaque 1–2 raster pixels, independent of zoom.
  if screen == -4. {pixel+=vertex.xy*size.xy;}
+ // Ownership badges sit below the near footprint corner at native pixel size.
+ if screen == -14. {pixel+=vertex.xy*size.xy+vec2f(0.,8.);}
  let ndc=pixel/(resolution*.5);
  o.position=vec4f(ndc.x-1.,1.-ndc.y,0.5-((r.x+r.y)*0.5773503+p.z*0.5773503)/128.,1.);
  // Legacy stone shades through ink; normal structural stone gets a floor below.
@@ -127,6 +129,9 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  }
  if screen == -3. || screen == -4. {o.color=palette[u32(pigment)];}
  if screen == -4. {o.unit=1.;o.rim=vec2f(0.);}
+ // Keep the ink-backed badge visible over paving, ore and cast shadows.
+ // Its fill sits just ahead of its backing; both remain behind the HUD.
+ if screen == -14. {o.position.z=select(.0004,.0003,pigment!=0.);o.color=palette[u32(pigment)];o.unit=1.;o.rim=vec2f(0.);}
  // Placement is a world-projected, stippled overlay, not an actor. Keep it
  // visible over occupied sites; the ordinary HUD still has nearer depth.
  if screen == -12. {o.position.z=.0002;o.color=palette[u32(pigment)];o.unit=1.;}
@@ -1362,14 +1367,16 @@ export class Renderer {
  }
  private actorMarks(e:Float32Array,o:number,x:number,y:number,w:number,d:number,yaw:number) {
   const ground=this.ground(x,y);
-  // One inset faction tab at the near corner of the base, shared by every
-  // rig. Read snapshot faction, not kind or starting slot. Flat mode keeps
-  // exact accents and excludes these decorative boxes from picking.
+  // One solid badge beyond the near footprint corner, shared by every rig.
+  // Snapshot faction owns the hue: blue (17) or lilac (31), never ore gold.
+  // Mode -14 gives an exact, opaque 10x6 raster-pixel body at every zoom,
+  // with two pixels of ink on each edge, and excludes badges from picking.
+  // Submit directly: these are unlit badges, not budgeted emissive details.
   const c=Math.round(Math.cos(yaw*Math.PI/2)),s=Math.round(Math.sin(yaw*Math.PI/2));
-  const tx=x+(c+s)*(w/2+.06),ty=y+(c-s)*(d/2+.06);
+  const tx=x+(c+s)*(w/2+.48),ty=y+(c-s)*(d/2+.48);
   const z=Math.max(ground,e[o+2])+.12;
-  this.box(tx,ty,z,.76,.76,0,32,-1,-3);
-  this.box(tx,ty,z+.012,.48,.48,0,32+(e[o+9]===1?25:13),-1,-3);
+  this.box(tx,ty,z,14,10,0,32,-1,-14);
+  this.box(tx,ty,z,10,6,0,32+(e[o+9]===1?31:17),-1,-14);
   if(e[o+8]===1)this.selectionBracket(x,y,w/2+.48,d/2+.48);
  }
  private selectionBracket(x:number,y:number,rx:number,ry:number) {
@@ -1886,10 +1893,11 @@ export class Renderer {
   const c=Math.round(Math.cos(yaw*Math.PI/2)),s=Math.round(Math.sin(yaw*Math.PI/2));
   const horizontal=6*GRID/zoom,vertical=3.4641016*GRID/zoom,height=6.9282032*GRID/zoom;
   for(let i=0;i<this.worldCount;i++){
-   const q=i*8,color=this.data[q+6],core=this.data[q+7]===-4;
+   const q=i*8,color=this.data[q+6],core=this.data[q+7]===-4||this.data[q+7]===-14;
    if(Math.floor((color%32768)/32)===0&&!core)continue;
    const x=this.data[q]-this.camX,y=this.data[q+1]-this.camY,rx=x*c-y*s,ry=x*s+y*c;
    let px=240*GRID+horizontal*(rx-ry),py=136*GRID+vertical*(rx+ry)-height*this.data[q+2];
+   if(this.data[q+7]===-14)py+=8;
    const combat=Math.floor(color/32768)>=18;
    let halfX=horizontal*(this.data[q+3]+this.data[q+4])*.5;
    let halfY=vertical*(this.data[q+3]+this.data[q+4])*.5,rise=height*this.data[q+5];
@@ -1949,7 +1957,7 @@ export class Renderer {
   const a=(sum+diff)/2,b=(sum-diff)/2;
   const ox=this.camX+c*a+s*b,oy=this.camY-s*a+c*b,oz=50,dx=-c-s,dy=s-c,dz=-1;
   let best=Infinity,owner=-1;
-  for(let i=0;i<this.worldCount;i++){const o=i*8;if(this.data[o+7]>0||(this.data[o+7]===-3||this.data[o+7]===-4))continue;let near=0,far=Infinity;
+  for(let i=0;i<this.worldCount;i++){const o=i*8;if(this.data[o+7]>0||(this.data[o+7]===-3||this.data[o+7]===-4||this.data[o+7]===-14))continue;let near=0,far=Infinity;
    for(let axis=0;axis<3;axis++){const origin=axis===0?ox:axis===1?oy:oz,dir=axis===0?dx:axis===1?dy:dz;let min=this.data[o+axis]-(axis<2?this.data[o+3+axis]/2:0),max=min+this.data[o+3+axis];if(this.owners[i]>=0&&this.data[o+3]<1&&this.data[o+4]<1){min-=.12;max+=.12;}if(dir===0){if(origin<min||origin>max){far=-1;break;}}else{let t1=(min-origin)/dir,t2=(max-origin)/dir;if(t1>t2){const t=t1;t1=t2;t2=t;}near=Math.max(near,t1);far=Math.min(far,t2);}}
    if(near<=far&&near<best){best=near;owner=this.owners[i];}
   }return owner<0?null:owner;
