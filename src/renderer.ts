@@ -56,8 +56,8 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  var pixel=round(vec2f(240.,136.)*grid+projected*camera.magnification*grid);
  // Emissive details are opaque 1–2 raster pixels, independent of zoom.
  if screen == -4. {pixel+=vertex.xy*size.xy;}
- // Ownership badges sit below the near footprint corner at native pixel size.
- if screen == -14. {pixel+=vertex.xy*size.xy+vec2f(0.,8.);}
+ // Ownership badges straddle the base at native pixel size.
+ if screen == -14. {pixel+=vertex.xy*size.xy;}
  let ndc=pixel/(resolution*.5);
  o.position=vec4f(ndc.x-1.,1.-ndc.y,0.5-((r.x+r.y)*0.5773503+p.z*0.5773503)/128.,1.);
  // Legacy stone shades through ink; normal structural stone gets a floor below.
@@ -131,7 +131,8 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  if screen == -4. {o.unit=1.;o.rim=vec2f(0.);}
  // Keep the ink-backed badge visible over paving, ore and cast shadows.
  // Its fill sits just ahead of its backing; both remain behind the HUD.
- if screen == -14. {o.position.z=select(.0004,.0003,pigment!=0.);o.color=palette[u32(pigment)];o.unit=1.;o.rim=vec2f(0.);}
+ // The explicit one-pixel backing needs no additional post-process contour.
+ if screen == -14. {o.position.z=select(.0004,.0003,pigment!=0.);o.color=palette[u32(pigment)];o.unit=0.;o.rim=vec2f(0.);}
  // Placement is a world-projected, stippled overlay, not an actor. Keep it
  // visible over occupied sites; the ordinary HUD still has nearer depth.
  if screen == -12. {o.position.z=.0002;o.color=palette[u32(pigment)];o.unit=1.;}
@@ -351,6 +352,8 @@ export class Renderer {
  readonly stats={drawCalls:2,triangles:0,saturated:false,degraded:false,placementTiles:0};
  time=0;count=0;staticCount=0;worldCount=0;selected:number|null=null;
  private emissiveCount=0;private staticEmissiveCount=0;private dropped=0;
+ private badgeOccupied=new Uint8Array(RENDER_WIDTH*RENDER_HEIGHT);
+ private badgeZoom=1;
  private placementKey='';private placementCount=0;private placementTileCount=0;
  private placementData=new Float32Array(512*STRIDE);
  /** Cache footprint instances on change. No per-frame geometry rebuild or allocation. */
@@ -1367,17 +1370,32 @@ export class Renderer {
  }
  private actorMarks(e:Float32Array,o:number,x:number,y:number,w:number,d:number,yaw:number) {
   const ground=this.ground(x,y);
-  // One solid badge beyond the near footprint corner, shared by every rig.
+  // Inset into the near plinth corner; small units attach at their feet.
   // Snapshot faction owns the hue: blue (17) or lilac (31), never ore gold.
   // Mode -14 gives an exact, opaque 10x6 raster-pixel body at every zoom,
-  // with two pixels of ink on each edge, and excludes badges from picking.
+  // with one pixel of ink on each edge, and excludes badges from picking.
   // Submit directly: these are unlit badges, not budgeted emissive details.
   const c=Math.round(Math.cos(yaw*Math.PI/2)),s=Math.round(Math.sin(yaw*Math.PI/2));
-  const tx=x+(c+s)*(w/2+.48),ty=y+(c-s)*(d/2+.48);
-  const z=Math.max(ground,e[o+2])+.12;
-  this.box(tx,ty,z,14,10,0,32,-1,-14);
-  this.box(tx,ty,z,10,6,0,32+(e[o+9]===1?31:17),-1,-14);
+  const building=!!buildingFootprints[e[o+4]];
+  const tx=x+(c+s)*(building?w/2-.25:0),ty=y+(c-s)*(building?d/2-.25:0);
+  // Unit fill starts at the foot anchor and extends down, leaving the body
+  // clear. Convert three raster pixels to height without an outward offset.
+  const z=Math.max(ground,e[o+2])+(building?.12:-3*this.badgeZoom/13.8564064);
   if(e[o+8]===1)this.selectionBracket(x,y,w/2+.48,d/2+.48);
+  const dx=tx-this.camX,dy=ty-this.camY,rx=dx*c-dy*s,ry=dx*s+dy*c;
+  const px=Math.round(480+12*(rx-ry)/this.badgeZoom);
+  const py=Math.round(272+(6.9282032*(rx+ry)-13.8564064*z)/this.badgeZoom);
+  const left=Math.max(0,px-6),right=Math.min(RENDER_WIDTH,px+6);
+  const top=Math.max(0,py-4),bottom=Math.min(RENDER_HEIGHT,py+4);
+  if(left>=right||top>=bottom)return;
+  // Stable actor order breaks ties. Yield the whole badge, including its ink,
+  // if it would touch an earlier badge; keep one clear raster pixel between.
+  for(let row=Math.max(0,top-1);row<Math.min(RENDER_HEIGHT,bottom+1);row++)
+   for(let col=Math.max(0,left-1);col<Math.min(RENDER_WIDTH,right+1);col++)
+    if(this.badgeOccupied[row*RENDER_WIDTH+col])return;
+  for(let row=top;row<bottom;row++)this.badgeOccupied.fill(1,row*RENDER_WIDTH+left,row*RENDER_WIDTH+right);
+  this.box(tx,ty,z,12,8,0,32,-1,-14);
+  this.box(tx,ty,z,10,6,0,32+(e[o+9]===1?31:17),-1,-14);
  }
  private selectionBracket(x:number,y:number,rx:number,ry:number) {
   // Steady cyan elbows, backed by ink. Mask 1 protects their native-size
@@ -1897,7 +1915,6 @@ export class Renderer {
    if(Math.floor((color%32768)/32)===0&&!core)continue;
    const x=this.data[q]-this.camX,y=this.data[q+1]-this.camY,rx=x*c-y*s,ry=x*s+y*c;
    let px=240*GRID+horizontal*(rx-ry),py=136*GRID+vertical*(rx+ry)-height*this.data[q+2];
-   if(this.data[q+7]===-14)py+=8;
    const combat=Math.floor(color/32768)>=18;
    let halfX=horizontal*(this.data[q+3]+this.data[q+4])*.5;
    let halfY=vertical*(this.data[q+3]+this.data[q+4])*.5,rise=height*this.data[q+5];
@@ -1910,6 +1927,7 @@ export class Renderer {
  }
  render(e:Float32Array,n:number,yaw:number,zoom:number,alloy:number,charge:number,tick:number) {
   this.time=tick/60;this.maybeBake(yaw,zoom);this.count=this.staticCount;this.emissiveCount=this.staticEmissiveCount;this.selected=null;this.dropped=0;
+  this.badgeOccupied.fill(0);this.badgeZoom=zoom;
   if(this.terrainSide>32)this.markBuildable(e,n);
   for(let id=0;id<n;id++){const o=id*12,k=e[o+4];if(e[o+8]===1)this.selected=id;
    if(buildingFootprints[k]){
