@@ -82,6 +82,35 @@ TLS. All routes were re-registered under the current name and now answer:
   because the Vite dev server rejects the new host name through its allow-list;
 - `https://linux-ghar-ki-machine.taile5de76.ts.net:8446/` — frozen release.
 
+## Selection and ownership legibility — 2026-09-25
+
+A whole-frame blind critic named this as the second-largest gap: "Ownership and
+interaction states are weak. There is no obvious, consistent player-color marking
+or clearly visible selection outline connecting the 'PYRE ARK' panel to a
+particular object." Reading the code confirmed it: the selection flag filled the
+HUD plaque only, and ownership never reached the drawn actor.
+
+Three Astra medium passes later, a fresh blind critic returns **PASS** on both
+halves:
+
+- selection: cyan corner brackets at the selected object's footprint connect the
+  world object to the plaque, which the critic accepted on the first attempt;
+- ownership: one badge shape per actor, anchored at a unit's feet or a
+  building's inset base, a solid fill in the side hue with one ink pixel of
+  separation, consistent across every actor;
+- the first badge attempt was rejected for clutter ("detached black rectangles
+  ... look like stray interface artifacts") and the second fixed it by anchoring
+  the badge to the actor.
+
+Evidence: `.dream-loop/encounter.png` (two-faction fixture), `owner-match3.png`
+(match frame with a selected Pyre Ark), `critic-owner*.log`. The passing critic
+names one remaining weakness: ownership tabs on very small units read less
+immediately than the selection brackets.
+
+Gates after integration: menu browser pass; Workshop browser 5/5; Workshop
+integration 8/8; Rust 2/2; `git diff --check` clean. Only `src/renderer.ts`
+changed; the simulation, its data layout, and the camera are untouched.
+
 ## PR menu chrome and asset-review stability — 2026-09-19
 
 The title/showcase now renders only the live world behind the menu. The canvas
