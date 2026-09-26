@@ -139,6 +139,32 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  } return o;
 }
 struct Fragment { @location(0) color:vec4f, @location(1) mask:vec4f }
+// Broad, flush surface provinces, sampled from the same world coordinates as
+// the cap bake. Staggered lenses span 8–20 tiles, crossing tile/LOD boundaries.
+// Their soft outlines are quantized palette regions, never blended gradients.
+fn openGround(world:vec2f)->u32 {
+ let offsets=array<f32,7>(0.,.43,.17,.68,.29,.81,.52);
+ let row=floor(world.y/19.);
+ let offset=offsets[u32(row)%7u];
+ let p=vec2f(world.x/23.+offset,world.y/19.);
+ let q=fract(p);
+ // Two unequal, overlapping lobes keep the exposure away from square tiles
+ // and straight road-like bands. Dust fills the broad space between plates.
+ let a=(q-vec2f(.43,.46))/vec2f(.47,.43);
+ let b=(q-vec2f(.68,.63))/vec2f(.31,.32);
+ let exposure=min(dot(a,a),dot(b,b));
+ let drift=(q-vec2f(.14,.85))/vec2f(.37,.29);
+ if exposure>1. {
+  if dot(drift,drift)<1. {return 5u;}
+  return 4u;
+ }
+ // Blunt bedrock plates: violet midstone, with a broken shallow seam in a
+ // second midtone. No ink, gold, cyan, survey elbows or raised silhouettes.
+ let seam=q.y-.30-q.x*.36-select(0.,.09,q.x>.54);
+ if abs(seam)<.025 && q.x>.19 && q.x<.78 {return 4u;}
+ if exposure>.78 && q.x+q.y>1.05 {return 29u;}
+ return 28u;
+}
 // Authored plate vocabulary in world space: staggered shoulders, a bent seam,
 // paired chips and a three-step ore fracture. No pixel hash or screen grid.
 fn basalt(world:vec2f, province:u32, local:vec2f)->u32 {
@@ -161,6 +187,9 @@ fn basalt(world:vec2f, province:u32, local:vec2f)->u32 {
   return 3u;
  }
  if role>=64u {
+  // Open-country caps share the province path without becoming settlement
+  // caps: only role 93 (the existing cleared-soil pigment) carries site cues.
+  if role!=93u {return openGround(world);}
   // A settlement is a few large paved courts within quiet cleared soil.
   // These are flush finishes on the SAME buildable caps, never new roads or
   // raised obstacles. Live occupancy still controls the construction ticks.
@@ -176,7 +205,9 @@ fn basalt(world:vec2f, province:u32, local:vec2f)->u32 {
               (local.y>6.5 && local.y<9. && local.x> -13.5 && local.x<15.5);
   let grid=fract(world/2.);
   let joint=grid.x<.025 || grid.y<.025;
-  var c=4u;
+  // Keep the occupied core and its ore working bed quiet. Outside it, the
+  // natural provinces continue through the clearing's old circular boundary.
+  var c=select(openGround(world),4u,max(abs(local.x),abs(local.y))<12.5);
   if apron {c=select(5u,4u,joint);}
   if court {c=select(4u,3u,joint);}
   if service {c=select(5u,4u,joint);}
@@ -859,9 +890,10 @@ export class Renderer {
    const south=this.land(x,y+1)?this.ground(x,y+1):-3.5;
    const low=Math.min(west,north,east,south),rim=low<h;
    // One full-width cap prevents little dark fissures in otherwise quiet land.
-   // Mode -6 is the pre-existing exact-palette hard face table, no new shader.
+   // Open lowland also consumes the province material, on the same cap and
+   // at every tier. Rock walls, route roles and buildable-cap identity stay put.
    const surface=this.count;
-   this.box(x+.5,y+.5,h-.12,1,1,.12,cap,-1,h===1?-7:cap===29?-8:cap===6?-9:-6);
+   this.box(x+.5,y+.5,h-.12,1,1,.12,cap,-1,h===1?-7:cap===29?-8:cap===6?-9:h===.5?-8:-6);
    this.actorData[surface*4]=0;this.actorData[surface*4+1]=0;
    this.actorData[surface*4+2]=0;this.actorData[surface*4+3]=0;
    if(cap===29){
