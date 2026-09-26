@@ -139,31 +139,32 @@ struct Out { @builtin(position) position:vec4f, @location(0) color:vec3f, @locat
  } return o;
 }
 struct Fragment { @location(0) color:vec4f, @location(1) mask:vec4f }
-// Broad, flush surface provinces, sampled from the same world coordinates as
-// the cap bake. Staggered lenses span 8–20 tiles, crossing tile/LOD boundaries.
-// Their soft outlines are quantized palette regions, never blended gradients.
+// Stable world-space samples, independent of cap boundaries, LOD and camera.
+// Integer avalanche avoids a short offsets table or a repeated lobe template.
+fn groundSample(cell:vec2i)->f32 {
+ var h=bitcast<u32>(cell.x)*374761393u+bitcast<u32>(cell.y)*668265263u;
+ h=(h^(h>>13u))*1274126177u;
+ h=h^(h>>16u);
+ return f32(h&65535u)/65535.;
+}
+fn groundField(p:vec2f)->f32 {
+ let cell=vec2i(floor(p));let q=fract(p);
+ let t=q*q*(vec2f(3.)-2.*q);
+ return mix(mix(groundSample(cell),groundSample(cell+vec2i(1,0)),t.x),
+            mix(groundSample(cell+vec2i(0,1)),groundSample(cell+vec2i(1,1)),t.x),t.y);
+}
+// Flush beds are level sets of an irregular field, not copies of a closed
+// shape. Unequal world-scale warps vary their size, aspect and orientation;
+// the smaller field breaks shoulders without tracing a rim or a linear seam.
 fn openGround(world:vec2f)->u32 {
- let offsets=array<f32,7>(0.,.43,.17,.68,.29,.81,.52);
- let row=floor(world.y/19.);
- let offset=offsets[u32(row)%7u];
- let p=vec2f(world.x/23.+offset,world.y/19.);
- let q=fract(p);
- // Two unequal, overlapping lobes keep the exposure away from square tiles
- // and straight road-like bands. Dust fills the broad space between plates.
- let a=(q-vec2f(.43,.46))/vec2f(.47,.43);
- let b=(q-vec2f(.68,.63))/vec2f(.31,.32);
- let exposure=min(dot(a,a),dot(b,b));
- let drift=(q-vec2f(.14,.85))/vec2f(.37,.29);
- if exposure>1. {
-  if dot(drift,drift)<1. {return 5u;}
-  return 4u;
- }
- // Blunt bedrock plates: violet midstone, with a broken shallow seam in a
- // second midtone. No ink, gold, cyan, survey elbows or raised silhouettes.
- let seam=q.y-.30-q.x*.36-select(0.,.09,q.x>.54);
- if abs(seam)<.025 && q.x>.19 && q.x<.78 {return 4u;}
- if exposure>.78 && q.x+q.y>1.05 {return 29u;}
- return 28u;
+ let warp=vec2f(groundField(world/31.+vec2f(17.3,8.1)),
+                groundField(world/27.+vec2f(-9.7,41.2)))-vec2f(.5);
+ let p=world+warp*18.;
+ let bed=.68*groundField(p/16.)+.32*groundField(p/7.+vec2f(53.4,-21.8));
+ // Only two neighbouring-value pigments: cool dust and muted violet stone.
+ // Interpolation shapes the boundary only; every pixel is a hard palette
+ // index, with no shading, edge band, bright chips or elevation language.
+ return select(4u,29u,bed>.53);
 }
 // Authored plate vocabulary in world space: staggered shoulders, a bent seam,
 // paired chips and a three-step ore fracture. No pixel hash or screen grid.
