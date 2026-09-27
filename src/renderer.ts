@@ -153,57 +153,6 @@ fn groundField(p:vec2f)->f32 {
  return mix(mix(groundSample(cell),groundSample(cell+vec2i(1,0)),t.x),
             mix(groundSample(cell+vec2i(0,1)),groundSample(cell+vec2i(1,1)),t.x),t.y);
 }
-// Grain lives on the existing cap: no instances, depth, rims or screen noise.
-// World-sized marks survive the native raster. The unequal sampling cells are
-// only addresses: jittered centres, lengths, bends and breaks hide their grid.
-// kind: 0 loose dust, 1 exposed bedrock, 2 compacted/worked aggregate.
-fn groundGrain(world:vec2f, base:u32, kind:u32)->u32 {
- let cell=vec2i(floor(world/vec2f(2.37,1.91)));
- let a=groundSample(cell+vec2i(173,-91));
- let b=groundSample(cell+vec2i(-47,263));
- let d=groundSample(cell+vec2i(311,59));
- let center=(vec2f(cell)+vec2f(.27+.46*a,.28+.44*b))*vec2f(2.37,1.91);
- let delta=world-center;
- // Dust settles along bedding; fractures and work scuffs turn independently.
- let direction=normalize(select(vec2f((a-.5)*2.,.32+b),vec2f(1.,.18+(b-.5)*.36),kind==0u));
- let p=vec2f(dot(delta,direction),dot(delta,vec2f(-direction.y,direction.x)));
- // Aggregate grains occupy roughly one native pixel, with unequal axes and
- // a sheared world lattice. No subpixel stipple or camera-dependent widening.
- let grit=groundSample(vec2i(floor(vec2f(world.x*3.7+world.y*.61,world.y*4.3-world.x*.37)))+vec2i(719,-337));
- let broken=groundSample(vec2i(floor(world*vec2f(4.1,3.3)))+vec2i(-127,401));
- let length=.34+.50*d;
- if kind==1u {
-  // Incomplete, kinked fracture edges: no closed rims, dark interior faces,
-  // or paired highlight that could imply an elevated plate or a blocker.
-  let bend=(b-.5)*.65;
-  let seam=p.y-bend*p.x-select(0.,(p.x-.08)*(.25+a*.45),p.x>.08);
-  let crack=a>.16 && abs(p.x)<length && abs(seam)<.095 && broken>.16;
-  let branch=d>.58 && p.x>-.28 && p.x<.16 && abs(p.y+p.x*(.6+a)-.12)<.085 && broken>.28;
-  // Granular chips collect against a broken edge, never around a tile cap.
-  let chips=abs(p.x-(d-.5)*.7)<.28 && abs(seam-.19)<.16 && grit>.53;
-  if crack || branch || chips {return select(3u,28u,base==29u);}
-  // Fine, interrupted bedding varies in spacing and length between plates.
-  let bedding=p.y+(.37+.23*a)+p.x*(b-.5)*.24;
-  if b>.25 && abs(bedding)<.08 && abs(p.x+.13)<.22+.39*a && broken>.30 {return 4u;}
-  if grit>.925 {return select(3u,28u,base==29u);}
-  if grit<.025 {return select(29u,4u,base==29u);}
-  return base;
- }
- if kind==0u {
-  // Loose, fine speckle and short wind-drift threads share a direction but
-  // not a repeated stroke. Only adjacent quiet ground pigments participate.
-  let drift=abs(p.y+(.10+.12*a)*p.x*p.x)<.105 && abs(p.x)<length && b>.23 && broken>.28;
-  if drift || grit>.895 {return 3u;}
-  if grit<.045 {return 29u;}
-  return base;
- }
- // Compacted surfaces have blunter scuffs and crushed aggregate. Marks use
- // one neighbouring stone step; road paint and the underlying fill stay put.
- let scuff=abs(p.y+(b-.5)*abs(p.x)*.3)<.115 && abs(p.x)<.20+.36*d && a>.35 && broken>.22;
- let pit=grit>.902;
- if scuff || pit {return select(4u,3u,base==4u);}
- return base;
-}
 // Flush beds are level sets of an irregular field, not copies of a closed
 // shape. Unequal world-scale warps vary their size, aspect and orientation;
 // the smaller field breaks shoulders without tracing a rim or a linear seam.
@@ -213,10 +162,9 @@ fn openGround(world:vec2f)->u32 {
  let p=world+warp*18.;
  let bed=.68*groundField(p/16.)+.32*groundField(p/7.+vec2f(53.4,-21.8));
  // Only two neighbouring-value pigments: cool dust and muted violet stone.
- // Interpolation shapes the boundary only. Tile-scale structure distinguishes
- // loose dust from fractured bedrock without adding any elevation language.
- let stone=bed>.53;
- return groundGrain(world,select(4u,29u,stone),select(0u,1u,stone));
+ // Interpolation shapes the boundary only; every pixel is a hard palette
+ // index, with no shading, edge band, bright chips or elevation language.
+ return select(4u,29u,bed>.53);
 }
 // Authored plate vocabulary in world space: staggered shoulders, a bent seam,
 // paired chips and a three-step ore fracture. No pixel hash or screen grid.
@@ -229,26 +177,15 @@ fn basalt(world:vec2f, province:u32, local:vec2f)->u32 {
   // footprint, but let its outer half-tile merge into the clearing's material.
   // Edge bits come from adjoining route tiles, so corners stay connected.
   let edge=province/128u;let q=fract(world);
-  if (edge&16u)!=0u {
-   if q.x<.08 || q.y<.08 {return 3u;}
-   return groundGrain(world,5u,2u);
-  }
+  if (edge&16u)!=0u {return select(5u,3u,q.x<.08 || q.y<.08);}
   if ((edge&1u)!=0u && q.x<.55) || ((edge&2u)!=0u && q.x>.45) ||
-     ((edge&4u)!=0u && q.y<.55) || ((edge&8u)!=0u && q.y>.45) {
-   // Erode only the finish inside the existing shoulder. The route's full
-   // footprint, colour family and connectivity remain the authored ones.
-   let inset=min(min(select(1.,q.x,(edge&1u)!=0u),select(1.,1.-q.x,(edge&2u)!=0u)),
-                 min(select(1.,q.y,(edge&4u)!=0u),select(1.,1.-q.y,(edge&8u)!=0u)));
-   let wear=groundSample(vec2i(floor(vec2f(world.x*3.7+world.y*.61,world.y*4.3-world.x*.37)))+vec2i(53,-181));
-   if inset>.34 && wear>(.55-inset)*3.+.25 {return 3u;}
-   return groundGrain(world,4u,2u);
-  }
+     ((edge&4u)!=0u && q.y<.55) || ((edge&8u)!=0u && q.y>.45) {return 4u;}
   // Sparse centre dashes on the two real departure roads; do not fabricate
   // lanes across the surrounding buildable soil or distant curved routes.
   if max(abs(local.x),abs(local.y))<32. &&
      ((abs(local.x)<.10 && fract(local.y/4.)<.24) ||
       (abs(local.y)<.10 && fract(local.x/4.)<.24)) {return 5u;}
-  return groundGrain(world,3u,2u);
+  return 3u;
  }
  if role>=64u {
   // Open-country caps share the province path without becoming settlement
@@ -271,8 +208,7 @@ fn basalt(world:vec2f, province:u32, local:vec2f)->u32 {
   let joint=grid.x<.025 || grid.y<.025;
   // Keep the occupied core and its ore working bed quiet. Outside it, the
   // natural provinces continue through the clearing's old circular boundary.
-  var c=4u;
-  if max(abs(local.x),abs(local.y))>=12.5 {c=openGround(world);}
+  var c=select(openGround(world),4u,max(abs(local.x),abs(local.y))<12.5);
   if apron {c=select(5u,4u,joint);}
   if court {c=select(4u,3u,joint);}
   if service {c=select(5u,4u,joint);}
@@ -291,12 +227,6 @@ fn basalt(world:vec2f, province:u32, local:vec2f)->u32 {
   let survey=fract(world/4.);
   if province>=128u && !apron && !court && !service && max(abs(local.x),abs(local.y))<20. &&
      ((survey.x<.02 && survey.y<.095) || (survey.y<.02 && survey.x<.095)) {return 5u;}
-  // Keep paint and paving joints exact; grain belongs inside each finish.
-  if apron || court || service {
-   if joint {return c;}
-   return groundGrain(world,c,2u);
-  }
-  if max(abs(local.x),abs(local.y))<12.5 {return groundGrain(world,c,2u);}
   return c;
  }
 
