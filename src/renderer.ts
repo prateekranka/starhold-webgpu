@@ -703,9 +703,11 @@ export class Renderer {
   this.staticCount=this.count;this.staticEmissiveCount=this.emissiveCount;
   }
 
+  private playerFaction:number = 0;
   // ---- Expansive world (LARGEMAP_SPEC §5) ---------------------------------
   /** Adopt a generated world: side-length terrain, view centred on a base. */
-  setWorld(terrain:Float32Array,side:number,cx:number,cy:number) {
+  setWorld(terrain:Float32Array,side:number,cx:number,cy:number,faction:number=0) {
+   this.playerFaction=faction;
    this.terrain=terrain;this.terrainSide=side;this.worldSide=side;this.setView(cx,cy);
    // Match-only composition anchors mirror world_start/world_route in the sim.
    // They are starting slots, not factions; selecting Cinderwake swaps owners,
@@ -744,10 +746,17 @@ export class Renderer {
   }
   /** Composition is baked into the existing tile cap, not overlaid geometry.
    * Quiet soil, travelled stone and exposed rock use the same palette at ALL
-   * tiers. World caps deliberately bypass the showcase's high-volume basalt. */
+   * tiers. 7 distinct material provinces per civilization bring showcase quality
+   * to the expansive world match map. */
   private worldMaterial(x:number,y:number,h:number):number {
    let near=Infinity;
-   for(const [bx,by] of this.worldStarts)near=Math.min(near,Math.hypot(x-bx,y-by));
+   let slotNear=0;
+   for(let slot=0;slot<this.worldStarts.length;slot++){
+    const [bx,by]=this.worldStarts[slot];
+    const d=Math.hypot(x-bx,y-by);
+    if(d<near){near=d;slotNear=slot;}
+   }
+   const factionAtSlot = slotNear === 0 ? this.playerFaction : (1 - this.playerFaction);
    if(h===.5){
     let road=Infinity;
     for(const r of this.worldRoutes){
@@ -755,13 +764,49 @@ export class Renderer {
      const dx=r[2]-r[0],dy=r[3]-r[1],t=Math.max(0,Math.min(1,((x-r[0])*dx+(y-r[1])*dy)/(dx*dx+dy*dy)));
      road=Math.min(road,(x-r[0]-t*dx)**2+(y-r[1]-t*dy)**2);
     }
-    // Continuous stone reaches the keep's apron, not an eight-tile gap.
-    // The whole five-tile band keeps the road material through corners/LOD.
-    if(near>3.5&&road<=6.25)return 6;
-    // Desaturated cleared soil has an unpaved violet perimeter. The boundary
-    // lives in the tile caps, not a grid/decal laid across buildable ground.
-    if(near<29)return 29;
-    if(near<31)return 28;
+    // Continuous stone/iron road reaches the keep's apron
+    if(near>3.5&&road<=6.25){
+     return factionAtSlot===0?6:23;
+    }
+    // 7 Material Provinces per civilization within the base clearing
+    if(near<28){
+     const [bx,by]=this.worldStarts[slotNear];
+     const m=slotNear===0?1:-1;
+     const rx=(x-bx)*m,ry=(y-by)*m;
+     const hash=((x*374761393+y*668265263)^(x*y*1274126177))>>>0;
+     if(factionAtSlot===0){
+      // Dawnward Compact:
+      // 1. Central Civic Plaza around Keep: worn stone flagstones
+      if(Math.abs(rx)<=4&&Math.abs(ry)<=4)return 4;
+      // 2. Ore crescent & Industrial shelf:
+      if(rx<=-1&&rx>=-8&&ry>=1&&ry<=8)return (rx+ry)%3===0?4:((rx*3+ry)%2===0?28:29);
+      // 3. Crystal well garden:
+      if(rx>=1&&rx<=7&&ry>=-7&&ry<=-1)return (hash%4===0)?30:29;
+      // 4. Defense terrace apron:
+      if(rx>=3&&rx<=8&&Math.abs(ry)<=3)return (hash%3===0)?4:28;
+      // 5. Depot connector apron:
+      if(rx<=-1&&rx>=-6&&Math.abs(ry)<=2)return 4;
+      // 6. Natural quiet soil variance across clearing:
+      if(near>23)return 28;
+      return (hash%6===0)?28:29;
+     } else {
+      // Cinderwake Reavers:
+      // 1. Central Pyre Ark courtyard: bolted iron grating
+      if(Math.abs(rx)<=4&&Math.abs(ry)<=4)return 23;
+      // 2. Scrap Maw & crusher trench:
+      if(rx<=-1&&rx>=-8&&ry>=1&&ry<=8)return (rx+ry)%3===0?24:((rx*3+ry)%2===0?23:28);
+      // 3. Ember siphon forge zone:
+      if(rx>=1&&rx<=7&&ry>=-7&&ry<=-1)return (hash%3===0)?24:((hash%5===0)?26:28);
+      // 4. Barricade front:
+      if(rx>=3&&rx<=8&&Math.abs(ry)<=3)return (hash%3===0)?23:24;
+      // 5. Scrap conveyor run:
+      if(rx<=-1&&rx>=-6&&Math.abs(ry)<=2)return 23;
+      // 6. Scorched obsidian perimeter:
+      if(near>21)return (hash%3===0)?23:28;
+      return (hash%4===0)?23:((hash%7===0)?24:28);
+     }
+    }
+    if(near<31)return factionAtSlot===0?28:23;
    }
    const shoulder=this.ground(x-5,y)!==h||this.ground(x+5,y)!==h||this.ground(x,y-5)!==h||this.ground(x,y+5)!==h;
    if(h===1)return shoulder?5:4;
@@ -800,12 +845,15 @@ export class Renderer {
     const h=this.ground(x-4,y),u=x-cx,v=y-cy,rx=u*c-v*s,ry=u*s+v*c;
     const px=mx+hx*(rx-ry),py=my+hy*(rx+ry)-hz*h;
     if(h<0||px<-32||px>RENDER_WIDTH+32||py<-32||py>RENDER_HEIGHT+32||this.count+6>=BAKE_LIMIT)continue;
-    // Non-harvestable host rock is blunt and cold. Amber belongs exclusively
-    // to the actual ore actors, so a decorative spire cannot impersonate one.
-    this.box(x-4,y,h,1.8,1.5,.7,5,-1,-1);
-    this.box(x-2.8,y+.5,this.ground(x-2.8,y+.5),1.2,1.3,.45,4,-1,-1);
-    this.box(x-4.7,y+.8,this.ground(x-4.7,y+.8),1.,.9,.35,4,-1,-1);
-    this.box(x-4.3,y+.05,h+.65,.7,.65,.2,6,-1,-1);
+    // Faceted host rock spires with sharp stepped ledges and dark contrast
+    this.box(x-4,y,h,2.2,1.8,.85,4,-1,-1);
+    this.box(x-4,y,h+.85,1.5,1.2,.65,5,-1,-1);
+    this.box(x-3.8,y-.1,h+1.5,.8,.7,.45,6,-1,-1);
+    this.box(x-2.6,y+.6,this.ground(x-2.6,y+.6),1.4,1.3,.55,4,-1,-1);
+    this.box(x-4.8,y+.9,this.ground(x-4.8,y+.9),1.2,1.1,.45,3,-1,-1);
+    // Exposed mineral strata veins embedded into the host rock
+    this.box(x-3.7,y+.2,h+.35,.6,.14,.18,21,-1,-6);
+    this.box(x-4.2,y-.2,h+.55,.14,.5,.15,20,-1,-6);
    }
    this.staticCount=this.count;this.staticEmissiveCount=this.emissiveCount;
    this.bakedX=cx;this.bakedY=cy;this.bakedZoom=zoom;
@@ -819,22 +867,26 @@ export class Renderer {
    const north=this.land(x,y-1)?this.ground(x,y-1):-3.5;
    const east=this.land(x+1,y)?this.ground(x+1,y):-3.5;
    const south=this.land(x,y+1)?this.ground(x,y+1):-3.5;
-   const low=Math.min(west,north,east,south),rim=low<h;
+   const isVoid=west<0||north<0||east<0||south<0;
+   const low=isVoid?(-3.5-(hash%5)*.45):Math.min(west,north,east,south);
+   const rim=low<h;
    // One full-width cap prevents little dark fissures in otherwise quiet land.
    // Mode -6 is the pre-existing exact-palette hard face table, no new shader.
    const surface=this.count;
-   this.box(x+.5,y+.5,h-.12,1,1,.12,cap,-1,h===1?-7:cap===29?-8:cap===6?-9:-6);
+   const isRoad=cap===6||cap===23;
+   const isGrid=cap===29;
+   this.box(x+.5,y+.5,h-.12,1,1,.12,cap,-1,h===1?-7:isGrid?-8:isRoad?-9:-6);
    this.actorData[surface*4+2]=0;this.actorData[surface*4+3]=0;
-   if(cap===6){
+   if(isRoad){
     let edge=0;
-    if(west!==h||this.worldMaterial(x-1,y,west)!==6)edge|=1;
-    if(east!==h||this.worldMaterial(x+1,y,east)!==6)edge|=2;
-    if(north!==h||this.worldMaterial(x,y-1,north)!==6)edge|=4;
-    if(south!==h||this.worldMaterial(x,y+1,south)!==6)edge|=8;
+    if(west!==h||this.worldMaterial(x-1,y,west)!==cap)edge|=1;
+    if(east!==h||this.worldMaterial(x+1,y,east)!==cap)edge|=2;
+    if(north!==h||this.worldMaterial(x,y-1,north)!==cap)edge|=4;
+    if(south!==h||this.worldMaterial(x,y+1,south)!==cap)edge|=8;
     for(const [bx,by] of this.worldStarts)if(Math.hypot(x-bx,y-by)<5.5)edge|=16;
     this.actorData[surface*4+2]=edge;
    }
-   if(cap===29&&x>=3&&y>=3&&x<this.terrainSide-3&&y<this.terrainSide-3){
+   if((cap===29||cap===28||cap===23||cap===24||cap===4||cap===30)&&x>=3&&y>=3&&x<this.terrainSide-3&&y<this.terrainSide-3){
     let flat=true;
     // Same cells as placeable() for the smallest construction footprint.
     for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++)if(this.ground(x+dx,y+dy)!==h)flat=false;
@@ -845,21 +897,59 @@ export class Renderer {
    const column=this.count;
    this.box(x+.5,y+.5,low,1,1,h-low-.12,3,-1,-10);
    this.actorData[column*4]=low;this.actorData[column*4+1]=h;
-   // A continuous raised rock shoulder crowns high ridges. One box per rim
-   // tile, in every tier: the wall silhouette must not vanish at wide zoom.
-   if(h===1)this.box(x+.5,y+.5,h,1,1,.55,5,-1,-6);
+   // High ridges have continuous shoulder and rugged basalt battlements
+   if(h===1){
+    this.box(x+.5,y+.5,h,1,1,.55,5,-1,-6);
+    if(tier<=1&&hash%3!==0){
+     this.box(x+.5+(hash%3-1)*.2,y+.5+((hash>>2)%3-1)*.2,h+.55,.42,.42,.22,hash%2?6:5,-1,-6);
+    }
+   }
+   // Fractured asteroid rim dropping into deep space void
+   if(isVoid){
+    if(tier<=1){
+     this.box(x+.5,y+.5,low-.5,.62,.62,.5,2,-1,-6);
+     if(west<0||north<0){
+      this.box(x+.15,y+.15,h-.3,.42,.42,.3,4,-1,-6);
+     }
+     if(hash%4===0){
+      const ox=east<0?1.25:west<0?-0.65:.5;
+      const oy=south<0?1.25:north<0?-0.65:.5;
+      const fz=h-.15-(hash%3)*.12;
+      this.box(x+ox,y+oy,fz,.38,.38,.28,3,-1,-6);
+      this.box(x+ox,y+oy,fz+.28,.32,.32,.08,4,-1,-6);
+     }
+    }
+    return;
+   }
+   // Stepped ramp curbs & chokepoint buttresses where roads meet cliffs
+   if(isRoad&&tier<=1){
+    const curbColor=cap===23?24:6;
+    if(west<h||east<h)this.box(x+.5,y+(north<h?.94:.06),h,.96,.12,.18,curbColor,-1,-6);
+    if(north<h||south<h)this.box(x+(west<h?.94:.06),y+.5,h,.12,.96,.18,curbColor,-1,-6);
+   }
    if(tier===2)return;
-   // Lit west/north edges and darker east/south flanks are world-fixed. Keep
-   // the two terrain steps visible even in the far tier; adorn only near ones.
+   // Lit west/north edges and darker east/south flanks are world-fixed.
    if(west<h)this.box(x+.04,y+.5,h+.006,.08,1,.008,6,-1,-6);
    if(north<h)this.box(x+.5,y+.04,h+.006,1,.08,.008,5,-1,-6);
+   // Vertical faceted basalt column ribs on exposed cliff faces
+   if(east<h){
+    const top=h-.18;
+    this.box(x+1.015,y+.28,low,.12,.34,top-low,4,-1,-6);
+    this.box(x+1.015,y+.72,low,.12,.34,top-low,5,-1,-6);
+    if((hash%3)===0)this.box(x+1.025,y+.5,top-.35,.22,.42,.12,5,-1,-6);
+   }
+   if(south<h){
+    const top=h-.18;
+    this.box(x+.28,y+1.015,low,.34,.12,top-low,4,-1,-6);
+    this.box(x+.72,y+1.015,low,.34,.12,top-low,5,-1,-6);
+    if((hash%3)===0)this.box(x+.5,y+1.025,top-.35,.42,.22,.12,5,-1,-6);
+   }
    if(tier!==0)return;
    if((east<h||south<h)&&hash%3===0){
     const xx=x+(east<h?1.015:.5),yy=y+(south<h?1.015:.5),foot=Math.max(low,h-.6);
     this.terrainBox(xx,yy,foot,east<h?.08:.28,south<h?.08:.28,h-foot-.1,3,false);
    }
-   // All scenery is tied to exposed rock: no crystals scattered in clearings
-   // or on roads. This work runs during a window bake only.
+   // All scenery is tied to exposed rock
    if(cap===5&&h===1&&hash%4===0){
     this.box(x+.56,y+.5,h,.64,.48,.38,4,-1,-6);
     this.box(x+.65,y+.48,h+.38,.32,.36,.18,5,-1,-6);
@@ -886,14 +976,24 @@ export class Renderer {
   // Leave the near half of the mining tile open for the worker's silhouette.
   // The simulation's work point is unchanged; crystals occupy its far shoulder.
   x-=.55;y-=.55;
-  // Three unequal facets, wider than tall, with gaps even in the close-spaced
-  // starter seam. Stagger the points, not the resource's position/footprint.
-  // Mask 1 supplies an ink contour without making ore selectable.
   const dy=(id%3-1)*.14;
-  this.box(x,y+dy,z+.025,1.15,1.25,.16,4,-1,-1);
+  // Dark faceted host stone pedestal with sharp contrast
+  this.box(x,y+dy,z+.025,1.25,1.35,.16,3,-1,-1);
+  this.box(x+.08,y+dy+.08,z+.025,1.05,1.15,.22,4,-1,-1);
+  // Faceted amber crystals (mode -11):
   this.box(x-.08,y-.15+dy,z+.14,.88,1.02,h,53,-1,-11);
   this.box(x-.5,y+.25+dy,z+.08,.58,.62,h*.48,53,-1,-11);
   this.box(x+.43,y+.04+dy,z+.08,.6,.74,h*.65,53,-1,-11);
+  // Bright gold crystal tip glints
+  if(amount>0){
+   this.emissive(x-.08,y-.15+dy,z+.14+h,22,-1);
+   this.emissive(x+.43,y+.04+dy,z+.08+h*.65,22,-1);
+  }
+  // Ground ore contact flecks radiating into ground
+  if((id+Math.floor(x))%2===0){
+   this.box(x-.62,y-.38+dy,z+.01,.26,.22,.02,21,-1,-6);
+   this.box(x+.62,y+.38+dy,z+.01,.22,.26,.02,20,-1,-6);
+  }
  }
  private building(e:Float32Array,o:number,id:number) {
   if(cinderBuildings.has(e[o+4])){

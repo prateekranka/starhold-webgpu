@@ -22,7 +22,7 @@ interface App {
  terrainSample(step:number):{side:number;stride:number;levels:number[]};
  /** Read-only actor view: one row per live entity. */
  entityProbe():{index:number;kind:number;faction:number;x:number;y:number;z:number;state:number;health:number;progress:number}[];
- rotate(dir:1|-1):void;zoomBy(delta:1|-1):void;selectAt(x:number,y:number):void;fastForward(seconds:number):void;
+ rotate(dir:1|-1):void;zoomBy(delta:1|-1):void;selectAt(x:number,y:number):void;fastForward(seconds:number):void;panTo?(x:number,y:number):void;
  startMatch(faction:0|1):void;resetShowcase():void;startArena?(config:ArenaMatchConfig):void;command(op:number,a:number,b:number):number;triggerRaid?(lane?:number):number;
  selectEntity(index:number):boolean;selectKind(kind:number):boolean;selectMultiple?(indices:number[]):void;
  /** Distinct entity kinds in the current snapshot (read-only coverage probe). */
@@ -503,7 +503,7 @@ function startMatch(faction:0|1) {
  if(worldSide>0) {
   const player=faction===1?1:0;
   camX=sim.sim_base_x?sim.sim_base_x(player):worldSide/2;camY=sim.sim_base_y?sim.sim_base_y(player):worldSide/2;
-  renderer.setWorld(worldView(),worldSide,camX,camY);
+  renderer.setWorld(worldView(),worldSide,camX,camY,player);
  }
  minimapInvalidate();
  resetClock();selectDefault();
@@ -575,7 +575,7 @@ function startArena(config: ArenaMatchConfig) {
    camX = sim.sim_base_x ? sim.sim_base_x(factionInit) : worldSide / 2;
    camY = sim.sim_base_y ? sim.sim_base_y(factionInit) : worldSide / 2;
   }
-  renderer.setWorld(worldView(), worldSide, camX, camY);
+  renderer.setWorld(worldView(), worldSide, camX, camY, factionInit);
  }
  minimapInvalidate();
  resetClock(); selectDefault();
@@ -1021,7 +1021,7 @@ window.__APP={ready:false,error:null,getState:()=>({touch:touchLayout,yawSteps,z
  alloy:sim?sim.sim_alloy():0,charge:sim?sim.sim_charge():0,selectedKind:currentKind(),actions:hud.actions(),
  raidActive:sim&&sim.sim_raid_active?sim.sim_raid_active():0,raidLane:sim&&sim.sim_raid_lane?sim.sim_raid_lane():0,raidBreach:sim&&sim.sim_raid_breach?sim.sim_raid_breach():0,raidEta:sim&&sim.sim_raid_eta?sim.sim_raid_eta():0,
  worldTiles:worldSide,worldMeters:worldSide*(sim&&typeof sim.sim_metres_per_tile==='function'?sim.sim_metres_per_tile():10),camera:{x:camX,y:camY},minimap:{open:!minimap.classList.contains('off')}}),
- rotate,zoomBy,selectAt,fastForward,startMatch,resetShowcase,startArena,command,triggerRaid:(lane=0)=>command(8,lane,0),selectEntity,selectKind,selectMultiple,kinds,entityScreen,tileScreen,terrainSample,entityProbe,placement:()=>({...placementState})};
+ rotate,zoomBy,panTo:(x:number,y:number)=>{renderer.setView(x,y);camX=renderer.viewX;camY=renderer.viewY;reprojectPlacement();minimapDraw(true);},selectAt,fastForward,startMatch,resetShowcase,startArena,command,triggerRaid:(lane=0)=>command(8,lane,0),selectEntity,selectKind,selectMultiple,kinds,entityScreen,tileScreen,terrainSample,entityProbe,placement:()=>({...placementState})};
 const canvas=document.querySelector<HTMLCanvasElement>('#world')!;
 const viewport=document.querySelector<HTMLElement>('#viewport')!;
 const selection=document.querySelector<HTMLOutputElement>('#selection')!;
@@ -1375,8 +1375,13 @@ function frame(now:number) {
 }
 // Hidden time does not produce a giant catch-up burst or alter the tick size.
 document.addEventListener('visibilitychange',()=>{previous=0;accumulator=0;});
-async function boot() {
- if(!navigator.gpu)throw new Error('WebGPU is unavailable. Starhold requires a WebGPU-capable browser with hardware acceleration enabled.');
+ async function boot() {
+  if(!navigator.gpu){
+   if(!window.isSecureContext){
+    throw new Error('WebGPU requires a secure origin. Please open http://localhost:5199/ (not an IP address), or configure HTTPS.');
+   }
+   throw new Error('WebGPU is unavailable. Please enable "Use graphics acceleration when available" in your browser settings (chrome://settings/system or brave://settings/system) and relaunch.');
+  }
  const result=await WebAssembly.instantiateStreaming(fetch('/sim.wasm'),{});sim=result.instance.exports as SimExports;
  if(sim.sim_entity_stride()!==12)throw new Error('Simulation ABI mismatch: expected 12 floats per entity.');
  const value=new URLSearchParams(location.search).get('seed');const requested=value===null?73129:Number(value);seed=Number.isFinite(requested)?requested>>>0:73129;sim.sim_init(seed);refreshEntities();
