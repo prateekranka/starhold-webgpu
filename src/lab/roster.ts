@@ -13,11 +13,11 @@
 // Open it with `npm run dev` and visit /lab.html. It is not part of `npm run build`.
 import civDoc from '../../docs/CIVILIZATIONS.md?raw';
 import unitDoc from '../../docs/UNIT_DESIGN.md?raw';
-import ashJackalSheet from './art/ash-jackal-sheet.jpg';
 import {
   names, factionNames, palette, el, docTables, bold, downloadJSON, loadSim,
-  drawSchematic, type RosterRow,
+  type RosterRow,
 } from './common';
+import { drawActorPreview } from './actor-geometry';
 
 type Group = 'building' | 'unit' | 'prop' | 'effect';
 
@@ -44,19 +44,9 @@ interface Entry {
   sim: RosterRow | null;
   drift: string[];
 }
+export { BUILDING_ARCHITECTURAL_DETAILS, UNIT_PROCEDURAL_DETAILS, ACTOR_PROFILES } from '../actor-specs';
+import { BUILDING_ARCHITECTURAL_DETAILS, UNIT_PROCEDURAL_DETAILS, ACTOR_PROFILES } from '../actor-specs';
 
-/**
- * Reference art per kind, where it exists. The world itself is drawn
- * procedurally, so this is not the game's pixels: it is the artwork the
- * silhouette contract in docs/UNIT_DESIGN.md is judged against, kept beside the
- * numbers so a reviewer can compare intent and implementation in one place.
- */
-const art: Record<number, { src: string; caption: string }> = {
-  30: {
-    src: ashJackalSheet,
-    caption: 'Steppe centaur animation sheet — frames 1-2 idle, 3-4 walk, 5-7 aim, 8 release. The world draws this unit procedurally: four-legged jointed chassis, archer torso, ember bow.',
-  },
-};
 
 const column = (header: string[], pattern: RegExp) => header.findIndex((h) => pattern.test(h));
 const cell = (row: { cells: string[] }, index: number) => (index >= 0 && index < row.cells.length ? row.cells[index] : '');
@@ -170,6 +160,12 @@ function build(): Entry[] {
       const producer = entries.get(e.sim.producer);
       if (producer) producer.makes.push(e.kind);
     }
+    const profile = ACTOR_PROFILES[e.kind];
+    if (profile) {
+      if (!e.role) e.role = profile.role;
+      if (!e.silhouette) e.silhouette = profile.silhouette;
+      if (!e.motion) e.motion = profile.motion;
+    }
   }
 
   // --- drift: a document that disagrees with the simulation is wrong
@@ -192,13 +188,67 @@ let entries = build();
 const root = document.querySelector<HTMLElement>('#lab')!;
 const state = { query: '', group: 'all' as Group | 'all', faction: 'all' as string, card: 340 };
 
+interface LiveCard {
+  canvas: HTMLCanvasElement;
+  kind: number;
+  faction: number;
+  footprint: [number, number] | null;
+  isUnit: boolean;
+  visible: boolean;
+}
+
+const liveCards: LiveCard[] = [];
+
+const observer = new IntersectionObserver((cardEntries) => {
+  for (const entry of cardEntries) {
+    const cardItem = liveCards.find((c) => c.canvas === entry.target);
+    if (cardItem) cardItem.visible = entry.isIntersecting;
+  }
+}, { threshold: 0.05 });
+
+function registerCardCanvas(canvas: HTMLCanvasElement, kind: number, faction: number, footprint: [number, number] | null, isUnit: boolean): void {
+  const item: LiveCard = { canvas, kind, faction, footprint, isUnit, visible: true };
+  liveCards.push(item);
+  observer.observe(canvas);
+}
+
+let animLoopId = 0;
+let lastAnimTick = 0;
+function startCardAnimations(): void {
+  if (animLoopId) return;
+  let lastTime = performance.now();
+  function loop(now: number) {
+    animLoopId = requestAnimationFrame(loop);
+    if (now - lastTime < 33) return; // Cap at ~30 FPS for background card previews
+    lastTime = now;
+    lastAnimTick++;
+    const t = now / 1000;
+    for (const item of liveCards) {
+      if (item.visible) {
+        drawActorPreview(item.canvas, item.kind, item.faction, item.footprint, t, lastAnimTick, item.isUnit);
+      }
+    }
+  }
+  animLoopId = requestAnimationFrame(loop);
+}
+
 function matches(e: Entry): boolean {
   if (state.group !== 'all' && e.group !== state.group) return false;
   if (state.faction !== 'all' && String(e.faction) !== state.faction) return false;
   if (!state.query) return true;
   const words = state.query.toLowerCase().split(/\s+/).filter(Boolean);
-  const haystack = [e.name, e.kind, e.role, e.silhouette, e.motion, e.tier, e.producer, factionNames[e.faction]]
-    .filter(Boolean).join(' ').toLowerCase();
+  const haystack = [
+    e.name,
+    e.kind,
+    e.role,
+    e.silhouette,
+    e.motion,
+    e.tier,
+    e.producer,
+    factionNames[e.faction],
+    BUILDING_ARCHITECTURAL_DETAILS[e.kind]?.join(' '),
+    UNIT_PROCEDURAL_DETAILS[e.kind]?.join(' '),
+  ].filter(Boolean).join(' ').toLowerCase();
   return words.every((w) => haystack.includes(w));
 }
 
@@ -212,12 +262,6 @@ function card(e: Entry): HTMLElement {
     el('h2', { text: e.name }),
     el('span', { class: 'kind', text: `KIND ${e.kind}` }),
   );
-  const reference = art[e.kind];
-  const figure = reference
-    ? el('figure', { class: 'portrait' },
-        el('img', { src: reference.src, alt: `${e.name} reference art`, loading: 'lazy' }),
-        el('figcaption', { text: reference.caption }))
-    : null;
   const preview = el('div', { class: 'preview' });
   const canvas = el('canvas');
   preview.append(canvas);
@@ -242,20 +286,65 @@ function card(e: Entry): HTMLElement {
   row(dl, 'Sim', e.sim ? `class ${e.sim.klass} · tier ${e.sim.tier}` : null);
   if (e.group === 'building') row(dl, 'Makes', e.makes.length ? e.makes.map((k) => names[k] ?? k).join(', ') : 'nothing');
 
-  const notes: HTMLElement[] = [el('p', { class: 'note' }, el('b', { text: 'Schematic: ' }), 'the plinth below is a proportion diagram drawn from the footprint, not the renderer.')];
+  const notes: HTMLElement[] = [];
+
+  const arch = BUILDING_ARCHITECTURAL_DETAILS[e.kind];
+  if (arch) {
+    const ul = el('ul', { class: 'spec-list' });
+    for (const item of arch) ul.append(el('li', { text: item }));
+    notes.push(el('div', { class: 'note' }, el('b', { text: 'Architectural Details: ' }), ul));
+  }
+
+  const rig = UNIT_PROCEDURAL_DETAILS[e.kind];
+  if (rig) {
+    const ul = el('ul', { class: 'spec-list' });
+    for (const item of rig) ul.append(el('li', { text: item }));
+    notes.push(el('div', { class: 'note' }, el('b', { text: 'Procedural Rig: ' }), ul));
+  }
+
+  notes.push(el('p', { class: 'note' }, el('b', { text: 'Procedural Model: ' }), 'drawn live from game asset geometry and animated details (src/assets/).'));
   if (e.silhouette) notes.push(el('p', { class: 'note' }, el('b', { text: 'Silhouette: ' }), e.silhouette));
   if (e.motion) notes.push(el('p', { class: 'note' }, el('b', { text: 'Motion: ' }), e.motion));
   if (e.drift.length) notes.push(el('p', { class: 'note' }, el('b', { class: 'drift', text: 'Doc drift: ' }), e.drift.join('; ')));
 
-  const node = el('article', { class: 'card' }, head, ...(figure ? [figure] : []), preview, dl, ...notes);
+  const actions = el('div', { class: 'card-actions' },
+    el('a', {
+      class: 'forge-btn',
+      href: `/tools/?view=forge&civ=${e.faction}&kind=${e.kind}`,
+      text: 'Asset Forge ↗',
+      target: '_blank',
+    }),
+    el('a', {
+      class: 'forge-btn',
+      href: `/tools/?view=codex&civ=${e.faction}&kind=${e.kind}`,
+      text: 'Codex ↗',
+      target: '_blank',
+    }),
+    el('a', {
+      class: 'forge-btn',
+      href: `/tools/?view=encounter&civ=${e.faction}&kind=${e.kind}`,
+      text: 'Encounter ↗',
+      target: '_blank',
+    })
+  );
+
+  const node = el('article', { class: 'card' }, head, preview, dl, ...notes, actions);
   node.dataset.drift = e.drift.length ? 'true' : 'false';
   node.dataset.kind = String(e.kind);
-  // Drawn after insertion so the canvas has a measured width.
-  queueMicrotask(() => drawSchematic(canvas, e.footprint?.[0] ?? 1, e.footprint?.[1] ?? 1, e.group === 'building' ? (e.footprint && Math.max(...e.footprint) >= 4 ? 3 : 2) : 1, e.faction));
+
+  const isUnit = e.group === 'unit';
+  queueMicrotask(() => {
+    drawActorPreview(canvas, e.kind, e.faction, e.footprint, 0, 0, isUnit);
+    registerCardCanvas(canvas, e.kind, e.faction, e.footprint, isUnit);
+  });
+
   return node;
 }
 
 function render(): void {
+  for (const item of liveCards) observer.unobserve(item.canvas);
+  liveCards.length = 0;
+
   const shown = entries.filter(matches);
   const drifting = entries.filter((e) => e.drift.length);
   root.replaceChildren();
@@ -326,6 +415,7 @@ function render(): void {
     el('a', { href: '/lab.html', text: 'reload' }),
   ));
   root.removeAttribute('aria-busy');
+  startCardAnimations();
 }
 
 render();

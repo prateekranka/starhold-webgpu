@@ -3,16 +3,13 @@ import assert from 'node:assert/strict';
 /** CI uses software Vulkan; these flags never affect the shipped game. */
 export function browserOptions(platform = process.platform, env = process.env) {
   return {
-    headless: env.WORKSHOP_HEADED !== '1',
+    headless: env.WORKSHOP_HEADED === '1' ? false : (platform === 'darwin' && !env.CI ? false : true),
     dumpio: env.WORKSHOP_GPU_LOG === '1',
     args: ['--enable-unsafe-webgpu', ...(platform === 'linux' ? [
       '--enable-features=Vulkan', '--use-angle=vulkan',
       '--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader',
       '--disable-vulkan-surface', '--enable-unsafe-swiftshader',
       '--ignore-gpu-blocklist', '--disable-dev-shm-usage',
-    ] : platform === 'darwin' ? [
-      '--use-angle=metal',
-      '--ignore-gpu-blocklist',
     ] : [])],
   };
 }
@@ -54,7 +51,7 @@ export async function verifyWebGPU(browser) {
         const info = adapter.info;
         return {pixel, errors, adapter: info ? {vendor: info.vendor, architecture: info.architecture,
           device: info.device, description: info.description} : null, userAgent: navigator.userAgent};
-      } finally {buffer.destroy(); texture.destroy();}
+      } finally {buffer.destroy(); texture.destroy(); device.destroy();}
     });
     assert.deepEqual(result.errors, [], 'GPU environment emitted validation errors');
     assert.deepEqual(result.pixel, [255, 0, 0, 255], 'GPU environment did not render/read real pixels');

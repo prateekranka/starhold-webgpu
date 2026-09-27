@@ -67,6 +67,11 @@ header.lab-head p { margin: 0; color: var(--mid); flex: 1 1 320px; }
 .note { padding: 0 10px 10px; color: var(--mid); }
 .card .note:last-child { padding-bottom: 14px; }
 .note b { color: var(--paper); }
+.spec-list { margin: 4px 0 0; padding-left: 18px; color: var(--paper); font-size: 11px; }
+.spec-list li { margin-bottom: 3px; }
+.card-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; border-top: 1px solid var(--ink-3); margin-top: auto; }
+.forge-btn { display: inline-block; background: var(--ink-3); border: 1px solid var(--line); color: var(--teal); padding: 5px 9px; font-size: 11px; text-decoration: none; }
+.forge-btn:hover { background: var(--line); color: var(--gold); text-decoration: none; }
 .tag { display: inline-block; border: 1px solid var(--line); padding: 1px 6px; margin-right: 4px; font-size: 11px; color: var(--mid); }
 .palette { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 22px; }
 .swatch { width: 34px; height: 34px; border: 1px solid var(--ink-3); position: relative; }

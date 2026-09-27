@@ -1,6 +1,8 @@
 import './game-menu.css';
+import {CAMPAIGN_SCENARIOS, scenarioManager} from './scenarios';
+import {openArenaModal} from './ui/arena-modal';
 
-type MenuScreen='main'|'new'|'confirm'|'options'|'settings'|'how'|'about';
+type MenuScreen='main'|'new'|'scenarios'|'confirm'|'options'|'settings'|'how'|'about';
 type DefaultFaction='ask'|'0'|'1';
 type MenuSize='compact'|'standard'|'large';
 interface MenuPrefs {
@@ -64,6 +66,8 @@ function mainScreen(){
  <div class="gm-actions">
   <button class="gm-primary" data-action="resume" ${canResume?'':'disabled'}><strong>Resume Game</strong><small>${resumeNote}</small></button>
   <button data-action="new"><strong>New Game</strong><small>Choose a civilization and begin a fresh march</small></button>
+  <button data-action="scenarios"><strong>Campaign Scenarios</strong><small>3 narrative tactical operations with objectives</small></button>
+  <button class="gm-primary" data-action="arena"><strong>Battle Arena & Multiplayer</strong><small>Claude vs Codex, Gemini vs Codex, Human vs Friend</small></button>
   ${s.mode===0?'<button data-action="watch"><strong>Watch Showcase</strong><small>Hide the menu and watch the colony run</small></button>':''}
   <button data-action="options"><strong>Options</strong><small>New-game behavior and map preferences</small></button>
   <button data-action="settings"><strong>Settings</strong><small>Menu display and accessibility</small></button>
@@ -72,6 +76,27 @@ function mainScreen(){
  </div>
  ${s.mode===1?'<button class="gm-text gm-danger" data-action="showcase">Return to Showcase</button>':''}
  <footer class="gm-tip">Resume is intentionally session-only for now; persistent save files are not implemented yet.</footer>`;
+}
+function scenariosScreen(){
+ return `${menuHeader('CAMPAIGN SCENARIOS','Deploy into targeted tactical operations in the Vesper March.')}
+ <div class="gm-scenarios">
+  ${CAMPAIGN_SCENARIOS.map(s => `
+   <div class="gm-scenario-card">
+    <div class="gm-sc-head">
+     <span class="gm-sc-tag">OP ${s.id}</span>
+     <strong>${s.title}</strong>
+    </div>
+    <p class="gm-sc-briefing">${s.briefing}</p>
+    <div class="gm-sc-objectives">
+     ${s.objectives.map(o => `<span>• ${o.description}</span>`).join('')}
+    </div>
+    <button class="gm-primary" data-action="launch-scenario" data-scenario-id="${s.id}">
+     <strong>Launch Operation</strong>
+    </button>
+   </div>
+  `).join('')}
+ </div>
+ ${backButton()}`;
 }
 function newGameScreen(){
  const active=activeGame(),defaultValue=prefs.defaultFaction;
@@ -104,7 +129,7 @@ function aboutScreen(){return `${menuHeader('ABOUT STARHOLD','An isometric RTS a
 function backButton(){return '<button class="gm-text gm-back" data-action="back">← Back to Main Menu</button>';}
 function render(){
  if(!dialog.open)return;
- dialog.innerHTML=screen==='main'?mainScreen():screen==='new'?newGameScreen():screen==='confirm'?confirmScreen():screen==='options'?optionsScreen():screen==='settings'?settingsScreen():screen==='how'?howScreen():aboutScreen();
+ dialog.innerHTML=screen==='main'?mainScreen():screen==='new'?newGameScreen():screen==='scenarios'?scenariosScreen():screen==='confirm'?confirmScreen():screen==='options'?optionsScreen():screen==='settings'?settingsScreen():screen==='how'?howScreen():aboutScreen();
  queueMicrotask(()=>dialog.querySelector<HTMLElement>('button:not([disabled]), select, input')?.focus());
 }
 function ensureMinimapPreference(){requestAnimationFrame(()=>{
@@ -129,6 +154,20 @@ dialog.addEventListener('click',event=>{
  switch(target.dataset.action){
   case 'resume':closeMenu();break;
   case 'new':changeScreen('new');break;
+  case 'scenarios':changeScreen('scenarios');break;
+  case 'arena':{
+   closeMenu();
+   openArenaModal({
+    onLaunch:(cfg)=>{window.__APP.startArena?.(cfg);},
+    onCancel:()=>{openMenu('main');}
+   });
+   break;
+  }
+  case 'launch-scenario':{
+   const scId=Number(target.dataset.scenarioId);
+   if(scId){scenarioManager.startScenario(scId);closeMenu();}
+   break;
+  }
   case 'watch':closeMenu();break;
   case 'options':changeScreen('options');break;
   case 'settings':changeScreen('settings');break;

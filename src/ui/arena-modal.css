@@ -1,0 +1,372 @@
+/* Starhold Arena Modal & Spectator HUD Styling (32-color palette) */
+
+#arena-modal {
+  position: fixed;
+  z-index: 35;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(88dvh, 720px);
+  margin: 0;
+  padding: 0;
+  border: 2px solid #747C91;
+  background: #10121C;
+  color: #F3F0D7;
+  overflow-y: auto;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  box-shadow: 12px 12px 0 #1B1E30;
+}
+
+#arena-modal::backdrop {
+  background: rgba(16, 18, 28, 0.7);
+  backdrop-filter: blur(2px);
+}
+
+.arena-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 16px 20px;
+  background: #1B1E30;
+  border-bottom: 2px solid #41435E;
+}
+
+.arena-head h2 {
+  margin: 0;
+  font: 700 20px/1.1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.08em;
+  color: #F1CE72;
+}
+
+.arena-head p {
+  margin: 4px 0 0;
+  color: #98A4AE;
+  font-size: 10px;
+}
+
+.arena-close-btn {
+  background: transparent;
+  border: 1px solid #41435E;
+  color: #98A4AE;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  min-height: 36px;
+  min-width: 36px;
+}
+.arena-close-btn:hover {
+  border-color: #F1CE72;
+  color: #F3F0D7;
+}
+
+.arena-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.arena-matchup-grid {
+  display: grid;
+  grid-template-columns: 1fr 40px 1fr;
+  align-items: center;
+  gap: 12px;
+}
+
+@media (max-width: 600px) {
+  .arena-matchup-grid {
+    grid-template-columns: 1fr;
+  }
+  .arena-vs-divider {
+    text-align: center;
+    padding: 6px 0;
+  }
+}
+
+.arena-vs-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 14px;
+  color: #F1CE72;
+}
+
+.arena-faction-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 2px solid #2B2D46;
+  background: #1B1E30;
+}
+
+.arena-faction-card.dawn {
+  border-color: #298B8B;
+}
+
+.arena-faction-card.cinder {
+  border-color: #BC4A45;
+}
+
+.arena-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: bold;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+
+.arena-card-title.dawn {
+  color: #8BD7BE;
+}
+
+.arena-card-title.cinder {
+  color: #E77945;
+}
+
+.arena-faction-badge {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1.5px solid currentColor;
+  font-size: 11px;
+}
+
+.arena-select-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.arena-select-group label {
+  font-size: 9px;
+  color: #98A4AE;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.arena-select {
+  width: 100%;
+  min-height: 44px;
+  background: #10121C;
+  border: 2px solid #41435E;
+  color: #F3F0D7;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.arena-select:focus-visible {
+  outline: none;
+  border-color: #F1CE72;
+}
+
+.arena-net-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px dashed #747C91;
+  background: #10121C;
+  margin-top: 4px;
+}
+
+.arena-net-row {
+  display: flex;
+  gap: 8px;
+}
+
+.arena-net-token-box {
+  width: 100%;
+  min-height: 52px;
+  background: #1B1E30;
+  border: 1px solid #41435E;
+  color: #D8E3D5;
+  font: 9px/1.2 monospace;
+  padding: 6px;
+  resize: vertical;
+  word-break: break-all;
+}
+
+.arena-btn {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 2px solid #41435E;
+  background: #1B1E30;
+  color: #F3F0D7;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.arena-btn:hover {
+  background: #2B2D46;
+  border-color: #F1CE72;
+}
+
+.arena-btn.primary {
+  background: #2B2D46;
+  border-color: #F1CE72;
+  color: #F1CE72;
+  font-weight: bold;
+}
+
+.arena-btn.primary:hover {
+  background: #F1CE72;
+  color: #10121C;
+}
+
+.arena-net-status {
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #98A4AE;
+}
+
+.arena-net-status.connected {
+  color: #8BD7BE;
+}
+
+.arena-net-status.error {
+  color: #BC4A45;
+}
+
+/* Spectator HUD & Thought Stream */
+#spectator-hud {
+  position: fixed;
+  z-index: 15;
+  top: calc(var(--safe-t, 0px) + 12px);
+  right: calc(var(--safe-r, 0px) + 14px);
+  width: min(380px, calc(100vw - 28px));
+  max-height: min(45dvh, 360px);
+  background: rgba(16, 18, 28, 0.92);
+  border: 2px solid #41435E;
+  box-shadow: 6px 6px 0 rgba(27, 30, 48, 0.8);
+  font: 11px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #F3F0D7;
+  display: none;
+  flex-direction: column;
+  transition: max-height 0.2s ease;
+}
+
+#spectator-hud.collapsed {
+  max-height: 44px;
+  overflow: hidden;
+}
+
+.spec-hud-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #1B1E30;
+  border-bottom: 1px solid #41435E;
+  min-height: 44px;
+}
+
+.spec-hud-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 0.1em;
+  color: #F1CE72;
+}
+
+.spec-badge-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #8BD7BE;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  background: #10121C;
+  padding: 2px 6px;
+  border: 1px solid #298B8B;
+}
+
+.spec-badge-live i {
+  width: 5px;
+  height: 5px;
+  background: #8BD7BE;
+  border-radius: 50%;
+}
+
+.spec-hud-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.spec-hud-toggle {
+  background: transparent;
+  border: 1px solid #41435E;
+  color: #98A4AE;
+  font-size: 9px;
+  padding: 2px 6px;
+  cursor: pointer;
+  min-height: 28px;
+}
+
+.spec-hud-toggle:hover {
+  color: #F3F0D7;
+  border-color: #F1CE72;
+}
+
+.spec-hud-thought-stream {
+  padding: 10px 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.spec-thought-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px;
+  background: #1B1E30;
+  border-left: 3px solid #747C91;
+  font-size: 10px;
+}
+
+.spec-thought-entry.dawn {
+  border-left-color: #8BD7BE;
+}
+
+.spec-thought-entry.cinder {
+  border-left-color: #E77945;
+}
+
+.spec-thought-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 8px;
+  color: #98A4AE;
+  text-transform: uppercase;
+}
+
+.spec-thought-text {
+  color: #F3F0D7;
+  line-height: 1.35;
+}
+
+.spec-thought-latency {
+  color: #F1CE72;
+  font-size: 8px;
+}
