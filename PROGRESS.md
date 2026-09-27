@@ -111,6 +111,42 @@ Gates after integration: menu browser pass; Workshop browser 5/5; Workshop
 integration 8/8; Rust 2/2; `git diff --check` clean. Only `src/renderer.ts`
 changed; the simulation, its data layout, and the camera are untouched.
 
+## Open-ground material — 2026-09-26/27 (axis closed)
+
+Three Astra medium passes and three blind critic rounds worked on the open
+ground. The finding was consistent and does not change between passes: the
+ground reads as an abstract diagram, and surface texture alone does not fix it.
+
+- Pass 1, broad surface provinces (bedrock plates, dust drifts, seams) — FAIL:
+  "the repeated rounded regions, similarly thick purple rims, and recurring pale
+  bars create a conspicuous stamped pattern".
+- Pass 2, warped fields in two close-brightness colours, no rims, no bars —
+  FAIL, with the direction kept: "large, smooth, rounded regions and isolated
+  oval spots resemble painted blotches. They lack visible structure that would
+  explain their material."
+- Pass 3, tile-scale grain (broken seams, chips, speckle, drift streaks,
+  scuffed aggregate) — FAIL: "small, similarly sized marks cover nearly every
+  exposed surface, including the settlement paving ... resemble a repeated
+  texture overlay". Reverted.
+
+All three verdicts name the same gap: "readable terrain structure that defines
+obstacles and expansion routes". That structure is a property of the map, not of
+the surface material. This world is a single uniform height plane by design, and
+the renderer must not paint fake obstacles, cliffs or corridors — placement
+eligibility and traversability are simulation truth, and faking them would lie
+to the player.
+
+Conclusion: the open-ground gap is an architectural question, not a shading
+question. It needs authored terrain on the map side — height bands, obstacle
+fields, or authored corridors, with the placement rules kept in step — and that
+is a DIRECTIVE-level decision for bobby. Until then the branch keeps pass 2,
+which was accepted as a real improvement in variation with no noise, no
+repetition, and no gameplay confusion.
+
+Gates after the revert: menu browser pass; Workshop browser 5/5; Workshop
+integration 8/8; Rust 2/2; `git diff --check` clean. Scope: `src/renderer.ts`
+only.
+
 ## PR menu chrome and asset-review stability — 2026-09-19
 
 The title/showcase now renders only the live world behind the menu. The canvas
