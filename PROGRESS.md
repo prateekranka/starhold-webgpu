@@ -147,6 +147,19 @@ Gates after the revert: menu browser pass; Workshop browser 5/5; Workshop
 integration 8/8; Rust 2/2; `git diff --check` clean. Scope: `src/renderer.ts`
 only.
 
+## Published evidence — 2026-09-28
+
+Before and after frames are now published so the work can be reviewed from any
+machine, not only from this one:
+
+- branch `evidence/dream-loop` (orphan branch, images only, commit `a623e03`),
+- index: https://github.com/prateekranka/starhold-webgpu/blob/evidence/dream-loop/EVIDENCE.md
+- frames: baseline, terrain pass, unit separation, ownership and selection,
+  ground material, two-faction encounter.
+
+The orphan branch keeps image weight out of the working history. Update it after
+each accepted pass.
+
 ## PR menu chrome and asset-review stability — 2026-09-19
 
 The title/showcase now renders only the live world behind the menu. The canvas
