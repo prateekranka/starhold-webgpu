@@ -160,6 +160,32 @@ machine, not only from this one:
 The orphan branch keeps image weight out of the working history. Update it after
 each accepted pass.
 
+## Directional sprite path — 2026-09-29
+
+The Ash Jackal now draws from a packed directional atlas on this branch. The path
+was ported from `feat/ash-jackal-design` at `b4c8b46` onto the current head by an
+Astra high-reasoning worker, by reading both trees rather than by a blind
+cherry-pick.
+
+- Added `src/assets/jackal-atlas.ts`, `src/assets/jackal-atlas/packed.png`, and
+  `src/assets/jackal-atlas/manifest.json` (the authoritative frame record).
+- Added the second billboard pipeline to `src/renderer.ts` (+144/−15): its own
+  vertex buffer, atlas upload at init, bind group, depth state, and the mask
+  target.
+- Budget preserved: `MAX=26000`, `BAKE_LIMIT=24000`. Sprites share the instance
+  budget and the capacity check still throws instead of dropping a draw.
+- One boolean, `jackalSprites`, restores the procedural Jackal.
+- The reference tree's 16000/14000 ceiling, its multi-megabyte source sheets, and
+  its box-outline change were not adopted.
+
+Blind verdict: PASS. "The more articulated character silhouette and added
+interior detail." Named remaining problem: "the pale outline makes the unit look
+like a cutout against the terrain." That is a property of the authored sheet, not
+of the port, and it is the next candidate piece.
+
+Gates: menu browser pass; Workshop browser 5/5; Workshop integration 8/8; Rust
+2/2; `tsc --noEmit` and `git diff --check` clean. Simulation untouched.
+
 ## PR menu chrome and asset-review stability — 2026-09-19
 
 The title/showcase now renders only the live world behind the menu. The canvas
