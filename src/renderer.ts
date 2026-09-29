@@ -1,10 +1,12 @@
 import {drawAshJackal,type JackalVariant} from './assets/ash-jackal';
+import {JACKAL_ATLAS_URL,JACKAL_ATLAS_WIDTH,JACKAL_ATLAS_HEIGHT,selectJackalFrame} from './assets/jackal-atlas';
 import {palette, names, jobs} from './kinds';
 import {glyphs} from './font';
 // 16000 was enough for the authored 32x32 island. The 10 km world bakes the
 // visible window with three detail tiers, so the ceiling is raised and the bake
 // itself stops at BAKE_LIMIT instead of dropping instances one by one.
-const MAX=26000, BAKE_LIMIT=24000, STRIDE=8;
+// Boxes and billboards share this budget; saturation throws instead of dropping draws.
+const MAX=26000, BAKE_LIMIT=24000, STRIDE=8, SPRITE_STRIDE=12;
 const buildingFootprints:Readonly<Record<number,readonly [number,number]>>={10:[4,4],11:[3,3],12:[2,2],13:[3,3],14:[3,3],15:[3,2],16:[2,2],17:[4,3],60:[4,4],61:[3,3],62:[2,2],65:[3,2],63:[3,3],64:[3,3],66:[2,2],67:[4,3]};
 const cinderBuildings=new Set([60,61,62,65,63,64,66,67]);
 const dawnUnits=new Set([20,21,22,23,24,25,26]);
@@ -281,6 +283,38 @@ fn basalt(world:vec2f, province:u32, local:vec2f)->u32 {
  else if i.material!=0u {f.color=vec4f(palette[basalt(i.ground,i.material-1u,i.settlement)],1.);}
  f.mask=vec4f(i.unit,i.position.z,i.rim);return f;}
 `;
+const spriteWGSL=`
+const resolution=vec2f(${RENDER_WIDTH}.,${RENDER_HEIGHT}.);
+struct Camera { rotation:vec2f, magnification:f32, padding:f32, center:vec2f, pad2:vec2f }
+@group(0) @binding(0) var<uniform> camera:Camera;
+@group(0) @binding(1) var atlas:texture_2d<f32>;
+@group(0) @binding(2) var nearestSampler:sampler;
+struct Out { @builtin(position) position:vec4f, @location(0) uv:vec2f }
+@vertex fn vs(@location(0) corner:vec2f,@location(1) origin:vec3f,
+ @location(2) bounds:vec4f,@location(3) uv:vec4f,@location(4) turn:f32)->Out {
+ let d=origin.xy-camera.center;
+ let r=vec2f(d.x*camera.rotation.x-d.y*camera.rotation.y,d.x*camera.rotation.y+d.y*camera.rotation.x);
+ let projected=vec2f(6.*(r.x-r.y),3.4641016*(r.x+r.y)-6.9282032*origin.z);
+ // Explicit half-up snapping matches Math.round in the CPU pick bounds.
+ let anchor=floor(vec2f(240.,136.)*${GRID}.+projected*camera.magnification*${GRID}.+.5);
+ // Art dimensions are already raster pixels: do not apply the two-pixel box
+ // art grid again. Snap the rectangle edges, preserving nearest texels.
+ let pixel=floor(anchor+(bounds.xy+corner*bounds.zw)*camera.magnification+.5);
+ let ndc=pixel/(resolution*.5);
+ var o:Out;
+ // A true screen-aligned plane has constant depth, shared with world boxes.
+ o.position=vec4f(ndc.x-1.,1.-ndc.y,0.5-((r.x+r.y)*0.5773503+origin.z*0.5773503)/128.,1.);
+ let texel=select(corner,vec2f(corner.y,1.-corner.x),turn>.5);
+ o.uv=mix(uv.xy,uv.zw,texel);return o;
+}
+struct Fragment { @location(0) color:vec4f, @location(1) mask:vec4f }
+@fragment fn fs(i:Out)->Fragment {
+ let sampled=textureSample(atlas,nearestSampler,i.uv);
+ if sampled.a<.5 {discard;}
+ var f:Fragment;f.color=vec4f(sampled.rgb,1.);
+ // Authored outline: protect fills and suppress an extra post-pass halo.
+ f.mask=vec4f(1.,i.position.z,0.,1.);return f;
+}`;
 const postWGSL=paletteWGSL+`
 @group(0) @binding(0) var scene:texture_2d<f32>;
 @group(0) @binding(1) var silhouette:texture_2d<f32>;
@@ -303,7 +337,8 @@ const postWGSL=paletteWGSL+`
   // Keep depth-tested actor-to-actor seams and the existing exterior ink.
   if center.r>=2. && neighbor.r==1. {continue;}
   let tolerance=select(0.,0.002,center.r==0.);
-  if neighbor.r>0.5 && neighbor.r!=center.r && neighbor.g<center.g+tolerance {return vec4f(palette[0],1.);}
+  // Only sprite texels set alpha; box masks retain their existing outline test.
+  if neighbor.r>0.5 && neighbor.a==0. && neighbor.r!=center.r && neighbor.g<center.g+tolerance {return vec4f(palette[0],1.);}
  }}
  // One raster pixel around the visible union, including diagonal contacts.
  if (occupied&2u)!=0u && center.r!=1. {
@@ -332,6 +367,10 @@ const buttonPatterns=Array.from({length:4},(_,kind)=>{
 export function buttonGlyphPixels(kind:number):Uint8Array {return buttonPatterns[kind];}
 export class Renderer {
  authoritativeActors=false;
+ /** Set false to restore the existing procedural Jackal, including variants. */
+ jackalSprites=true;
+ /** Camera quarter-turn for the current frame; the sprite art is screen-relative. */
+ private cameraQuarterTurn=0;
  jackalVariant:JackalVariant='field';
  /** False for the showcase and while a menu covers a match. Gameplay keeps the full canvas HUD. */
  hudVisible=true;
@@ -380,10 +419,16 @@ export class Renderer {
  readonly owners=new Int32Array(MAX);
  private actorData=new Float32Array(MAX*4);
  private actorBuffer:any;
+ // Vertex: vec2 corner (8 bytes). Instance: world xyz, pixel bounds xywh,
+ // UV min/max, quarter-turn flag (12 floats / 48 bytes). Owners stay on CPU.
+ private spriteData=new Float32Array(MAX*SPRITE_STRIDE);
+ private spriteOwners=new Int32Array(MAX);
+ private spriteCount=0;
+ private spritePipeline:any;private spriteVertex:any;private spriteBuffer:any;private spriteGroup:any;
  readonly camera=new Float32Array([1,0,1,0,16,16,0,0]);
  readonly stats={drawCalls:2,triangles:0,saturated:false,degraded:false,placementTiles:0};
  time=0;count=0;staticCount=0;worldCount=0;selected:number|null=null;
- private emissiveCount=0;private staticEmissiveCount=0;private dropped=0;
+ private emissiveCount=0;private staticEmissiveCount=0;
  private badgeOccupied=new Uint8Array(RENDER_WIDTH*RENDER_HEIGHT);
  private badgeZoom=1;
  private placementKey='';private placementCount=0;private placementTileCount=0;
@@ -470,11 +515,47 @@ export class Renderer {
   const sceneView=scene.createView(),silhouetteView=silhouette.createView();this.postGroup=d.createBindGroup({layout:this.post.getBindGroupLayout(0),entries:[{binding:0,resource:sceneView},{binding:1,resource:silhouetteView},{binding:2,resource:contourTiles.createView()}]});
   this.scenePass={colorAttachments:[{view:sceneView,clearValue:{r:16/255,g:18/255,b:28/255,a:1},loadOp:'clear',storeOp:'store'},{view:silhouetteView,clearValue:{r:0,g:1,b:0,a:1},loadOp:'clear',storeOp:'store'}],depthStencilAttachment:{view:depth.createView(),depthClearValue:1,depthLoadOp:'clear',depthStoreOp:'discard'}};
   this.presentPass={colorAttachments:[{view:null,loadOp:'clear',storeOp:'store',clearValue:{r:16/255,g:18/255,b:28/255,a:1}}]};
+  if(this.jackalSprites)await this.initJackalSprites();
   this.terrain.set(terrain);this.showcaseTerrain.set(terrain);this.makeTerrain();
  }
+ private async initJackalSprites() {
+  // One packed image is fully decoded/uploaded before init resolves. No
+  // asynchronous image work or texture changes occur in the frame loop.
+  const response=await fetch(JACKAL_ATLAS_URL);
+  if(!response.ok)throw new Error(`Jackal atlas failed to load: ${response.status}`);
+  const bitmap=await createImageBitmap(await response.blob(),{colorSpaceConversion:'none',premultiplyAlpha:'none'});
+  try{
+   if(bitmap.width!==JACKAL_ATLAS_WIDTH||bitmap.height!==JACKAL_ATLAS_HEIGHT)throw new Error('Jackal atlas dimensions disagree with the measured frame table.');
+   const d=this.device,usage=GPUTextureUsage as typeof GPUTextureUsage & {COPY_DST:number};
+   const texture=d.createTexture({size:[bitmap.width,bitmap.height],format:'rgba8unorm',usage:usage.TEXTURE_BINDING|usage.COPY_DST|usage.RENDER_ATTACHMENT});
+   d.queue.copyExternalImageToTexture({source:bitmap},{texture},[bitmap.width,bitmap.height]);
+   const sampler=d.createSampler({magFilter:'nearest',minFilter:'nearest',mipmapFilter:'nearest',addressModeU:'clamp-to-edge',addressModeV:'clamp-to-edge'});
+   const quad=new Float32Array([0,0,1,0,1,1,0,0,1,1,0,1]);
+   this.spriteVertex=d.createBuffer({size:quad.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});
+   d.queue.writeBuffer(this.spriteVertex,0,quad);
+   this.spriteBuffer=d.createBuffer({size:this.spriteData.byteLength,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});
+   const module=d.createShaderModule({code:spriteWGSL});
+   this.spritePipeline=d.createRenderPipeline({layout:'auto',vertex:{module,entryPoint:'vs',buffers:[
+    {arrayStride:8,attributes:[{shaderLocation:0,offset:0,format:'float32x2'}]},
+    {arrayStride:SPRITE_STRIDE*4,stepMode:'instance',attributes:[
+     {shaderLocation:1,offset:0,format:'float32x3'},{shaderLocation:2,offset:12,format:'float32x4'},
+     {shaderLocation:3,offset:28,format:'float32x4'},{shaderLocation:4,offset:44,format:'float32'}]},
+   ]},fragment:{module,entryPoint:'fs',targets:[{format:'rgba8unorm'},{format:'rgba16float'}]},
+   primitive:{topology:'triangle-list'},depthStencil:{format:'depth24plus',depthWriteEnabled:true,depthCompare:'less-equal'}});
+   this.spriteGroup=d.createBindGroup({layout:this.spritePipeline.getBindGroupLayout(0),entries:[
+    {binding:0,resource:{buffer:this.uniform}},{binding:1,resource:texture.createView()},{binding:2,resource:sampler},
+   ]});
+  }finally{bitmap.close();}
+ }
  onError(callback:(message:string)=>void) {this.device.addEventListener('uncapturederror',(e:any)=>callback(e.error.message));this.device.lost.then((info:any)=>{if(!this.disposed)callback(`WebGPU device lost: ${info.message}`);});}
+ private reserveInstances(additional:number) {
+  if(this.count+this.spriteCount+additional>MAX){
+   this.stats.saturated=true;
+   throw new Error(`Renderer instance capacity ${MAX} exceeded (${this.count} boxes + ${this.spriteCount} sprites + ${additional}).`);
+  }
+ }
  box(x:number,y:number,z:number,sx:number,sy:number,sz:number,color:number,owner=-1,screen=0) {
-  if(this.count>=MAX){this.dropped++;return;}
+  this.reserveInstances(1);
   const i=this.count*8;this.data[i]=x;this.data[i+1]=y;this.data[i+2]=z;this.data[i+3]=sx;this.data[i+4]=sy;this.data[i+5]=sz;this.data[i+6]=color;this.data[i+7]=screen;this.owners[this.count++]=owner;
  }
  ground(x:number,y:number) {const n=this.terrainSide-1;return this.terrain[Math.max(0,Math.min(n,Math.floor(y)))*this.terrainSide+Math.max(0,Math.min(n,Math.floor(x)))];}
@@ -797,7 +878,7 @@ export class Renderer {
    this.terrainSide=32;this.terrain=this.showcaseTerrain;this.setView(16,16);
    // A world bake replaces the static instance buffer. Restore the authored
    // bake as well as its heightfield before rendering the showcase again.
-   this.count=0;this.emissiveCount=0;this.degraded=false;this.makeTerrain();
+   this.count=0;this.spriteCount=0;this.emissiveCount=0;this.degraded=false;this.makeTerrain();
    this.bakedX=NaN;this.bakedY=NaN;this.bakedZoom=-1;
   }
   /** View centre in world tiles. */
@@ -970,7 +1051,7 @@ export class Renderer {
   * Actor geometry is submitted first; scenery can never consume its reserve.
   * These low, nonselectable fittings create no new blockers or building sites. */
  private settlementDetails(e:Float32Array,n:number,yaw:number,zoom:number) {
-  const limit=Math.min(this.count+320,MAX-this.placementCount-1200);
+  const limit=Math.min(this.count+320,MAX-this.spriteCount-this.placementCount-1200);
   const c=Math.round(Math.cos(yaw*Math.PI/2)),s=Math.round(Math.sin(yaw*Math.PI/2));
   for(let slot=0;slot<this.worldStarts.length;slot++){
    const start=this.worldStarts[slot],bx=start[0]+.5,by=start[1]+.5,m=slot===0?1:-1;
@@ -1445,6 +1526,11 @@ export class Renderer {
  }
  private unit(e:Float32Array,o:number,id:number,yaw:number) {
   const k=e[o+4],friendly=dawnUnits.has(k);
+  if(k===30&&this.jackalSprites){
+   this.jackalSprite(e,o,id);
+   if(e[o+5]!==4)this.actorMarks(e,o,e[o],e[o+1],1,1,yaw);
+   return;
+  }
   if(wave2Units.has(k)&&e[o+5]===4){this.wreck(e[o],e[o+1],this.ground(e[o],e[o+1]),k);return;}
   const combat=combatUnits.has(k);
   const offset=combat&&!(this.authoritativeActors&&k===30);
@@ -1484,6 +1570,28 @@ export class Renderer {
   const w=(maxX-minX)*scale,d=(maxY-minY)*scale;
   this.shadow(e[o]+ox+(minX+maxX)*scale/2,e[o+1]+oy+(minY+maxY)*scale/2,w,d,k===24||k===35?1:.45);
   this.actorMarks(e,o,e[o]+ox,e[o+1]+oy,k===31?1.8:1,k===31?1.8:1,yaw);
+ }
+ private jackalSprite(e:Float32Array,o:number,id:number) {
+  this.reserveInstances(1);
+  const frame=selectJackalFrame(e[o+3],e[o+5],e[o+6],Math.round(this.time*60),this.cameraQuarterTurn);
+  const q=this.spriteCount*SPRITE_STRIDE,data=this.spriteData;
+  data[q]=e[o];data[q+1]=e[o+1];data[q+2]=e[o+2];
+  data[q+3]=frame.offsetX;data[q+4]=frame.offsetY;data[q+5]=frame.width;data[q+6]=frame.height;
+  for(let i=0;i<4;i++)data[q+7+i]=frame.uv[i];
+  data[q+11]=frame.turn;this.spriteOwners[this.spriteCount++]=id;
+ }
+ /** A fallen Jackal. Real deaths spawn a kind-52 effect carrying the dead unit's
+  * kind in data[10] rather than publishing a state-4 actor, so the wreck has to
+  * enter the sprite batch from the effect path. Owner -1 keeps it unselectable.
+  * The effect publishes yaw 0, so the fallen facing is deterministic. */
+ private jackalWreckSprite(x:number,y:number,z:number,yaw:number) {
+  this.reserveInstances(1);
+  const frame=selectJackalFrame(yaw,4,0,0,this.cameraQuarterTurn);
+  const q=this.spriteCount*SPRITE_STRIDE,data=this.spriteData;
+  data[q]=x;data[q+1]=y;data[q+2]=z;
+  data[q+3]=frame.offsetX;data[q+4]=frame.offsetY;data[q+5]=frame.width;data[q+6]=frame.height;
+  for(let i=0;i<4;i++)data[q+7+i]=frame.uv[i];
+  data[q+11]=frame.turn;this.spriteOwners[this.spriteCount++]=-1;
  }
  private wardRing(x:number,y:number,z:number,radius:number,color:number) {
   for(let j=0;j<8;j++){
@@ -1814,7 +1922,7 @@ export class Renderer {
    for(let j=0;j<6;j++){const a=j*Math.PI/3;this.box(x+Math.cos(a)*r,y+Math.sin(a)*r,z+.08+(j%2)*.16,.24,.24,.23,32+(age<.25?(sub===30||blast?26:18):20));}
    if(blast&&age>.2)for(let j=0;j<5;j++)this.box(x+(j-2)*r*.45,y+(j%2)*.4,this.ground(x,y)+.1,.3,.35,.12,age<.5?5:4);
   }
-  else if(k===52)this.wreck(x,y,z,sub);
+  else if(k===52){if(sub===30&&this.jackalSprites)this.jackalWreckSprite(x,y,z,e[o+3]);else this.wreck(x,y,z,sub);}
  }
  /** A service apron is scenery attached to a completed, living building, never
   * an actor or an indication of resource throughput. Ten aprons, at most 32
@@ -1823,7 +1931,7 @@ export class Renderer {
  private settlementService(e:Float32Array,n:number,yaw:number,zoom:number) {
   if(this.placementCount>0)return;
   const reserve=this.showInterface&&this.hudVisible?this.hudData.length/STRIDE:0;
-  const limit=Math.min(this.count+320,MAX-reserve-this.placementCount);
+  const limit=Math.min(this.count+320,MAX-this.spriteCount-reserve-this.placementCount);
   const c=Math.round(Math.cos(yaw*Math.PI/2)),s=Math.round(Math.sin(yaw*Math.PI/2));
   let stations=0;
   for(let id=0;id<n&&stations<10&&this.count+32<=limit;id++){
@@ -1937,7 +2045,7 @@ export class Renderer {
    if(this.hudButtons)for(let j=0;j<4;j++){this.rect(370+j*25,bottom+2,22,20,5);this.rect(371+j*25,bottom+3,20,18,1);this.buttonGlyph(j,376+j*25,bottom+7);}
    if(o>=0){this.rect(left,bottom,134,23,5);this.rect(left+1,bottom+1,132,21,0);this.text(names[e[o+4]]||'COLONY',left+4,bottom+2);this.rect(left+4,bottom+10,125,3,3);this.rect(left+4,bottom+10,Math.floor(125*e[o+7]),3,13);const max=this.kindHealth?.(e[o+4])??maxHealth[e[o+4]]??180;this.text('HP '+Math.round(e[o+7]*max)+' '+(jobs[e[o+5]]||'IDLE')+(e[o+5]===5?' '+Math.floor(e[o+10]*100)+'%':''),left+4,bottom+15,7);}
    this.hudCount=this.count-start;for(let i=0;i<this.hudCount*8;i++)this.hudData[i]=this.data[start*8+i];this.hudAlloy=alloy;this.hudCharge=charge;this.hudSelection=o;this.hudKind=kind;this.hudHealth=hp;this.hudJob=job;this.hudProgress=progress;this.hudInset=this.hudLeftInset;this.hudBottom=this.hudBottomInset;this.hudCachedButtons=this.hudButtons;
-  }else{const available=Math.min(this.hudCount,MAX-this.count);for(let i=0;i<available*8;i++)this.data[this.count*8+i]=this.hudData[i];this.count+=available;this.dropped+=this.hudCount-available;}
+  }else{this.reserveInstances(this.hudCount);for(let i=0;i<this.hudCount*8;i++)this.data[this.count*8+i]=this.hudData[i];this.count+=this.hudCount;}
  }
  private markContours(yaw:number,zoom:number) {
   this.contourData.fill(0);
@@ -1959,7 +2067,7 @@ export class Renderer {
   }
  }
  render(e:Float32Array,n:number,yaw:number,zoom:number,alloy:number,charge:number,tick:number) {
-  this.time=tick/60;this.maybeBake(yaw,zoom);this.count=this.staticCount;this.emissiveCount=this.staticEmissiveCount;this.selected=null;this.dropped=0;
+  this.time=tick/60;this.cameraQuarterTurn=yaw;this.spriteCount=0;this.stats.saturated=false;this.maybeBake(yaw,zoom);this.count=this.staticCount;this.emissiveCount=this.staticEmissiveCount;this.selected=null;
   this.badgeOccupied.fill(0);this.badgeZoom=zoom;
   if(this.terrainSide>32)this.markBuildable(e,n);
   for(let id=0;id<n;id++){const o=id*12,k=e[o+4];if(e[o+8]===1)this.selected=id;
@@ -1983,20 +2091,26 @@ export class Renderer {
   if(this.showInterface)this.ambient(this.time);
   this.settlementService(e,n,yaw,zoom);
   this.worldCount=this.count;
-  const previewCount=Math.min(this.placementCount,MAX-this.count);
+  this.reserveInstances(this.placementCount);
+  const previewCount=this.placementCount;
   this.stats.placementTiles=previewCount?this.placementTileCount:0;
   if(previewCount){
    for(let i=0;i<previewCount*STRIDE;i++)this.data[this.count*STRIDE+i]=this.placementData[i];
    this.owners.fill(-1,this.count,this.count+previewCount);this.count+=previewCount;
   }
-  this.dropped+=this.placementCount-previewCount;
   if(this.showInterface&&this.hudVisible)this.hud(e,alloy,charge);
   this.markContours(yaw,zoom);
   this.camera[0]=Math.round(Math.cos(yaw*Math.PI/2));this.camera[1]=Math.round(Math.sin(yaw*Math.PI/2));this.camera[2]=1/zoom;this.camera[4]=this.camX;this.camera[5]=this.camY;
   const d=this.device;d.queue.writeBuffer(this.uniform,0,this.camera);d.queue.writeBuffer(this.buffer,0,this.data.buffer,0,this.count*32);d.queue.writeBuffer(this.actorBuffer,0,this.actorData.buffer,0,this.count*16);
+  if(this.spriteCount)d.queue.writeBuffer(this.spriteBuffer,0,this.spriteData.buffer,0,this.spriteCount*SPRITE_STRIDE*4);
   d.queue.writeTexture(this.contourUpload,this.contourData,this.contourLayout,this.contourSize);
-  const encoder=d.createCommandEncoder();const pass=encoder.beginRenderPass(this.scenePass);pass.setPipeline(this.pipeline);pass.setBindGroup(0,this.group);pass.setVertexBuffer(0,this.vertex);pass.setVertexBuffer(1,this.buffer);pass.setVertexBuffer(2,this.actorBuffer);pass.draw(36,this.count);pass.end();
-  this.frameTexture=this.context.getCurrentTexture();this.presentPass.colorAttachments[0].view=this.frameTexture.createView();const post=encoder.beginRenderPass(this.presentPass);post.setPipeline(this.post);post.setBindGroup(0,this.postGroup);post.draw(3);post.end();d.queue.submit(this.commands(encoder.finish()));this.stats.triangles=this.count*12+1;this.stats.saturated=this.dropped>0;this.stats.degraded=this.degraded;
+  const encoder=d.createCommandEncoder();const pass=encoder.beginRenderPass(this.scenePass);pass.setPipeline(this.pipeline);pass.setBindGroup(0,this.group);pass.setVertexBuffer(0,this.vertex);pass.setVertexBuffer(1,this.buffer);pass.setVertexBuffer(2,this.actorBuffer);pass.draw(36,this.count);
+  if(this.spriteCount){
+   pass.setPipeline(this.spritePipeline);pass.setBindGroup(0,this.spriteGroup);
+   pass.setVertexBuffer(0,this.spriteVertex);pass.setVertexBuffer(1,this.spriteBuffer);pass.draw(6,this.spriteCount);
+  }
+  pass.end();
+  this.frameTexture=this.context.getCurrentTexture();this.presentPass.colorAttachments[0].view=this.frameTexture.createView();const post=encoder.beginRenderPass(this.presentPass);post.setPipeline(this.post);post.setBindGroup(0,this.postGroup);post.draw(3);post.end();d.queue.submit(this.commands(encoder.finish()));this.stats.drawCalls=this.spriteCount?3:2;this.stats.triangles=this.count*12+this.spriteCount*2+1;this.stats.degraded=this.degraded;
  }
  private commandList:any[]=[null];
  private commands(command:any) {this.commandList[0]=command;return this.commandList;}
@@ -2011,6 +2125,21 @@ export class Renderer {
   for(let i=0;i<this.worldCount;i++){const o=i*8;if(this.data[o+7]>0||(this.data[o+7]===-3||this.data[o+7]===-4||this.data[o+7]===-14))continue;let near=0,far=Infinity;
    for(let axis=0;axis<3;axis++){const origin=axis===0?ox:axis===1?oy:oz,dir=axis===0?dx:axis===1?dy:dz;let min=this.data[o+axis]-(axis<2?this.data[o+3+axis]/2:0),max=min+this.data[o+3+axis];if(this.owners[i]>=0&&this.data[o+3]<1&&this.data[o+4]<1){min-=.12;max+=.12;}if(dir===0){if(origin<min||origin>max){far=-1;break;}}else{let t1=(min-origin)/dir,t2=(max-origin)/dir;if(t1>t2){const t=t1;t1=t2;t2=t;}near=Math.max(near,t1);far=Math.min(far,t2);}}
    if(near<=far&&near<best){best=near;owner=this.owners[i];}
-  }return owner<0?null:owner;
+  }
+  // Sprite bounds use exactly the shader's snapped anchor and pixel edges.
+  // Convert the nearest box ray hit to the same normalized depth as the
+  // billboard plane; walls/terrain still occlude picking, not just rendering.
+  let bestDepth=.5-(sum+oz)*.5773503/128+best*3*.5773503/128;
+  for(let i=0;i<this.spriteCount;i++){
+   const q=i*SPRITE_STRIDE,data=this.spriteData,x=data[q]-this.camX,y=data[q+1]-this.camY;
+   const rx=x*c-y*s,ry=x*s+y*c,z=data[q+2];
+   const anchorX=Math.round(240*GRID+6*GRID*(rx-ry)/zoom);
+   const anchorY=Math.round(136*GRID+(3.4641016*(rx+ry)-6.9282032*z)*GRID/zoom);
+   const left=Math.round(anchorX+data[q+3]/zoom),top=Math.round(anchorY+data[q+4]/zoom);
+   const right=Math.round(anchorX+(data[q+3]+data[q+5])/zoom),bottom=Math.round(anchorY+(data[q+4]+data[q+6])/zoom);
+   const depth=.5-((rx+ry)*.5773503+z*.5773503)/128;
+   if(px>=left&&px<right&&py>=top&&py<bottom&&depth>=0&&depth<=1&&depth<=bestDepth){bestDepth=depth;owner=this.spriteOwners[i];}
+  }
+  return owner<0?null:owner;
  }
 }
